@@ -152,9 +152,9 @@
 
     
     <div class="tabs" id="accessGroup">
-      <button class="tab" id="btnAccessCliente">CLIENTE</button>
-      <button class="tab" id="btnAccessUsuario">USUARIO</button>
-      <button class="tab" id="btnAccessAdmin">ADMIN</button>
+      <button class="tab" id="btnAccessCliente" onclick="try{openAuth&&openAuth(\'CLIENTE\')}catch(e){console.error(e)}" >CLIENTE</button>
+      <button class="tab" id="btnAccessUsuario" onclick="try{openAuth&&openAuth(\'USUARIO\')}catch(e){console.error(e)}" >USUARIO</button>
+      <button class="tab" id="btnAccessAdmin" onclick="try{openAuth&&openAuth(\'ADMIN\')}catch(e){console.error(e)}" >ADMIN</button>
     </div>
 
     <div class="tabs" id="tabGroup" style="display:none">
@@ -163,9 +163,9 @@
     </div>
 
     <div class="right">
-      <button class="btn secondary" id="btnCloud" onclick="try{openCfg&&openCfg()}catch(e){console.error(e)}">Nube</button>
-      <div class="chip" id="chipCloud" onclick="try{openCfg&&openCfg()}catch(e){console.error(e)}">Nube: —</div>
-      <div class="chip" id="chipVer">v7.6.2</div>
+      <button class="btn secondary" id="btnCloud" onclick="try{markClick&&markClick(); openCfg&&openCfg()}catch(e){console.error(e)}">Nube</button>
+      <div class="chip" id="chipCloud" onclick="try{markClick&&markClick(); openCfg&&openCfg()}catch(e){console.error(e)}">Nube: —</div>
+      <div class="chip" id="chipVer">v7.6.3</div>
       <div class="chip" id="chipJS">JS: …</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
@@ -332,11 +332,11 @@
 
   <!-- Modal configuración nube -->
   <!-- Modal login admin -->
-  <div class="modal-backdrop hidden" id="authBackdrop" role="dialog" aria-modal="true">
+  <div class="modal-backdrop hidden" id="authBackdrop" role="dialog" aria-modal="true" onclick="if(event.target===this){try{closeAuth&&closeAuth()}catch(e){console.error(e)}}">
     <div class="modal auth">
       <div class="hd">
         <div style="font-weight:1000"><span id="authTitle">Acceso</span></div>
-        <button class="btn secondary" id="authClose">Cerrar</button>
+        <button class="btn secondary" id="authClose" onclick="try{closeAuth&&closeAuth()}catch(e){console.error(e)}" >Cerrar</button>
       </div>
       <div class="bd">
         <div class="grid" style="grid-template-columns: 1fr; gap:10px">
@@ -361,11 +361,11 @@
   </div>
 
 
-  <div class="modal-backdrop hidden" id="cfgBackdrop" role="dialog" aria-modal="true">
+  <div class="modal-backdrop hidden" id="cfgBackdrop" role="dialog" aria-modal="true" onclick="if(event.target===this){try{closeCfg&&closeCfg()}catch(e){console.error(e)}}">
     <div class="modal">
       <div class="hd">
         <div style="font-weight:1000">Conectar a Supabase</div>
-        <button class="btn secondary" id="cfgClose">Cerrar</button>
+        <button class="btn secondary" id="cfgClose" onclick="try{closeCfg&&closeCfg()}catch(e){console.error(e)}" >Cerrar</button>
       </div>
       <div class="bd">
         <div class="muted" style="font-size:12px;line-height:1.45;margin-bottom:12px">
