@@ -143,7 +143,7 @@
 
 <script>
 (function(){
-  // v7.6.9 diagnostics: show any click + allow URL auto-open
+  // v7.7.0 diagnostics: show any click + allow URL auto-open
   function setChip(msg){
     const chip = document.getElementById('chipJS');
     if(chip) chip.textContent = msg;
@@ -180,7 +180,7 @@
 
 
 <script>
-/* v7.6.9 click-router: fixes IDs (cfgAnon/cfgShare) + makes Guardar/Probar work reliably */
+/* v7.7.0 click-router: fixes IDs (cfgAnon/cfgShare) + makes Guardar/Probar work reliably */
 (function(){
   function $(id){ return document.getElementById(id); }
   function show(id){ const el=$(id); if(el) el.classList.remove('hidden'); }
@@ -301,7 +301,9 @@
     if(id==='cfgClear'){ e.preventDefault(); e.stopPropagation(); clearCfg(); return; }
 
     if(id==='btnLogin'){ setJS('JS: LOGIN'); e.preventDefault(); e.stopPropagation();
-      try{ if(window.__doLogin){ window.__doLogin(); return; } }catch(err){ console.error(err); }
+      try{ if(window.__doLogin){ window.__doLogin().catch(err=>alert('Error al iniciar sesión: '+(err?.message||err))); return; } }catch(err){ console.error(err); alert('Error al iniciar sesión: '+(err?.message||err)); }
+      return;
+    } }catch(err){ console.error(err); }
       return;
     }
 
@@ -366,7 +368,7 @@
     <div class="right">
       <button class="btn secondary" id="btnCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube</button>
       <div class="chip" id="chipCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube: —</div>
-      <div class="chip" id="chipVer">v7.6.9</div>
+      <div class="chip" id="chipVer">v7.7.0</div>
       <div class="chip" id="chipJS">JS: …</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
@@ -1253,34 +1255,37 @@ window.canDelete = false;
   }
 
   async function login(){
+    const btn = el('btnLogin');
+    const oldTxt = btn?.textContent || 'Entrar';
     try{
-      const btn = el('btnLogin');
-      const oldTxt = btn?.textContent || 'Entrar';
-      if(btn){ btn.disabled = true; btn.textContent='Entrando…'; }
+      if(btn){ btn.disabled = true; btn.textContent = 'Entrando…'; }
       await ensureSupabase();
       const email = normalizeLoginEmail((el('authEmail').value || '').trim());
       const pass = (el('authPass').value || '').trim();
-      if(!email || !pass){ alert('Escribe correo y contraseña'); return; }
+      if(!email || !pass) throw new Error('Escribe correo y contraseña');
+
       const { error } = await supa.auth.signInWithPassword({ email, password: pass });
       if(error) throw error;
+
       el('authPass').value = '';
       const info = await resolveRole();
       const intent = STATE.intent;
+
       if(intent && intent !== info.role){
         await supa.auth.signOut();
         throw new Error('Rol no coincide. Intento: ' + intent + ' / Rol: ' + (info.role||'—'));
       }
+
       applyRoleUI(info);
       try{ syncAdminButtons(); }catch(_e){}
-
       await reloadData(true);
       await autoCloseIfNeeded();
       closeAuthDialog();
-      if(btn){ btn.disabled=false; btn.textContent=oldTxt; }
       alert('Sesión iniciada.');
     }catch(e){
-      if(btn){ btn.disabled=false; btn.textContent=oldTxt; }
       alert('Error al iniciar sesión: ' + (e?.message || e));
+    }finally{
+      if(btn){ btn.disabled = false; btn.textContent = oldTxt; }
     }
   }
 
@@ -1980,7 +1985,7 @@ function renderAdmin(){
     el('authBackdrop').classList.add('hidden');
   }
 
-  // --- v7.6.9: expose global openAuth(role) for header buttons ---
+  // --- v7.7.0: expose global openAuth(role) for header buttons ---
   window.openAuth = function(role){
     try{
       if(typeof STATE !== 'undefined') STATE.intent = role;
