@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis</title>
+  <title>Arribos a Cedis — v7.7.1</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -152,6 +152,7 @@
     <div class="right">
       <button class="btn secondary" id="btnCloud">Nube</button>
       <div class="chip" id="chipCloud">Nube: —</div>
+      <div class="chip" id="chipVer">v7.7.1</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
     </div>
@@ -194,6 +195,7 @@
             <th data-key="cuenta">Cuenta</th>
             <th data-key="cedis">Cedis</th>
             <th data-key="status">Estatus</th>
+            <th data-key="fecha">Fecha</th>
             <th data-key="indicacion">Indicación</th>
             <th data-key="anden">Andén</th>
             <th data-key="arribo_at">Arribo</th>
@@ -680,6 +682,7 @@
     {key:'cuenta', label:'Cuenta'},
     {key:'cedis', label:'Cedis'},
     {key:'status', label:'Estatus'},
+    {key:'fecha', label:'Fecha'},
     {key:'indicacion', label:'Indicación'},
     {key:'anden', label:'Andén'},
     {key:'arribo_at', label:'Arribo'},
@@ -732,8 +735,8 @@
   }
 
   // ------------------- Sorting -------------------
-  let sortKey = 'folio';
-  let sortDir = 1;
+  let sortKey = 'arribo_at';
+  let sortDir = -1;
 
   function cmp(a,b){
     const k = sortKey;
@@ -800,6 +803,9 @@
     if(row.is_deleted) return false;
     const today = ymd();
     if(work === today){
+      // En HOY: muestra lo de hoy + pendientes (activos) de días previos,
+      // pero NO muestra liberados de días anteriores.
+      if(row.arribo_ymd !== work && row.status === 'LIBERADO') return false;
       return row.arribo_ymd === work || !!row.is_active;
     }
     return row.arribo_ymd === work;
@@ -827,7 +833,7 @@
       if(r2.error) throw r2.error;
       const map = new Map();
       for(const d of (r1.data||[])) map.set(d.id, dbToRow(d));
-      for(const d of (r2.data||[])) map.set(d.id, dbToRow(d));
+      for(const d of (r2.data||[])) { const rr = dbToRow(d); if(!CONCLUIDOS.has(rr.status)) map.set(d.id, rr); }
       return Array.from(map.values());
     }
 
@@ -895,13 +901,14 @@
 
     renderKPIs(rows);
 
-    el('tbody').innerHTML = rows.map(r=>`
+    el('tbody').innerHTML = rows.map((r,i)=>`
       <tr data-id="${r.id}">
-        <td data-key="folio" class="mono">${esc(r.folio)}</td>
+        <td data-key="folio" class="mono">${i+1}</td>
         <td data-key="contenedor" class="mono"><div class="clamp2">${esc(r.contenedor)}</div></td>
         <td data-key="cuenta">${esc(r.cuenta)}</td>
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
+        <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
         <td data-key="indicacion">${esc(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
@@ -996,6 +1003,26 @@
     const s = await ensureSupabase();
     const work = getWorkDate();
     const { startIso, endIso } = rangeISO(work);
+
+    // Evita duplicados en el mismo día (mismo CEDIS + CUENTA + CONTENEDOR)
+    try{
+      const cont = (payload.contenedor||'').trim().toUpperCase();
+      const cc = (payload.cuenta||'').trim().toUpperCase();
+      const cd = (payload.cedis||'').trim().toUpperCase();
+      const today = ymd();
+      const existsLocal = (STATE.rows||[]).some(r=>{
+        if(r.is_deleted) return false;
+        const rCont = String(r.contenedor||'').trim().toUpperCase();
+        const rCta  = String(r.cuenta||'').trim().toUpperCase();
+        const rCed  = String(r.cedis||'').trim().toUpperCase();
+        const rDay  = r.arribo_ymd || (r.arribo_at ? ymd(new Date(r.arribo_at)) : '');
+        return rDay===today && rCont===cont && rCed===cd && rCta===cc;
+      });
+      if(existsLocal){
+        alert('Duplicado: ya existe ese contenedor/cuenta/cedis hoy. No se insertó.');
+        return;
+      }
+    }catch(_e){}
 
     // folio siguiente (por día)
     const maxq = await s.from('shipments').select('folio').gte('arribo_at', startIso).lte('arribo_at', endIso).order('folio', {ascending:false}).limit(1);
@@ -1270,14 +1297,9 @@ No se borran: quedan disponibles en Histórico por fecha.
     let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, work));
 
     // activos primero
-    rows.sort((a,b)=>{
-      const aa = CONCLUIDOS.has(a.status) ? 1 : 0;
-      const bb = CONCLUIDOS.has(b.status) ? 1 : 0;
-      if(aa!==bb) return aa-bb;
-      return Number(a.folio)-Number(b.folio);
-    });
+    rows.sort((a,b)=>{ const at = a.arribo_at ? new Date(a.arribo_at).getTime() : 0; const bt = b.arribo_at ? new Date(b.arribo_at).getTime() : 0; return bt-at; });
 
-    el('adminList').innerHTML = rows.map(r=>{
+el('adminList').innerHTML = rows.map((r,i)=>{
       const opts = nextActions(r.status);
       const optHtml = opts.map(o=>`<option value="${o.to}">${esc(o.label)}</option>`).join('');
       return `
@@ -1295,7 +1317,7 @@ No se borran: quedan disponibles en Histórico por fecha.
             </div>
 
             <div class="admin-info">
-              <div class="mono admin-title">${esc(r.folio)} · ${esc(r.contenedor)}</div>
+              <div class="mono admin-title">${i+1} · ${esc(r.contenedor)}</div>
               <div class="muted admin-meta">CUENTA: <b>${esc(r.cuenta||'')}</b> · CEDIS: <b>${esc(r.cedis)}</b> · Andén: <span class="mono">${esc(r.anden)}</span></div>
               <div class="muted admin-meta">Arribo: <span class="mono">${fmtTime(r.arribo_at)}</span> · Asig.: <span class="mono">${fmtTime(r.asignacion_at)}</span> · Inicio: <span class="mono">${fmtTime(r.inicio_at)}</span> · Fin: <span class="mono">${fmtTime(r.fin_at)}</span></div>
               <div class="muted admin-meta">Indicación: ${esc(r.indicacion||'')}</div>
