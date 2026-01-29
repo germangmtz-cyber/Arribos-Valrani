@@ -140,42 +140,6 @@
   body.preauth #tabGroup{ display:none !important; }
   body:not(.preauth) #accessGroup{ display:none !important; }
 </style>
-
-<script>
-(function(){
-  // v7.6.5 diagnostics: show any click + allow URL auto-open
-  function setChip(msg){
-    const chip = document.getElementById('chipJS');
-    if(chip) chip.textContent = msg;
-  }
-  document.addEventListener('click', function(e){
-    const t = e.target;
-    const id = t && t.id ? ('#'+t.id) : (t && t.tagName ? t.tagName : 'elem');
-    setChip('JS: CLICK ' + id);
-  }, true);
-
-  // Auto-open modals based on URL params (works even if buttons are blocked)
-  function tryOpenFromURL(){
-    try{
-      const q = new URLSearchParams(location.search);
-      const open = (q.get('open')||'').toLowerCase();
-      // defer until DOM loaded
-      const run = () => {
-        if(open === 'cfg' || open === 'nube'){
-          try{ window.openCfgDialog && window.openCfgDialog(); }catch(e){}
-        }
-        if(open === 'cliente' || open === 'usuario' || open === 'admin'){
-          try{ window.openAuth && window.openAuth(open.toUpperCase()); }catch(e){}
-        }
-      };
-      if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
-      else run();
-    }catch(e){}
-  }
-  tryOpenFromURL();
-})();
-</script>
-
 </head>
 <body class="preauth">
   <div class="topbar" id="topbar">
@@ -188,9 +152,9 @@
 
     
     <div class="tabs" id="accessGroup">
-      <button class="tab" id="btnAccessCliente" onclick="try{openAuth&&openAuth(\'CLIENTE\')}catch(e){console.error(e)}" >CLIENTE</button>
-      <button class="tab" id="btnAccessUsuario" onclick="try{openAuth&&openAuth(\'USUARIO\')}catch(e){console.error(e)}" >USUARIO</button>
-      <button class="tab" id="btnAccessAdmin" onclick="try{openAuth&&openAuth(\'ADMIN\')}catch(e){console.error(e)}" >ADMIN</button>
+      <button class="tab" id="btnAccessCliente">CLIENTE</button>
+      <button class="tab" id="btnAccessUsuario">USUARIO</button>
+      <button class="tab" id="btnAccessAdmin">ADMIN</button>
     </div>
 
     <div class="tabs" id="tabGroup" style="display:none">
@@ -199,10 +163,9 @@
     </div>
 
     <div class="right">
-      <button class="btn secondary" id="btnCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube</button>
-      <div class="chip" id="chipCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube: —</div>
-      <div class="chip" id="chipVer">v7.6.5</div>
-      <div class="chip" id="chipJS">JS: …</div>
+      <button class="btn secondary" id="btnCloud">Nube</button>
+      <div class="chip" id="chipCloud">Nube: —</div>
+      <div class="chip" id="chipVer">v7.6.1</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
     </div>
@@ -368,11 +331,11 @@
 
   <!-- Modal configuración nube -->
   <!-- Modal login admin -->
-  <div class="modal-backdrop hidden" id="authBackdrop" role="dialog" aria-modal="true" onclick="if(event.target===this){try{closeAuth&&closeAuth()}catch(e){console.error(e)}}">
+  <div class="modal-backdrop hidden" id="authBackdrop" role="dialog" aria-modal="true">
     <div class="modal auth">
       <div class="hd">
         <div style="font-weight:1000"><span id="authTitle">Acceso</span></div>
-        <button class="btn secondary" id="authClose" onclick="try{closeAuth&&closeAuth()}catch(e){console.error(e)}" >Cerrar</button>
+        <button class="btn secondary" id="authClose">Cerrar</button>
       </div>
       <div class="bd">
         <div class="grid" style="grid-template-columns: 1fr; gap:10px">
@@ -397,11 +360,11 @@
   </div>
 
 
-  <div class="modal-backdrop hidden" id="cfgBackdrop" role="dialog" aria-modal="true" onclick="if(event.target===this){try{closeCfg&&closeCfg()}catch(e){console.error(e)}}">
+  <div class="modal-backdrop hidden" id="cfgBackdrop" role="dialog" aria-modal="true">
     <div class="modal">
       <div class="hd">
         <div style="font-weight:1000">Conectar a Supabase</div>
-        <button class="btn secondary" id="cfgClose" onclick="try{closeCfg&&closeCfg()}catch(e){console.error(e)}" >Cerrar</button>
+        <button class="btn secondary" id="cfgClose">Cerrar</button>
       </div>
       <div class="bd">
         <div class="muted" style="font-size:12px;line-height:1.45;margin-bottom:12px">
@@ -1809,29 +1772,6 @@ function renderAdmin(){
   function closeAuthDialog(){
     el('authBackdrop').classList.add('hidden');
   }
-
-  // --- v7.6.5: expose global openAuth(role) for header buttons ---
-  window.openAuth = function(role){
-    try{
-      if(typeof STATE !== 'undefined') STATE.intent = role;
-      if(typeof openAuthDialog === 'function') openAuthDialog();
-      const chip = document.getElementById('chipJS');
-      if(chip) chip.textContent = 'JS: CLICK';
-    }catch(e){
-      console.error(e);
-      alert('Error al abrir login: ' + (e?.message||e));
-    }
-  };
-  window.openCfgDialog = function(){
-    try{
-      if(typeof openCfg === 'function') openCfg();
-      const chip = document.getElementById('chipJS');
-      if(chip) chip.textContent = 'JS: CLICK';
-    }catch(e){
-      console.error(e);
-      alert('Error al abrir Nube: ' + (e?.message||e));
-    }
-  };
   function setPreauth(on){
     document.body.classList.toggle('preauth', !!on);
   }
@@ -2188,29 +2128,5 @@ try{
 
 
 </script>
-
-<script>
-(function(){
-  const jsChip = document.getElementById('chipJS');
-  if(jsChip){ jsChip.textContent = 'JS: OK'; jsChip.style.borderColor='rgba(120,255,120,.35)'; jsChip.style.color='rgba(190,255,190,1)'; }
-  // Si no hay configuración de nube, abre el modal automáticamente
-  try{
-    const cfg = (typeof loadCfg==='function') ? (loadCfg()||{}) : {};
-    const need = !cfg || !cfg.url || !cfg.anon;
-    if(need && typeof openCfg==='function'){
-      // espera un tick para que el DOM esté listo
-      setTimeout(()=>{ try{ openCfg(); }catch(e){} }, 50);
-    }
-  }catch(e){}
-  // Captura errores globales y marca el chip
-  function markErr(){
-    const c = document.getElementById('chipJS');
-    if(c){ c.textContent='JS: ERROR'; c.style.borderColor='rgba(255,80,80,.55)'; c.style.color='rgba(255,170,170,1)'; }
-  }
-  window.addEventListener('error', markErr);
-  window.addEventListener('unhandledrejection', markErr);
-})();
-</script>
-
 </body>
 </html>
