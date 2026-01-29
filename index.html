@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — v7.7.1</title>
+  <title>Arribos a Cedis — v7.7.1-fixed</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -152,7 +152,6 @@
     <div class="right">
       <button class="btn secondary" id="btnCloud">Nube</button>
       <div class="chip" id="chipCloud">Nube: —</div>
-      <div class="chip" id="chipVer">v7.7.1</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
     </div>
@@ -465,6 +464,18 @@
     const day=String(d.getDate()).padStart(2,'0');
     return `${y}-${m}-${day}`;
   }
+  function fmtYMD(ymdStr){
+    if(!ymdStr) return '';
+    // Accept Date, ISO, or y-m-d
+    if(ymdStr instanceof Date) ymdStr = ymd(ymdStr);
+    if(typeof ymdStr === 'string'){
+      // ISO -> take date part
+      if(ymdStr.includes('T')) ymdStr = ymdStr.slice(0,10);
+      return ymdStr.replace(/-/g,'/');
+    }
+    return '';
+  }
+
 
   function fmtTime(iso){
     if(!iso) return '';
@@ -735,8 +746,8 @@
   }
 
   // ------------------- Sorting -------------------
-  let sortKey = 'arribo_at';
-  let sortDir = -1;
+  let sortKey = 'folio';
+  let sortDir = 1;
 
   function cmp(a,b){
     const k = sortKey;
@@ -833,7 +844,7 @@
       if(r2.error) throw r2.error;
       const map = new Map();
       for(const d of (r1.data||[])) map.set(d.id, dbToRow(d));
-      for(const d of (r2.data||[])) { const rr = dbToRow(d); if(!CONCLUIDOS.has(rr.status)) map.set(d.id, rr); }
+      for(const d of (r2.data||[])) map.set(d.id, dbToRow(d));
       return Array.from(map.values());
     }
 
@@ -897,7 +908,29 @@
     if(st) rows = rows.filter(r=>r.status===st);
     if(q) rows = rows.filter(r=>matches(r, q));
 
-    rows.sort(cmp);
+    
+    // Orden cronológico: más reciente arriba
+    rows.sort((a,b)=>{
+      const aa = (b.arribo_at||'');
+      
+    // Dedup visual (si hay duplicados en BD): cedis+cuenta+contenedor+fecha
+    const sigMap = new Map();
+    for(const r of rows){
+      const sig = `${r.cedis}||${r.cuenta}||${r.contenedor}||${r.arribo_ymd}`;
+      const prev = sigMap.get(sig);
+      if(!prev) { sigMap.set(sig, r); continue; }
+      const pu = prev.updated_at || '';
+      const ru = r.updated_at || '';
+      if(ru > pu) sigMap.set(sig, r);
+    }
+    rows = Array.from(sigMap.values());
+const bb = (a.arribo_at||'');
+      if(aa!==bb) return aa.localeCompare(bb);
+      const au = (b.updated_at||b.created_at||'');
+      const bu = (a.updated_at||a.created_at||'');
+      return au.localeCompare(bu);
+    });
+rows.sort(cmp);
 
     renderKPIs(rows);
 
@@ -1003,26 +1036,6 @@
     const s = await ensureSupabase();
     const work = getWorkDate();
     const { startIso, endIso } = rangeISO(work);
-
-    // Evita duplicados en el mismo día (mismo CEDIS + CUENTA + CONTENEDOR)
-    try{
-      const cont = (payload.contenedor||'').trim().toUpperCase();
-      const cc = (payload.cuenta||'').trim().toUpperCase();
-      const cd = (payload.cedis||'').trim().toUpperCase();
-      const today = ymd();
-      const existsLocal = (STATE.rows||[]).some(r=>{
-        if(r.is_deleted) return false;
-        const rCont = String(r.contenedor||'').trim().toUpperCase();
-        const rCta  = String(r.cuenta||'').trim().toUpperCase();
-        const rCed  = String(r.cedis||'').trim().toUpperCase();
-        const rDay  = r.arribo_ymd || (r.arribo_at ? ymd(new Date(r.arribo_at)) : '');
-        return rDay===today && rCont===cont && rCed===cd && rCta===cc;
-      });
-      if(existsLocal){
-        alert('Duplicado: ya existe ese contenedor/cuenta/cedis hoy. No se insertó.');
-        return;
-      }
-    }catch(_e){}
 
     // folio siguiente (por día)
     const maxq = await s.from('shipments').select('folio').gte('arribo_at', startIso).lte('arribo_at', endIso).order('folio', {ascending:false}).limit(1);
@@ -1296,10 +1309,31 @@ No se borran: quedan disponibles en Histórico por fecha.
     const work = getWorkDate();
     let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, work));
 
-    // activos primero
-    rows.sort((a,b)=>{ const at = a.arribo_at ? new Date(a.arribo_at).getTime() : 0; const bt = b.arribo_at ? new Date(b.arribo_at).getTime() : 0; return bt-at; });
+    // Orden cronológico: más reciente arriba (sin reordenar por estatus)
+    rows.sort((a,b)=>{
+      const aa = (b.arribo_at||'');
+      const bb = (a.arribo_at||'');
+      if(aa!==bb) return aa.localeCompare(bb);
+      const au = (b.updated_at||b.created_at||'');
+      const bu = (a.updated_at||a.created_at||'');
+      return au.localeCompare(bu);
+    });
 
-el('adminList').innerHTML = rows.map((r,i)=>{
+    // Dedup visual (si hay duplicados en BD): cedis+cuenta+contenedor+fecha
+    const sigMap = new Map();
+    for(const r of rows){
+      const sig = `${r.cedis}||${r.cuenta}||${r.contenedor}||${r.arribo_ymd}`;
+      const prev = sigMap.get(sig);
+      if(!prev) { sigMap.set(sig, r); continue; }
+      const pu = prev.updated_at || '';
+      const ru = r.updated_at || '';
+      if(ru > pu) sigMap.set(sig, r);
+    }
+    rows = Array.from(sigMap.values());
+
+});
+
+    el('adminList').innerHTML = rows.map(r=>{
       const opts = nextActions(r.status);
       const optHtml = opts.map(o=>`<option value="${o.to}">${esc(o.label)}</option>`).join('');
       return `
@@ -1317,7 +1351,7 @@ el('adminList').innerHTML = rows.map((r,i)=>{
             </div>
 
             <div class="admin-info">
-              <div class="mono admin-title">${i+1} · ${esc(r.contenedor)}</div>
+              <div class="mono admin-title">${esc(r.folio)} · ${esc(r.contenedor)}</div>
               <div class="muted admin-meta">CUENTA: <b>${esc(r.cuenta||'')}</b> · CEDIS: <b>${esc(r.cedis)}</b> · Andén: <span class="mono">${esc(r.anden)}</span></div>
               <div class="muted admin-meta">Arribo: <span class="mono">${fmtTime(r.arribo_at)}</span> · Asig.: <span class="mono">${fmtTime(r.asignacion_at)}</span> · Inicio: <span class="mono">${fmtTime(r.inicio_at)}</span> · Fin: <span class="mono">${fmtTime(r.fin_at)}</span></div>
               <div class="muted admin-meta">Indicación: ${esc(r.indicacion||'')}</div>
