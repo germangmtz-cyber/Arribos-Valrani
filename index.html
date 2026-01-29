@@ -165,7 +165,7 @@
     <div class="right">
       <button class="btn secondary" id="btnCloud">Nube</button>
       <div class="chip" id="chipCloud">Nube: —</div>
-      <div class="chip" id="chipVer">v7.6.1</div>
+      <div class="chip" id="chipVer">v7.6</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
     </div>
@@ -796,11 +796,16 @@ const w = localStorage.getItem(LS_WORK);
     // 2) Dentro del grupo, orden por fecha/hora de arribo
     // 3) Si el usuario selecciona otra columna, se aplica dentro del grupo sin romper el "pendiente primero"
     rows.sort((a,b)=>{
-      const ta = a.arribo_at ? new Date(a.arribo_at).getTime() : 0;
-      const tb = b.arribo_at ? new Date(b.arribo_at).getTime() : 0;
-      if(ta!==tb) return tb-ta; // más recientes arriba
-      return String(a.contenedor||'').localeCompare(String(b.contenedor||''), 'es', {sensitivity:'base'});
-    });
+      const ga = (CONCLUIDOS.has(a.status) ? 1 : 0);
+      const gb = (CONCLUIDOS.has(b.status) ? 1 : 0);
+      if(ga!==gb) return ga-gb;
+
+      // default / columna No: orden por arribo
+      if(sortKey==='no'){
+        const ta = a.arribo_at ? new Date(a.arribo_at).getTime() : 0;
+        const tb = b.arribo_at ? new Date(b.arribo_at).getTime() : 0;
+        if(ta!==tb) return ta-tb;
+        return String(a.contenedor||'').localeCompare(String(b.contenedor||''), 'es', {sensitivity:'base'});
       }
 
       const r = cmp(a,b);
@@ -1095,17 +1100,6 @@ window.canDelete = false;
     const s = await ensureSupabase();
     const work = getWorkDate();
     const { startIso, endIso } = rangeISO(work);
-    // Evitar duplicados (mismo contenedor+cuenta+cedis en el mismo día)
-    const dup = await s.from('shipments').select('id').eq('is_deleted', false)
-      .eq('cedis', payload.cedis)
-      .eq('cuenta', payload.cuenta || '')
-      .eq('contenedor', payload.contenedor)
-      .gte('arribo_at', startIso).lte('arribo_at', endIso)
-      .limit(1);
-    if(dup.error) throw dup.error;
-    if((dup.data||[]).length){ alert('Ya existe este contenedor hoy (duplicado).'); return; }
-
- \ \ const\ \{\ startIso,\ endIso\ \}\ =\ rangeISO\(work\);\
 
     // folio siguiente (por día)
     const maxq = await s.from('shipments').select('folio').gte('arribo_at', startIso).lte('arribo_at', endIso).order('folio', {ascending:false}).limit(1);
@@ -1128,11 +1122,7 @@ window.canDelete = false;
     };
 
     const ins = await s.from('shipments').insert([row]).select('*').single();
-    if(ins.error){
-      // 23505 = unique_violation (si habilitas índice único)
-      if(String(ins.error.code||'')==='23505'){ alert('Duplicado detectado, no se insertó.'); await reloadData(true); return; }
-      throw ins.error;
-    }
+    if(ins.error) throw ins.error;
 
     // evento
     await s.from('shipment_events').insert([{
@@ -1448,11 +1438,13 @@ function renderAdmin(){
 
     // pendientes (activos) primero, luego por arribo
     rows.sort((a,b)=>{
+      const ga = (CONCLUIDOS.has(a.status) ? 1 : 0);
+      const gb = (CONCLUIDOS.has(b.status) ? 1 : 0);
+      if(ga!==gb) return ga-gb;
       const ta = a.arribo_at ? new Date(a.arribo_at).getTime() : 0;
       const tb = b.arribo_at ? new Date(b.arribo_at).getTime() : 0;
-      if(ta!==tb) return tb-ta; // más recientes arriba
+      if(ta!==tb) return ta-tb;
       return String(a.contenedor||'').localeCompare(String(b.contenedor||''), 'es', {sensitivity:'base'});
-    });
     });
 
     el('adminList').innerHTML = rows.map((r,i)=>{
@@ -1989,9 +1981,6 @@ try{
 
   // Admin add
   el('btnAdd').addEventListener('click', async ()=>{
-    const btn = el('btnAdd');
-    btn.disabled = true;
-    btn.textContent = 'Agregando…';
     const cedis = (el('f_cedis').value || '').trim();
     const cont = (el('f_contenedor').value || '').trim();
     if(!cedis || !cont){ alert('CEDIS y Contenedor/Unidad son obligatorios'); return; }
@@ -2012,9 +2001,7 @@ try{
       setTab('board');
     }catch(e){
       alert('Error al agregar: ' + (e?.message || e));
-    }    btn.disabled = false;
-    btn.textContent = 'Agregar';
-
+    }
   });
 
   // Histórico 2026/01/07 (opcional)
