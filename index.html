@@ -143,7 +143,7 @@
 
 <script>
 (function(){
-  // v7.6.6 diagnostics: show any click + allow URL auto-open
+  // v7.6.7 diagnostics: show any click + allow URL auto-open
   function setChip(msg){
     const chip = document.getElementById('chipJS');
     if(chip) chip.textContent = msg;
@@ -177,51 +177,150 @@
 </script>
 
 
+
 <script>
-/* v7.6.6 click-router: forces buttons to open modals even if inline handlers fail */
+/* v7.6.7 click-router: forces buttons to work + implements Nube Save/Test/Copy/Clear */
 (function(){
-  function show(id){ const el=document.getElementById(id); if(el) el.classList.remove('hidden'); }
-  function hide(id){ const el=document.getElementById(id); if(el) el.classList.add('hidden'); }
+  function $(id){ return document.getElementById(id); }
+  function show(id){ const el=$(id); if(el) el.classList.remove('hidden'); }
+  function hide(id){ const el=$(id); if(el) el.classList.add('hidden'); }
+  function setJS(msg){ const chip=$('chipJS'); if(chip) chip.textContent = msg; }
+  function setCloud(msg){ const chip=$('chipCloud'); if(chip) chip.textContent = msg; }
+  function toast(msg){ try{ alert(msg); }catch(e){} }
+
   function setIntent(role){
     try{ if(window.STATE) window.STATE.intent = role; else window.STATE = {intent: role}; }catch(e){}
-    const t=document.getElementById('authTitle'); if(t) t.textContent = role==='CLIENTE'?'Acceso cliente':(role==='USUARIO'?'Acceso usuario':'Acceso administrador');
+    const t=$('authTitle');
+    if(t) t.textContent = role==='CLIENTE'?'Acceso cliente':(role==='USUARIO'?'Acceso usuario':'Acceso administrador');
   }
-  function openAuth(role){ setIntent(role); show('authBackdrop'); try{document.getElementById('authEmail')?.focus();}catch(e){} }
-  function openCfg(){ show('cfgBackdrop'); try{document.getElementById('cfgUrl')?.focus();}catch(e){} }
 
-  // Expose globally as well
+  function openAuth(role){ setIntent(role); show('authBackdrop'); try{$('authEmail')?.focus();}catch(e){} }
+  function openCfg(){ show('cfgBackdrop'); try{$('cfgUrl')?.focus();}catch(e){} }
+
   window.openAuth = openAuth;
   window.openCfgDialog = openCfg;
 
-  // Capture clicks and route
+  function normalizeUrl(u){
+    u = (u||'').trim();
+    if(!u) return '';
+    if(!u.startsWith('http')) u = 'https://' + u;
+    return u.replace(/\/+$/,'');
+  }
+
+  function saveCfg(){
+    const url = normalizeUrl($('cfgUrl')?.value || '');
+    const key = ($('cfgKey')?.value || '').trim();
+    if(!url || !key){ toast('Falta Project URL o anon key'); return; }
+    try{
+      localStorage.setItem('supabase_url', url);
+      localStorage.setItem('supabase_anon', key);
+      setCloud('Nube: listo');
+      toast('Guardado.');
+    }catch(e){
+      console.error(e);
+      toast('No se pudo guardar (localStorage bloqueado). Prueba en ventana normal y permite cookies/site data.');
+    }
+  }
+
+  async function testCfg(){
+    const url = normalizeUrl($('cfgUrl')?.value || localStorage.getItem('supabase_url') || '');
+    const key = ($('cfgKey')?.value || localStorage.getItem('supabase_anon') || '').trim();
+    if(!url || !key){ toast('Falta Project URL o anon key'); return; }
+    setJS('JS: TEST');
+    try{
+      const resp = await fetch(url + '/auth/v1/health', { headers: { 'apikey': key } });
+      if(!resp.ok){
+        const t = await resp.text().catch(()=> '');
+        throw new Error('HTTP ' + resp.status + ' ' + t.slice(0,120));
+      }
+      toast('Conexión OK.');
+      setCloud('Nube: listo');
+    }catch(e){
+      console.error(e);
+      toast('No se pudo conectar: ' + (e?.message||e));
+      setCloud('Nube: —');
+    }finally{
+      setJS('JS: OK');
+    }
+  }
+
+  function clearCfg(){
+    try{
+      localStorage.removeItem('supabase_url');
+      localStorage.removeItem('supabase_anon');
+      setCloud('Nube: —');
+      toast('Configuración borrada.');
+    }catch(e){
+      console.error(e);
+      toast('No se pudo borrar configuración.');
+    }
+  }
+
+  function copyLink(){
+    const url = normalizeUrl($('cfgUrl')?.value || localStorage.getItem('supabase_url') || '');
+    const key = ($('cfgKey')?.value || localStorage.getItem('supabase_anon') || '').trim();
+    if(!url || !key){ toast('Primero llena y guarda Project URL y anon key'); return; }
+    const u = new URL(location.href);
+    u.searchParams.set('sb_url', url);
+    u.searchParams.set('sb_anon', key);
+    u.searchParams.set('open','cfg');
+    const text = u.toString();
+    (navigator.clipboard?.writeText(text) || Promise.reject()).then(
+      ()=>toast('Link copiado. Compártelo con tu equipo.'),
+      ()=>toast('No se pudo copiar; copia manualmente: ' + text)
+    );
+  }
+
   document.addEventListener('click', function(e){
     const t = e.target;
-    const btn = t.closest ? t.closest('button,span') : t;
+    const btn = t && t.closest ? t.closest('button,span') : t;
     const id = btn && btn.id ? btn.id : '';
-    // route header buttons
+    if(id) setJS('JS: CLICK #' + id);
+
     if(id==='btnAccessCliente'){ e.preventDefault(); e.stopPropagation(); openAuth('CLIENTE'); return; }
     if(id==='btnAccessUsuario'){ e.preventDefault(); e.stopPropagation(); openAuth('USUARIO'); return; }
     if(id==='btnAccessAdmin'){ e.preventDefault(); e.stopPropagation(); openAuth('ADMIN'); return; }
     if(id==='btnCloud' || id==='chipCloud'){ e.preventDefault(); e.stopPropagation(); openCfg(); return; }
 
-    // close buttons
+    if(id==='cfgSave'){ e.preventDefault(); e.stopPropagation(); saveCfg(); return; }
+    if(id==='cfgTest'){ e.preventDefault(); e.stopPropagation(); testCfg(); return; }
+    if(id==='cfgCopy'){ e.preventDefault(); e.stopPropagation(); copyLink(); return; }
+    if(id==='cfgClear'){ e.preventDefault(); e.stopPropagation(); clearCfg(); return; }
+
     if(id==='authClose'){ e.preventDefault(); e.stopPropagation(); hide('authBackdrop'); return; }
     if(id==='cfgClose'){ e.preventDefault(); e.stopPropagation(); hide('cfgBackdrop'); return; }
 
-    // backdrop click to close
     if(t && t.id==='authBackdrop'){ hide('authBackdrop'); return; }
     if(t && t.id==='cfgBackdrop'){ hide('cfgBackdrop'); return; }
   }, true);
 
-  // Auto-open cfg if no config
+  function applyCfgFromURL(){
+    try{
+      const q = new URLSearchParams(location.search);
+      const u = q.get('sb_url');
+      const k = q.get('sb_anon');
+      if(u && $('cfgUrl')) $('cfgUrl').value = u;
+      if(k && $('cfgKey')) $('cfgKey').value = k;
+    }catch(e){}
+  }
+
   document.addEventListener('DOMContentLoaded', function(){
+    applyCfgFromURL();
     try{
       const has = (localStorage.getItem('supabase_url')||'') && (localStorage.getItem('supabase_anon')||'');
-      if(!has){ openCfg(); }
-    }catch(e){ openCfg(); }
+      if(!has){
+        openCfg();
+        setCloud('Nube: — (configura)');
+      }else{
+        setCloud('Nube: listo');
+      }
+    }catch(e){
+      openCfg();
+    }
   });
 })();
 </script>
+
 
 </head>
 <body class="preauth">
@@ -248,7 +347,7 @@
     <div class="right">
       <button class="btn secondary" id="btnCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube</button>
       <div class="chip" id="chipCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube: —</div>
-      <div class="chip" id="chipVer">v7.6.6</div>
+      <div class="chip" id="chipVer">v7.6.7</div>
       <div class="chip" id="chipJS">JS: …</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
@@ -1857,7 +1956,7 @@ function renderAdmin(){
     el('authBackdrop').classList.add('hidden');
   }
 
-  // --- v7.6.6: expose global openAuth(role) for header buttons ---
+  // --- v7.6.7: expose global openAuth(role) for header buttons ---
   window.openAuth = function(role){
     try{
       if(typeof STATE !== 'undefined') STATE.intent = role;
