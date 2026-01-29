@@ -194,7 +194,6 @@
             <th data-key="cuenta">Cuenta</th>
             <th data-key="cedis">Cedis</th>
             <th data-key="status">Estatus</th>
-            <th data-key="fecha">Fecha</th>
             <th data-key="indicacion">Indicación</th>
             <th data-key="anden">Andén</th>
             <th data-key="arribo_at">Arribo</th>
@@ -681,7 +680,6 @@
     {key:'cuenta', label:'Cuenta'},
     {key:'cedis', label:'Cedis'},
     {key:'status', label:'Estatus'},
-    {key:'fecha', label:'Fecha'},
     {key:'indicacion', label:'Indicación'},
     {key:'anden', label:'Andén'},
     {key:'arribo_at', label:'Arribo'},
@@ -802,9 +800,6 @@
     if(row.is_deleted) return false;
     const today = ymd();
     if(work === today){
-      // En HOY: muestra lo de hoy + pendientes (activos) de días previos,
-      // pero NO muestra liberados de días anteriores.
-      if(row.arribo_ymd !== work && row.status === 'LIBERADO') return false;
       return row.arribo_ymd === work || !!row.is_active;
     }
     return row.arribo_ymd === work;
@@ -900,14 +895,13 @@
 
     renderKPIs(rows);
 
-    el('tbody').innerHTML = rows.map((r,i)=>`
+    el('tbody').innerHTML = rows.map(r=>`
       <tr data-id="${r.id}">
-        <td data-key="folio" class="mono">${i+1}</td>
+        <td data-key="folio" class="mono">${esc(r.folio)}</td>
         <td data-key="contenedor" class="mono"><div class="clamp2">${esc(r.contenedor)}</div></td>
         <td data-key="cuenta">${esc(r.cuenta)}</td>
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
-        <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
         <td data-key="indicacion">${esc(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
