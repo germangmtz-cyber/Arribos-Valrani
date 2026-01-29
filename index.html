@@ -71,7 +71,6 @@
 
     /* Column sizing tweaks */
     .table th[data-key="cedis"], .table td[data-key="cedis"]{white-space:nowrap;width:1%;}
-    .table th[data-key="fecha"], .table td[data-key="fecha"]{white-space:nowrap;width:10ch;}
     .table th[data-key="contenedor"], .table td[data-key="contenedor"]{width:25ch;max-width:25ch;}
     .table td[data-key="contenedor"]{white-space:normal;}
     .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;}
@@ -122,229 +121,21 @@
     .compact{padding:10px;}
     .concepts-card #statusHelp{font-size:11px;line-height:1.35;max-height:230px;overflow:auto;padding-right:6px;}
     .admin-session{padding:10px;}
-    .admin-row{padding:8px;margin-bottom:6px;}
+    .admin-row{padding:10px;margin-bottom:8px;}
     .admin-row-top{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;}
     .admin-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .admin-controls select{min-width:220px;}
     .admin-info{flex:1;min-width:260px;}
-    .admin-title{font-weight:1000;font-size:13px;}
-    .admin-meta{font-size:11px;line-height:1.25;}
+    .admin-title{font-weight:1000}
+    .admin-meta{font-size:12px;line-height:1.35;}
     .admin-meta .mono{font-variant-numeric:tabular-nums;}
     .admin-status{margin-left:auto;}
     /* Auth modal */
     .modal.auth{width:min(680px, 96vw);}
 
-
-  /* v7.4 roles gate */
-  body.preauth .wrap{ display:none !important; }
-  body.preauth #tabGroup{ display:none !important; }
-  body:not(.preauth) #accessGroup{ display:none !important; }
 </style>
-
-<script>
-(function(){
-  // v7.7.0 diagnostics: show any click + allow URL auto-open
-  function setChip(msg){
-    const chip = document.getElementById('chipJS');
-    if(chip) chip.textContent = msg;
-  }
-  document.addEventListener('click', function(e){
-    const t = e.target;
-    const id = t && t.id ? ('#'+t.id) : (t && t.tagName ? t.tagName : 'elem');
-    setChip('JS: CLICK ' + id);
-  }, true);
-
-  // Auto-open modals based on URL params (works even if buttons are blocked)
-  function tryOpenFromURL(){
-    try{
-      const q = new URLSearchParams(location.search);
-      const open = (q.get('open')||'').toLowerCase();
-      // defer until DOM loaded
-      const run = () => {
-        if(open === 'cfg' || open === 'nube'){
-          try{ window.openCfgDialog && window.openCfgDialog(); }catch(e){}
-        }
-        if(open === 'cliente' || open === 'usuario' || open === 'admin'){
-          try{ window.openAuth && window.openAuth(open.toUpperCase()); }catch(e){}
-        }
-      };
-      if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
-      else run();
-    }catch(e){}
-  }
-  tryOpenFromURL();
-})();
-</script>
-
-
-
-
-<script>
-/* v7.7.0 click-router: fixes IDs (cfgAnon/cfgShare) + makes Guardar/Probar work reliably */
-(function(){
-  function $(id){ return document.getElementById(id); }
-  function show(id){ const el=$(id); if(el) el.classList.remove('hidden'); }
-  function hide(id){ const el=$(id); if(el) el.classList.add('hidden'); }
-  function setJS(msg){ const chip=$('chipJS'); if(chip) chip.textContent = msg; }
-  function setCloud(msg){ const chip=$('chipCloud'); if(chip) chip.textContent = msg; }
-  function toast(msg){ try{ alert(msg); }catch(e){} }
-
-  function setIntent(role){
-    try{ if(window.STATE) window.STATE.intent = role; else window.STATE = {intent: role}; }catch(e){}
-    const t=$('authTitle');
-    if(t) t.textContent = role==='CLIENTE'?'Acceso cliente':(role==='USUARIO'?'Acceso usuario':'Acceso administrador');
-  }
-
-  function openAuth(role){ setIntent(role); show('authBackdrop'); try{$('authEmail')?.focus();}catch(e){} }
-  function openCfg(){ show('cfgBackdrop'); try{$('cfgUrl')?.focus();}catch(e){} }
-
-  window.openAuth = openAuth;
-  window.openCfgDialog = openCfg;
-
-  function normalizeUrl(u){
-    u = (u||'').trim();
-    if(!u) return '';
-    if(!u.startsWith('http')) u = 'https://' + u;
-    return u.replace(/\/+$/,'');
-  }
-
-  function readCfg(){
-    const url = normalizeUrl(($('cfgUrl')?.value) || localStorage.getItem('supabase_url') || '');
-    const key = ((($('cfgAnon')?.value) || localStorage.getItem('supabase_anon') || '') + '').trim();
-    return {url, key};
-  }
-
-  function saveCfg(){
-    const {url, key} = readCfg();
-    if(!url || !key){
-      toast('Falta Project URL o anon key (pega ambos campos).');
-      return;
-    }
-    try{
-      localStorage.setItem('supabase_url', url);
-      localStorage.setItem('supabase_anon', key);
-      setCloud('Nube: listo');
-      toast('Guardado.');
-    }catch(e){
-      console.error(e);
-      toast('No se pudo guardar (localStorage bloqueado). Prueba en ventana normal y permite cookies/site data.');
-    }
-  }
-
-  async function testCfg(){
-    const {url, key} = readCfg();
-    if(!url || !key){
-      toast('Falta Project URL o anon key (pega ambos campos).');
-      return;
-    }
-    setJS('JS: TEST');
-    try{
-      const resp = await fetch(url + '/auth/v1/health', { headers: { 'apikey': key } });
-      if(!resp.ok){
-        const t = await resp.text().catch(()=> '');
-        throw new Error('HTTP ' + resp.status + ' ' + t.slice(0,120));
-      }
-      toast('Conexión OK.');
-      setCloud('Nube: listo');
-    }catch(e){
-      console.error(e);
-      toast('No se pudo conectar: ' + (e?.message||e));
-      setCloud('Nube: —');
-    }finally{
-      setJS('JS: OK');
-    }
-  }
-
-  function clearCfg(){
-    try{
-      localStorage.removeItem('supabase_url');
-      localStorage.removeItem('supabase_anon');
-      setCloud('Nube: —');
-      toast('Configuración borrada.');
-    }catch(e){
-      console.error(e);
-      toast('No se pudo borrar configuración.');
-    }
-  }
-
-  function copyLink(){
-    const {url, key} = readCfg();
-    if(!url || !key){
-      toast('Primero llena y guarda Project URL y anon key');
-      return;
-    }
-    const u = new URL(location.href);
-    u.searchParams.set('sb_url', url);
-    u.searchParams.set('sb_anon', key);
-    u.searchParams.set('open','cfg');
-    const text = u.toString();
-    (navigator.clipboard?.writeText(text) || Promise.reject()).then(
-      ()=>toast('Link copiado. Compártelo con tu equipo.'),
-      ()=>toast('No se pudo copiar; copia manualmente: ' + text)
-    );
-  }
-
-  document.addEventListener('click', function(e){
-    const t = e.target;
-    const btn = t && t.closest ? t.closest('button,span') : t;
-    const id = btn && btn.id ? btn.id : '';
-    if(id) setJS('JS: CLICK #' + id);
-
-    if(id==='btnAccessCliente'){ e.preventDefault(); e.stopPropagation(); openAuth('CLIENTE'); return; }
-    if(id==='btnAccessUsuario'){ e.preventDefault(); e.stopPropagation(); openAuth('USUARIO'); return; }
-    if(id==='btnAccessAdmin'){ e.preventDefault(); e.stopPropagation(); openAuth('ADMIN'); return; }
-    if(id==='btnCloud' || id==='chipCloud'){ e.preventDefault(); e.stopPropagation(); openCfg(); return; }
-
-    if(id==='cfgSave'){ e.preventDefault(); e.stopPropagation(); saveCfg(); return; }
-    if(id==='cfgTest'){ e.preventDefault(); e.stopPropagation(); testCfg(); return; }
-    if(id==='cfgShare'){ e.preventDefault(); e.stopPropagation(); copyLink(); return; }
-    if(id==='cfgClear'){ e.preventDefault(); e.stopPropagation(); clearCfg(); return; }
-
-    if(id==='btnLogin'){ setJS('JS: LOGIN'); e.preventDefault(); e.stopPropagation();
-      try{ if(window.__doLogin){ window.__doLogin().catch(err=>alert('Error al iniciar sesión: '+(err?.message||err))); return; } }catch(err){ console.error(err); alert('Error al iniciar sesión: '+(err?.message||err)); }
-      return;
-    } }catch(err){ console.error(err); }
-      return;
-    }
-
-    if(id==='authClose'){ e.preventDefault(); e.stopPropagation(); hide('authBackdrop'); return; }
-    if(id==='cfgClose'){ e.preventDefault(); e.stopPropagation(); hide('cfgBackdrop'); return; }
-
-    if(t && t.id==='authBackdrop'){ hide('authBackdrop'); return; }
-    if(t && t.id==='cfgBackdrop'){ hide('cfgBackdrop'); return; }
-  }, true);
-
-  function applyCfgFromURL(){
-    try{
-      const q = new URLSearchParams(location.search);
-      const u = q.get('sb_url');
-      const k = q.get('sb_anon');
-      if(u && $('cfgUrl')) $('cfgUrl').value = u;
-      if(k && $('cfgAnon')) $('cfgAnon').value = k;
-    }catch(e){}
-  }
-
-  document.addEventListener('DOMContentLoaded', function(){
-    applyCfgFromURL();
-    try{
-      const has = (localStorage.getItem('supabase_url')||'') && (localStorage.getItem('supabase_anon')||'');
-      if(!has){
-        openCfg();
-        setCloud('Nube: — (configura)');
-      }else{
-        setCloud('Nube: listo');
-      }
-    }catch(e){
-      openCfg();
-    }
-  });
-})();
-</script>
-
-
-
 </head>
-<body class="preauth">
+<body>
   <div class="topbar" id="topbar">
     <div class="brand">
       <img alt="Logo" src="data:image/png;base64,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" />
@@ -353,23 +144,14 @@
       </div>
     </div>
 
-    
-    <div class="tabs" id="accessGroup">
-      <button class="tab" id="btnAccessCliente" onclick="try{openAuth&&openAuth(\'CLIENTE\')}catch(e){console.error(e)}" >CLIENTE</button>
-      <button class="tab" id="btnAccessUsuario" onclick="try{openAuth&&openAuth(\'USUARIO\')}catch(e){console.error(e)}" >USUARIO</button>
-      <button class="tab" id="btnAccessAdmin" onclick="try{openAuth&&openAuth(\'ADMIN\')}catch(e){console.error(e)}" >ADMIN</button>
-    </div>
-
-    <div class="tabs" id="tabGroup" style="display:none">
+    <div class="tabs">
       <button class="tab active" id="tabBoard">TABLERO</button>
       <button class="tab" id="tabAdmin">ADMIN</button>
     </div>
 
     <div class="right">
-      <button class="btn secondary" id="btnCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube</button>
-      <div class="chip" id="chipCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube: —</div>
-      <div class="chip" id="chipVer">v7.7.0</div>
-      <div class="chip" id="chipJS">JS: …</div>
+      <button class="btn secondary" id="btnCloud">Nube</button>
+      <div class="chip" id="chipCloud">Nube: —</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
     </div>
@@ -407,8 +189,7 @@
       <table class="table" id="table">
         <thead>
           <tr>
-            <th data-key="no">No</th>
-            <th data-key="fecha">Fecha</th>
+            <th data-key="folio">No</th>
             <th data-key="contenedor">Contenedor</th>
             <th data-key="cuenta">Cuenta</th>
             <th data-key="cedis">Cedis</th>
@@ -439,7 +220,7 @@
       <div class="card compact admin-session" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
           <div>
-            <div style="font-weight:900;margin-bottom:6px">Acceso</div>
+            <div style="font-weight:900;margin-bottom:6px">Acceso administrador</div>
             <div class="muted" id="authState" style="font-size:12px">No conectado.</div>
             <div class="muted" style="font-size:12px;margin-top:6px;line-height:1.35">Para <b>consulta</b> no necesitas iniciar sesión. Para <b>captura</b>, sí.</div>
           </div>
@@ -535,11 +316,11 @@
 
   <!-- Modal configuración nube -->
   <!-- Modal login admin -->
-  <div class="modal-backdrop hidden" id="authBackdrop" role="dialog" aria-modal="true" onclick="if(event.target===this){try{closeAuth&&closeAuth()}catch(e){console.error(e)}}">
+  <div class="modal-backdrop hidden" id="authBackdrop" role="dialog" aria-modal="true">
     <div class="modal auth">
       <div class="hd">
-        <div style="font-weight:1000"><span id="authTitle">Acceso</span></div>
-        <button class="btn secondary" id="authClose" onclick="try{closeAuth&&closeAuth()}catch(e){console.error(e)}" >Cerrar</button>
+        <div style="font-weight:1000">Acceso administrador</div>
+        <button class="btn secondary" id="authClose">Cerrar</button>
       </div>
       <div class="bd">
         <div class="grid" style="grid-template-columns: 1fr; gap:10px">
@@ -564,11 +345,11 @@
   </div>
 
 
-  <div class="modal-backdrop hidden" id="cfgBackdrop" role="dialog" aria-modal="true" onclick="if(event.target===this){try{closeCfg&&closeCfg()}catch(e){console.error(e)}}">
+  <div class="modal-backdrop hidden" id="cfgBackdrop" role="dialog" aria-modal="true">
     <div class="modal">
       <div class="hd">
         <div style="font-weight:1000">Conectar a Supabase</div>
-        <button class="btn secondary" id="cfgClose" onclick="try{closeCfg&&closeCfg()}catch(e){console.error(e)}" >Cerrar</button>
+        <button class="btn secondary" id="cfgClose">Cerrar</button>
       </div>
       <div class="bd">
         <div class="muted" style="font-size:12px;line-height:1.45;margin-bottom:12px">
@@ -602,8 +383,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
-  window.addEventListener('error', (e)=>{ try{ console.error(e); toast('JS error: ' + (e?.message||e)); }catch(_x){} });
-  window.addEventListener('unhandledrejection', (e)=>{ try{ console.error(e); toast('JS error: ' + (e?.reason?.message||e?.reason||e)); }catch(_x){} });
   // Seed local (para referencia)
   window.SEED_20260107 = [{"id": "seed-20260107-1", "folio": "1", "cedis": "CUAUTIPARK II", "contenedor": "MRKU7608568", "nave": "CUAUTIPARK", "anden": "Z06", "status": "FUMIG_PEND", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI; SE REPORTA PLAGA AL MOMENTO DE LA DESCARGA", "cajas": 2427, "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T07:30:00", "asignacion_at": "2026-01-07T07:33:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T07:30:00", "updated_at": "2026-01-07T07:30:00"}, {"id": "seed-20260107-2", "folio": "2", "cedis": "CUAUTIPARK II", "contenedor": "REC JUAN CARLOS BECERRA", "nave": "CUAUTIPARK", "anden": "Z07", "status": "HOLD_NO_DESCARGAR", "indicacion": "RECHAZO POR PLAGA PROCEDENTE IDC, PLAGA CERVEZA", "cajas": "", "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T07:45:00", "asignacion_at": "2026-01-07T07:48:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T07:45:00", "updated_at": "2026-01-07T07:45:00"}, {"id": "seed-20260107-3", "folio": "3", "cedis": "CUAUTIPARK II", "contenedor": "REC JOSE DE JESUS SANTIAGO", "nave": "CUAUTIPARK", "anden": "Z08", "status": "HOLD_NO_DESCARGAR", "indicacion": "RECHAZO POR PLAGA PROCEDENTE IDC, PLAGA CERVEZA", "cajas": "", "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T08:00:00", "asignacion_at": "2026-01-07T08:03:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T08:00:00", "updated_at": "2026-01-07T08:00:00"}, {"id": "seed-20260107-4", "folio": "4", "cedis": "CUAUTIPARK II", "contenedor": "FANU3471926", "nave": "CUAUTIPARK", "anden": "Z09", "status": "FUMIG_CUARENTENA", "indicacion": "PLAGA FUMIGACIÓN Y LIMPIEZA", "cajas": 641, "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T08:15:00", "asignacion_at": "2026-01-07T08:18:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T08:15:00", "updated_at": "2026-01-07T08:15:00"}, {"id": "seed-20260107-5", "folio": "5", "cedis": "CUAUTIPARK II", "contenedor": "CAAU5681082", "nave": "CUAUTIPARK", "anden": "Z10", "status": "DESCARGA_CONCL", "indicacion": "HONGO SANITIZACIÓN DEIJI", "cajas": 44, "tarimas": 44, "responsable": "Hugo Silva", "arribo_at": "2026-01-07T08:30:00", "asignacion_at": "2026-01-07T08:33:00", "inicio_at": "2026-01-07T08:39:00", "fin_at": "2026-01-07T09:59:00", "liberado_at": "2026-01-07T10:04:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T08:30:00", "updated_at": "2026-01-07T08:30:00"}, {"id": "seed-20260107-6", "folio": "6", "cedis": "CUAUTIPARK II", "contenedor": "HAMU4359930", "nave": "CUAUTIPARK", "anden": "Z11", "status": "DESCARGA_CONCL", "indicacion": "HONGO SANITIZACIÓN DEIJI", "cajas": 44, "tarimas": 44, "responsable": "Hugo Silva", "arribo_at": "2026-01-07T08:45:00", "asignacion_at": "2026-01-07T08:48:00", "inicio_at": "2026-01-07T08:54:00", "fin_at": "2026-01-07T10:14:00", "liberado_at": "2026-01-07T10:19:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T08:45:00", "updated_at": "2026-01-07T08:45:00"}, {"id": "seed-20260107-7", "folio": "7", "cedis": "CUAUTIPARK II", "contenedor": "HLBU9377704", "nave": "CUAUTIPARK", "anden": "Z06", "status": "DESCARGA_CONCL", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI", "cajas": 3810, "tarimas": 36, "responsable": "Oscar Chavarria", "arribo_at": "2026-01-07T09:00:00", "asignacion_at": "2026-01-07T09:03:00", "inicio_at": "2026-01-07T09:09:00", "fin_at": "2026-01-07T10:29:00", "liberado_at": "2026-01-07T10:34:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T09:00:00", "updated_at": "2026-01-07T09:00:00"}, {"id": "seed-20260107-8", "folio": "8", "cedis": "CUAUTIPARK II", "contenedor": "HLBU9917741", "nave": "CUAUTIPARK", "anden": "Z07", "status": "DESCARGA_CONCL", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI", "cajas": 2480, "tarimas": 32, "responsable": "Oscar Chavarria", "arribo_at": "2026-01-07T09:15:00", "asignacion_at": "2026-01-07T09:18:00", "inicio_at": "2026-01-07T09:24:00", "fin_at": "2026-01-07T10:44:00", "liberado_at": "2026-01-07T10:49:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T09:15:00", "updated_at": "2026-01-07T09:15:00"}, {"id": "seed-20260107-9", "folio": "9", "cedis": "CUAUTIPARK II", "contenedor": "UETU6750278 (MSKU0980929)", "nave": "CUAUTIPARK", "anden": "Z08", "status": "DESCARGA_CONCL", "indicacion": "UPC INCORRECTO, PENDIENTE INDICACIONES", "cajas": "", "tarimas": 16, "responsable": "Alejandro Retama", "arribo_at": "2026-01-07T09:30:00", "asignacion_at": "2026-01-07T09:33:00", "inicio_at": "2026-01-07T09:39:00", "fin_at": "2026-01-07T10:59:00", "liberado_at": "2026-01-07T11:04:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T09:30:00", "updated_at": "2026-01-07T09:30:00"}, {"id": "seed-20260107-10", "folio": "10", "cedis": "CUAUTIPARK II", "contenedor": "CMAU8866125", "nave": "CUAUTIPARK", "anden": "Z09", "status": "FUMIG_PEND", "indicacion": "PLAGA FUMIGACIÓN Y LIMPIEZA", "cajas": 537, "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T09:45:00", "asignacion_at": "2026-01-07T09:48:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T09:45:00", "updated_at": "2026-01-07T09:45:00"}, {"id": "seed-20260107-11", "folio": "11", "cedis": "CUAUTIPARK II", "contenedor": "MSKU0944618", "nave": "CUAUTIPARK", "anden": "Z10", "status": "DESCARGA_CONCL", "indicacion": "UPC INCORRECTO", "cajas": 208, "tarimas": 35, "responsable": "Hugo Silva", "arribo_at": "2026-01-07T10:00:00", "asignacion_at": "2026-01-07T10:03:00", "inicio_at": "2026-01-07T10:09:00", "fin_at": "2026-01-07T11:29:00", "liberado_at": "2026-01-07T11:34:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T10:00:00", "updated_at": "2026-01-07T10:00:00"}, {"id": "seed-20260107-12", "folio": "12", "cedis": "CUAUTIPARK II", "contenedor": "BMOU5805519", "nave": "CUAUTIPARK", "anden": "Z11", "status": "DESCARGA_CONCL", "indicacion": "HONGO SANITIZACIÓN TTSA", "cajas": 2274, "tarimas": 33, "responsable": "Hugo Silva", "arribo_at": "2026-01-07T10:15:00", "asignacion_at": "2026-01-07T10:18:00", "inicio_at": "2026-01-07T10:24:00", "fin_at": "2026-01-07T11:44:00", "liberado_at": "2026-01-07T11:49:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T10:15:00", "updated_at": "2026-01-07T10:15:00"}, {"id": "seed-20260107-13", "folio": "13", "cedis": "CUAUTIPARK II", "contenedor": "MRKU2778833", "nave": "CUAUTIPARK", "anden": "Z06", "status": "DESCARGA_CONCL", "indicacion": "UPC INCORRECTO", "cajas": 208, "tarimas": 35, "responsable": "Oscar Chavarria", "arribo_at": "2026-01-07T10:30:00", "asignacion_at": "2026-01-07T10:33:00", "inicio_at": "2026-01-07T10:39:00", "fin_at": "2026-01-07T11:59:00", "liberado_at": "2026-01-07T12:04:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T10:30:00", "updated_at": "2026-01-07T10:30:00"}, {"id": "seed-20260107-14", "folio": "14", "cedis": "CUAUTIPARK II", "contenedor": "HLBU9802700", "nave": "CUAUTIPARK", "anden": "Z07", "status": "DESCARGA_CONCL", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI", "cajas": 1878, "tarimas": 38, "responsable": "Oscar Chavarria", "arribo_at": "2026-01-07T10:45:00", "asignacion_at": "2026-01-07T10:48:00", "inicio_at": "2026-01-07T10:54:00", "fin_at": "2026-01-07T12:14:00", "liberado_at": "2026-01-07T12:19:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T10:45:00", "updated_at": "2026-01-07T10:45:00"}, {"id": "seed-20260107-15", "folio": "15", "cedis": "CUAUTIPARK II", "contenedor": "MSKU0980929", "nave": "CUAUTIPARK", "anden": "Z08", "status": "DESCARGA_CONCL", "indicacion": "UPC INCORRECTO, PENDIENTE INDICACIONES", "cajas": 209, "tarimas": 23, "responsable": "Alejandro Retama", "arribo_at": "2026-01-07T11:00:00", "asignacion_at": "2026-01-07T11:03:00", "inicio_at": "2026-01-07T11:09:00", "fin_at": "2026-01-07T12:29:00", "liberado_at": "2026-01-07T12:34:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T11:00:00", "updated_at": "2026-01-07T11:00:00"}, {"id": "seed-20260107-16", "folio": "16", "cedis": "CUAUTIPARK II", "contenedor": "UETU5728140", "nave": "CUAUTIPARK", "anden": "Z09", "status": "DESCARGA_PROCESO", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI", "cajas": 3079, "tarimas": "", "responsable": "Alejandro Retama", "arribo_at": "2026-01-07T11:15:00", "asignacion_at": "2026-01-07T11:18:00", "inicio_at": "2026-01-07T11:24:00", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T11:15:00", "updated_at": "2026-01-07T11:15:00"}, {"id": "seed-20260107-17", "folio": "17", "cedis": "CUAUTIPARK II", "contenedor": "ECMU5250442", "nave": "CUAUTIPARK", "anden": "Z10", "status": "DESCARGA_CONCL", "indicacion": "CAMBIO DE CORRUGADO, ANOTAR MEDIDAS EN CIEGO", "cajas": 23, "tarimas": 5, "responsable": "Hugo Silva", "arribo_at": "2026-01-07T11:30:00", "asignacion_at": "2026-01-07T11:33:00", "inicio_at": "2026-01-07T11:39:00", "fin_at": "2026-01-07T12:59:00", "liberado_at": "2026-01-07T13:04:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T11:30:00", "updated_at": "2026-01-07T11:30:00"}, {"id": "seed-20260107-18", "folio": "18", "cedis": "CUAUTIPARK II", "contenedor": "MSBU6813525", "nave": "CUAUTIPARK", "anden": "Z11", "status": "DESCARGA_CONCL", "indicacion": "CAMBIO DE CORRUGADO, ANOTAR MEDIDAS EN CIEGO", "cajas": 38, "tarimas": 7, "responsable": "Hugo Silva", "arribo_at": "2026-01-07T11:45:00", "asignacion_at": "2026-01-07T11:48:00", "inicio_at": "2026-01-07T11:54:00", "fin_at": "2026-01-07T13:14:00", "liberado_at": "2026-01-07T13:19:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T11:45:00", "updated_at": "2026-01-07T11:45:00"}, {"id": "seed-20260107-19", "folio": "19", "cedis": "CUAUTIPARK II", "contenedor": "TRIU8072870", "nave": "CUAUTIPARK", "anden": "Z06", "status": "DESCARGA_PROCESO", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI", "cajas": 1230, "tarimas": "", "responsable": "Oscar Chavarria", "arribo_at": "2026-01-07T12:00:00", "asignacion_at": "2026-01-07T12:03:00", "inicio_at": "2026-01-07T12:09:00", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T12:00:00", "updated_at": "2026-01-07T12:00:00"}, {"id": "seed-20260107-20", "folio": "20", "cedis": "CUAUTIPARK II", "contenedor": "TTNU8469069", "nave": "CUAUTIPARK", "anden": "Z07", "status": "DESCARGA_PROCESO", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI", "cajas": 1230, "tarimas": "", "responsable": "Oscar Chavarria", "arribo_at": "2026-01-07T12:15:00", "asignacion_at": "2026-01-07T12:18:00", "inicio_at": "2026-01-07T12:24:00", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T12:15:00", "updated_at": "2026-01-07T12:15:00"}, {"id": "seed-20260107-21", "folio": "21", "cedis": "CUAUTIPARK II", "contenedor": "GESU9579768", "nave": "CUAUTIPARK", "anden": "Z08", "status": "REPORTADO_PATIO", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI", "cajas": 1220, "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T12:30:00", "asignacion_at": "2026-01-07T12:33:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T12:30:00", "updated_at": "2026-01-07T12:30:00"}, {"id": "seed-20260107-22", "folio": "22", "cedis": "CUAUTIPARK II", "contenedor": "HLBU9908734", "nave": "CUAUTIPARK", "anden": "Z09", "status": "REPORTADO_PATIO", "indicacion": "RESGUARDO, INSPECCIÓN DEIJI", "cajas": 1230, "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T12:45:00", "asignacion_at": "2026-01-07T12:48:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T12:45:00", "updated_at": "2026-01-07T12:45:00"}, {"id": "seed-20260107-23", "folio": "23", "cedis": "TULTIVAL", "contenedor": "CMAU4829463 (TLLU8847560)", "nave": "TULTIVAL", "anden": "TUL-01", "status": "DESCARGA_CONCL", "indicacion": "DESTRUCCIÓN", "cajas": 1, "tarimas": 1, "responsable": "", "arribo_at": "2026-01-07T13:00:00", "asignacion_at": "2026-01-07T13:03:00", "inicio_at": "2026-01-07T13:09:00", "fin_at": "2026-01-07T14:29:00", "liberado_at": "2026-01-07T14:34:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T13:00:00", "updated_at": "2026-01-07T13:00:00"}, {"id": "seed-20260107-24", "folio": "24", "cedis": "CUAUTIPARK II", "contenedor": "MORU1319010", "nave": "CUAUTIPARK", "anden": "Z11", "status": "REPORTADO_PATIO", "indicacion": "", "cajas": "", "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T13:15:00", "asignacion_at": "2026-01-07T13:18:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T13:15:00", "updated_at": "2026-01-07T13:15:00"}, {"id": "seed-20260107-25", "folio": "25", "cedis": "CUAUTIPARK II", "contenedor": "TCLU5319323", "nave": "CUAUTIPARK", "anden": "Z06", "status": "REPORTADO_PATIO", "indicacion": "UPC INCORRECTO", "cajas": "", "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T13:30:00", "asignacion_at": "2026-01-07T13:33:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T13:30:00", "updated_at": "2026-01-07T13:30:00"}, {"id": "seed-20260107-26", "folio": "26", "cedis": "CUAUTIPARK II", "contenedor": "TLLU5948509 (TCLU5319323)", "nave": "CUAUTIPARK", "anden": "Z07", "status": "REPORTADO_PATIO", "indicacion": "UPC INCORRECTO", "cajas": "", "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T13:45:00", "asignacion_at": "2026-01-07T13:48:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T13:45:00", "updated_at": "2026-01-07T13:45:00"}, {"id": "seed-20260107-27", "folio": "27", "cedis": "CUAUTIPARK II", "contenedor": "REC-ROGELIO GARCIA", "nave": "CUAUTIPARK", "anden": "Z08", "status": "DESCARGA_CONCL", "indicacion": "DESTRUCCIÓN", "cajas": "", "tarimas": "PALETIZADO", "responsable": "Alejandro Retama", "arribo_at": "2026-01-07T14:00:00", "asignacion_at": "2026-01-07T14:03:00", "inicio_at": "2026-01-07T14:09:00", "fin_at": "2026-01-07T15:29:00", "liberado_at": "2026-01-07T15:34:00", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T14:00:00", "updated_at": "2026-01-07T14:00:00"}, {"id": "seed-20260107-28", "folio": "28", "cedis": "CUAUTIPARK II", "contenedor": "MRSU5037082", "nave": "CUAUTIPARK", "anden": "Z09", "status": "REPORTADO_PATIO", "indicacion": "MERCANCIA LADEADA", "cajas": 38, "tarimas": "", "responsable": "", "arribo_at": "2026-01-07T14:15:00", "asignacion_at": "2026-01-07T14:18:00", "inicio_at": "", "fin_at": "", "liberado_at": "", "arribo_ymd": "2026-01-07", "created_at": "2026-01-07T14:15:00", "updated_at": "2026-01-07T14:15:00"}];
 
@@ -683,12 +462,6 @@
     const m=String(d.getMonth()+1).padStart(2,'0');
     const day=String(d.getDate()).padStart(2,'0');
     return `${y}-${m}-${day}`;
-  }
-
-  function fmtDateYMD(s){
-    if(!s) return '';
-    // s viene como YYYY-MM-DD
-    return String(s).replaceAll('-', '/');
   }
 
   function fmtTime(iso){
@@ -888,8 +661,7 @@
 
   // ------------------- Work date -------------------
   function getWorkDate(){
-        if(STATE.role==='CLIENTE') return ymd();
-const w = localStorage.getItem(LS_WORK);
+    const w = localStorage.getItem(LS_WORK);
     if(w) return w;
     const t = ymd();
     localStorage.setItem(LS_WORK, t);
@@ -903,8 +675,7 @@ const w = localStorage.getItem(LS_WORK);
 
   // ------------------- Column visibility -------------------
   const COLS = [
-    {key:'no', label:'No'},
-    {key:'fecha', label:'Fecha'},
+    {key:'folio', label:'No'},
     {key:'contenedor', label:'Contenedor'},
     {key:'cuenta', label:'Cuenta'},
     {key:'cedis', label:'Cedis'},
@@ -921,15 +692,7 @@ const w = localStorage.getItem(LS_WORK);
   function loadCols(){
     try{
       const v = JSON.parse(localStorage.getItem(LS_COLS) || 'null');
-      if(Array.isArray(v) && v.length){
-        // Migración: folio -> no, agrega fecha si falta
-        const set = new Set(v.map(x=>x==='folio'?'no':x));
-        if(!set.has('no')) set.add('no');
-        if(!set.has('fecha')) set.add('fecha');
-        const out = COLS.map(c=>c.key).filter(k=>set.has(k));
-        localStorage.setItem(LS_COLS, JSON.stringify(out));
-        return out;
-      }
+      if(Array.isArray(v) && v.length) return v;
     }catch{}
     const def = COLS.map(c=>c.key);
     localStorage.setItem(LS_COLS, JSON.stringify(def));
@@ -969,22 +732,15 @@ const w = localStorage.getItem(LS_WORK);
   }
 
   // ------------------- Sorting -------------------
-  let sortKey = 'no';
+  let sortKey = 'folio';
   let sortDir = 1;
 
   function cmp(a,b){
     const k = sortKey;
-    if(k==='no'){
-      // se calcula después, aquí no se usa
-      return 0;
-    }
-
     const av = a[k] ?? '';
     const bv = b[k] ?? '';
 
-    if(k==='fecha'){
-      return String(a.arribo_ymd||'').localeCompare(String(b.arribo_ymd||''), 'es', {sensitivity:'base'}) * sortDir;
-    }
+    if(k==='folio') return (Number(av)-Number(bv)) * sortDir;
 
     if(k.endsWith('_at')){
       const at = av ? new Date(av).getTime() : 0;
@@ -995,49 +751,11 @@ const w = localStorage.getItem(LS_WORK);
     return String(av).localeCompare(String(bv), 'es', {sensitivity:'base'}) * sortDir;
   }
 
-  function businessSort(rows){
-    // 1) Pendientes activos primero (incluye días previos)
-    // 2) Dentro del grupo, orden por fecha/hora de arribo
-    // 3) Si el usuario selecciona otra columna, se aplica dentro del grupo sin romper el "pendiente primero"
-    rows.sort((a,b)=>{
-      const ta = a.arribo_at ? new Date(a.arribo_at).getTime() : 0;
-      const tb = b.arribo_at ? new Date(b.arribo_at).getTime() : 0;
-      if(ta!==tb) return tb-ta; // más recientes arriba
-      return String(a.contenedor||'').localeCompare(String(b.contenedor||''), 'es', {sensitivity:'base'});
-    });
-      }
-
-      const r = cmp(a,b);
-      if(r!==0) return r;
-      // desempate estable
-      const ta = a.arribo_at ? new Date(a.arribo_at).getTime() : 0;
-      const tb = b.arribo_at ? new Date(b.arribo_at).getTime() : 0;
-      if(ta!==tb) return ta-tb;
-      return String(a.contenedor||'').localeCompare(String(b.contenedor||''), 'es', {sensitivity:'base'});
-    });
-  }
-
   // ------------------- Estado en memoria -------------------
   const STATE = {
-    role: null,
-    scope: null,
-    intent: null,
-
-    // Permisos calculados según el rol y sesión
-    canOperate: false, // puede capturar y cambiar estatus
-    canEdit: false,    // puede editar/eliminar (ADMIN)
-    isClient: false,
-
-
     rows: [],
     lastLoadAt: 0,
   };
-
-// Backward-compat globals (evita ReferenceError)
-window.canOperate = false;
-window.canEdit = false;
-window.canDelete = false;
-
 
   function localDayRangeISO(work){
     const start = new Date(work + 'T00:00:00');
@@ -1096,21 +814,14 @@ window.canDelete = false;
 
   // ------------------- Fetch principal -------------------
   async function fetchRows(work){
-    function qShipments(){
-      let q = supa.from('shipments').select('*').eq('is_deleted', false);
-      if(STATE.scope?.cedis) q = q.eq('cedis', STATE.scope.cedis);
-      if(STATE.scope?.cuenta) q = q.eq('cuenta', STATE.scope.cuenta);
-      return q;
-    }
-
     const s = await ensureSupabase();
     const { startIso, endIso } = rangeISO(work);
     const today = ymd();
 
     // Si consultas HOY: trae todo lo del día + pendientes activos de días previos
     if(work === today){
-      const qDay = qShipments().gte('arribo_at', startIso).lte('arribo_at', endIso);
-      const qPend = qShipments().eq('is_active', true);
+      const qDay = s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
+      const qPend = s.from('shipments').select('*').eq('is_deleted', false).eq('is_active', true);
       const [r1, r2] = await Promise.all([qDay, qPend]);
       if(r1.error) throw r1.error;
       if(r2.error) throw r2.error;
@@ -1121,7 +832,7 @@ window.canDelete = false;
     }
 
     // Si consultas una fecha histórica: solo ese día (sin mezclar pendientes de otros días)
-    const r = await qShipments().gte('arribo_at', startIso).lte('arribo_at', endIso);
+    const r = await s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
     if(r.error) throw r.error;
     return (r.data||[]).map(dbToRow);
   }
@@ -1180,14 +891,13 @@ window.canDelete = false;
     if(st) rows = rows.filter(r=>r.status===st);
     if(q) rows = rows.filter(r=>matches(r, q));
 
-    businessSort(rows);
+    rows.sort(cmp);
 
     renderKPIs(rows);
 
-    el('tbody').innerHTML = rows.map((r,i)=>`
+    el('tbody').innerHTML = rows.map(r=>`
       <tr data-id="${r.id}">
-        <td data-key="no" class="mono">${i+1}</td>
-        <td data-key="fecha" class="mono">${fmtDateYMD(r.arribo_ymd)}</td>
+        <td data-key="folio" class="mono">${esc(r.folio)}</td>
         <td data-key="contenedor" class="mono"><div class="clamp2">${esc(r.contenedor)}</div></td>
         <td data-key="cuenta">${esc(r.cuenta)}</td>
         <td data-key="cedis">${esc(r.cedis)}</td>
@@ -1244,48 +954,27 @@ window.canDelete = false;
     if(authUser){ closeAuthDialog(); }
 
     // habilitar/inhabilitar botones de captura
-    const isAdmin = STATE.role === 'ADMIN';
-    const isUsuario = STATE.role === 'USUARIO';
-    const canOperate = !!authUser && (isAdmin || isUsuario);
-    const canEditBase = !!authUser && isAdmin;
-    const canDelete = !!authUser && isAdmin;
-    el('btnAdd').disabled = !STATE.canOperate;
-    el('btnSeed').disabled = !STATE.canEdit;
-    el('btnCloseDay').disabled = !STATE.canEdit;
+    const canEdit = !!authUser;
+    el('btnAdd').disabled = !canEdit;
+    el('btnSeed').disabled = !canEdit;
+    el('btnCloseDay').disabled = !canEdit;
   }
 
   async function login(){
-    const btn = el('btnLogin');
-    const oldTxt = btn?.textContent || 'Entrar';
     try{
-      if(btn){ btn.disabled = true; btn.textContent = 'Entrando…'; }
       await ensureSupabase();
-      const email = normalizeLoginEmail((el('authEmail').value || '').trim());
+      const email = (el('authEmail').value || '').trim();
       const pass = (el('authPass').value || '').trim();
-      if(!email || !pass) throw new Error('Escribe correo y contraseña');
-
+      if(!email || !pass){ alert('Escribe correo y contraseña'); return; }
       const { error } = await supa.auth.signInWithPassword({ email, password: pass });
       if(error) throw error;
-
       el('authPass').value = '';
-      const info = await resolveRole();
-      const intent = STATE.intent;
-
-      if(intent && intent !== info.role){
-        await supa.auth.signOut();
-        throw new Error('Rol no coincide. Intento: ' + intent + ' / Rol: ' + (info.role||'—'));
-      }
-
-      applyRoleUI(info);
-      try{ syncAdminButtons(); }catch(_e){}
       await reloadData(true);
       await autoCloseIfNeeded();
       closeAuthDialog();
       alert('Sesión iniciada.');
     }catch(e){
       alert('Error al iniciar sesión: ' + (e?.message || e));
-    }finally{
-      if(btn){ btn.disabled = false; btn.textContent = oldTxt; }
     }
   }
 
@@ -1307,17 +996,6 @@ window.canDelete = false;
     const s = await ensureSupabase();
     const work = getWorkDate();
     const { startIso, endIso } = rangeISO(work);
-    // Evitar duplicados (mismo contenedor+cuenta+cedis en el mismo día)
-    const dup = await s.from('shipments').select('id').eq('is_deleted', false)
-      .eq('cedis', payload.cedis)
-      .eq('cuenta', payload.cuenta || '')
-      .eq('contenedor', payload.contenedor)
-      .gte('arribo_at', startIso).lte('arribo_at', endIso)
-      .limit(1);
-    if(dup.error) throw dup.error;
-    if((dup.data||[]).length){ alert('Ya existe este contenedor hoy (duplicado).'); return; }
-
- \ \ const\ \{\ startIso,\ endIso\ \}\ =\ rangeISO\(work\);\
 
     // folio siguiente (por día)
     const maxq = await s.from('shipments').select('folio').gte('arribo_at', startIso).lte('arribo_at', endIso).order('folio', {ascending:false}).limit(1);
@@ -1340,11 +1018,7 @@ window.canDelete = false;
     };
 
     const ins = await s.from('shipments').insert([row]).select('*').single();
-    if(ins.error){
-      // 23505 = unique_violation (si habilitas índice único)
-      if(String(ins.error.code||'')==='23505'){ alert('Duplicado detectado, no se insertó.'); await reloadData(true); return; }
-      throw ins.error;
-    }
+    if(ins.error) throw ins.error;
 
     // evento
     await s.from('shipment_events').insert([{
@@ -1589,118 +1263,45 @@ No se borran: quedan disponibles en Histórico por fecha.
     await reloadData(true);
   }
 
-  
-
-  async function undoOneStepCloud(id){
-    if(!authUser || !STATE.canEdit){ alert('Solo ADMIN puede retroceder.'); return; }
-
-    const row = (STATE.rows||[]).find(r=>r.id===id);
-    if(!row){ alert('No se encontró el registro.'); return; }
-
-    const s = await ensureSupabase();
-    // Trae eventos recientes y busca el último cambio de estatus que lleve al estatus actual
-    const evq = await s.from('shipment_events')
-      .select('event_at,from_status,to_status,note')
-      .eq('shipment_id', id)
-      .order('event_at', {ascending:false})
-      .limit(30);
-    if(evq.error) throw evq.error;
-
-    const cur = row.status;
-    const ev = (evq.data||[]).find(e=>e.to_status && e.from_status && e.to_status===cur);
-    if(!ev){
-      alert('No hay paso anterior registrado para este estatus.');
-      return;
-    }
-
-    const prev = ev.from_status;
-    const ok = confirm(`Regresar un paso:
-
-${row.contenedor}
-
-${statusLabel(cur)}  →  ${statusLabel(prev)}
-
-¿Continuar?`);
-    if(!ok) return;
-
-    // Heurística de timestamps al retroceder
-    const patch = { estatus: prev };
-    if(!CONCLUIDOS.has(prev) && row.is_active===false) patch.is_active = true;
-
-    // Si regresamos a antes de inicio, limpia inicio/fin
-    const preInicio = new Set(['REPORTADO_PATIO','ESPERA_CORTINA','HOLD_NO_DESCARGAR','ESPERA_CONFRONTA','FUMIG_PEND','FUMIG_CUARENTENA','CORTINA_ASIGNADA','ESPERA_DESCARGA']);
-    if(preInicio.has(prev)){
-      patch.inicio_descarga_at = null;
-      patch.fin_descarga_at = null;
-    } else if(prev==='DESCARGA_PROCESO'){
-      patch.fin_descarga_at = null;
-    }
-
-    const up = await s.from('shipments').update(patch).eq('id', id);
-    if(up.error) throw up.error;
-
-    const iev = await s.from('shipment_events').insert([{
-      shipment_id: id,
-      actor: authUser.email || authUser.id,
-      from_status: cur,
-      to_status: prev,
-      note: 'UNDO (retroceso un paso)',
-      patch,
-    }]);
-    if(iev.error) throw iev.error;
-
-    await reloadData(true);
-  }
-function renderAdmin(){
-    const canOperate = !!STATE.canOperate;
-    const canEdit = !!STATE.canEdit;
+  function renderAdmin(){
+    const canEdit = !!authUser;
 
     const work = getWorkDate();
     let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, work));
 
-    // pendientes (activos) primero, luego por arribo
+    // activos primero
     rows.sort((a,b)=>{
-      const ta = a.arribo_at ? new Date(a.arribo_at).getTime() : 0;
-      const tb = b.arribo_at ? new Date(b.arribo_at).getTime() : 0;
-      if(ta!==tb) return tb-ta; // más recientes arriba
-      return String(a.contenedor||'').localeCompare(String(b.contenedor||''), 'es', {sensitivity:'base'});
-    });
+      const aa = CONCLUIDOS.has(a.status) ? 1 : 0;
+      const bb = CONCLUIDOS.has(b.status) ? 1 : 0;
+      if(aa!==bb) return aa-bb;
+      return Number(a.folio)-Number(b.folio);
     });
 
-    el('adminList').innerHTML = rows.map((r,i)=>{
+    el('adminList').innerHTML = rows.map(r=>{
       const opts = nextActions(r.status);
       const optHtml = opts.map(o=>`<option value="${o.to}">${esc(o.label)}</option>`).join('');
       return `
-        <div class="card admin-row" style="opacity:${canOperate?1:0.9}">
-          <div class="admin-row-top" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-
-            <div class="admin-info" style="min-width:420px;flex:1">
-              <div class="mono admin-title">${i+1} · ${esc(r.contenedor)}</div>
-              <div class="muted admin-meta">
-                CUENTA: <b>${esc(r.cuenta||'')}</b> · CEDIS: <b>${esc(r.cedis)}</b> · Andén: <span class="mono">${esc(r.anden)}</span>
-                · Fecha: <span class="mono">${fmtDateYMD(r.arribo_ymd)}</span>
-                · Arribo: <span class="mono">${fmtTime(r.arribo_at)}</span>
-                · Asig.: <span class="mono">${fmtTime(r.asignacion_at)}</span>
-                · Inicio: <span class="mono">${fmtTime(r.inicio_at)}</span>
-                · Fin: <span class="mono">${fmtTime(r.fin_at)}</span>
-              </div>
-              <div class="muted admin-meta">Indicación: ${esc(r.indicacion||'')}</div>
-            </div>
-
-            <div class="admin-status">${statusPill(r.status)}</div>
-
+        <div class="card admin-row" style="opacity:${canEdit?1:0.75}">
+          <div class="admin-row-top">
             <div class="admin-controls">
-              <select class="input" data-next="${r.id}" ${canOperate?'':'disabled'}>
+              <select class="input" data-next="${r.id}" ${canEdit?'':'disabled'}>
                 <option value="">Siguiente estatus…</option>
                 ${optHtml}
               </select>
-              <button class="btn" data-apply="${r.id}" ${canOperate?'':'disabled'}>Aplicar</button>
+              <button class="btn" data-apply="${r.id}" ${canEdit?'':'disabled'}>Aplicar</button>
               <button class="btn secondary" data-detail="${r.id}">Detalle</button>
-              <button class="btn secondary" data-undo="${r.id}" ${canEdit?'':'disabled'} title="Regresar un paso">↩ Atrás</button>
               <button class="btn secondary" data-edit="${r.id}" ${canEdit?'':'disabled'}>Editar</button>
               <button class="btn danger" data-del="${r.id}" ${canEdit?'':'disabled'}>Eliminar</button>
             </div>
 
+            <div class="admin-info">
+              <div class="mono admin-title">${esc(r.folio)} · ${esc(r.contenedor)}</div>
+              <div class="muted admin-meta">CUENTA: <b>${esc(r.cuenta||'')}</b> · CEDIS: <b>${esc(r.cedis)}</b> · Andén: <span class="mono">${esc(r.anden)}</span></div>
+              <div class="muted admin-meta">Arribo: <span class="mono">${fmtTime(r.arribo_at)}</span> · Asig.: <span class="mono">${fmtTime(r.asignacion_at)}</span> · Inicio: <span class="mono">${fmtTime(r.inicio_at)}</span> · Fin: <span class="mono">${fmtTime(r.fin_at)}</span></div>
+              <div class="muted admin-meta">Indicación: ${esc(r.indicacion||'')}</div>
+            </div>
+
+            <div class="admin-status">${statusPill(r.status)}</div>
           </div>
         </div>
       `;
@@ -1712,20 +1313,15 @@ function renderAdmin(){
         const sel = document.querySelector(`select[data-next="${id}"]`);
         const to = sel.value;
         if(!to){ alert('Selecciona un estatus'); return; }
-        try{ await applyTransitionCloud(id, to); }
-        catch(e){ alert('Error al actualizar: ' + (e?.message || e)); }
+        try{
+          await applyTransitionCloud(id, to);
+        }catch(e){
+          alert('Error al actualizar: ' + (e?.message || e));
+        }
       });
     });
 
     document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('click', ()=>openDetail(b.dataset.detail)));
-
-    // Undo (solo ADMIN)
-    document.querySelectorAll('button[data-undo]').forEach(b=>b.addEventListener('click', async ()=>{
-      if(!STATE.canEdit){ return; }
-      const id = b.dataset.undo;
-      try{ await undoOneStepCloud(id); }
-      catch(e){ alert('No se pudo retroceder: ' + (e?.message || e)); }
-    }));
 
     // Editar
     document.querySelectorAll('button[data-edit]').forEach(b=>b.addEventListener('click', ()=>{
@@ -1733,16 +1329,19 @@ function renderAdmin(){
       openEdit(b.dataset.edit);
     }));
 
-    // Eliminar
+    // Eliminar (soft delete)
     document.querySelectorAll('button[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
       if(!authUser){ alert('Inicia sesión para eliminar.'); return; }
       const id = b.dataset.del;
       const row = (STATE.rows||[]).find(r=>r.id===id);
-      const label = row ? `${row.contenedor}` : id;
+      const label = row ? `${row.folio} · ${row.contenedor}` : id;
       const reason = prompt(`Motivo de eliminación (${label}):`, 'Duplicado');
       if(reason===null) return;
-      try{ await softDeleteCloud(id, (reason||'').trim() || 'Sin motivo'); }
-      catch(e){ alert('No se pudo eliminar: ' + (e?.message || e)); }
+      try{
+        await softDeleteCloud(id, (reason||'').trim() || 'Sin motivo');
+      }catch(e){
+        alert('No se pudo eliminar: ' + (e?.message || e));
+      }
     }));
 
     renderAudit();
@@ -1984,152 +1583,6 @@ function renderAdmin(){
   function closeAuthDialog(){
     el('authBackdrop').classList.add('hidden');
   }
-
-  // --- v7.7.0: expose global openAuth(role) for header buttons ---
-  window.openAuth = function(role){
-    try{
-      if(typeof STATE !== 'undefined') STATE.intent = role;
-      if(typeof openAuthDialog === 'function') openAuthDialog();
-      const chip = document.getElementById('chipJS');
-      if(chip) chip.textContent = 'JS: CLICK';
-    }catch(e){
-      console.error(e);
-      alert('Error al abrir login: ' + (e?.message||e));
-    }
-  };
-  window.openCfgDialog = function(){
-    try{
-      if(typeof openCfg === 'function') openCfg();
-      const chip = document.getElementById('chipJS');
-      if(chip) chip.textContent = 'JS: CLICK';
-    }catch(e){
-      console.error(e);
-      alert('Error al abrir Nube: ' + (e?.message||e));
-    }
-  };
-  function setPreauth(on){
-    document.body.classList.toggle('preauth', !!on);
-  }
-
-  async function resolveRole(){
-    if(!supa) throw new Error('No hay conexión a Supabase (configura Nube).');
-    const { data: u } = await supa.auth.getUser();
-    const uid = u?.user?.id;
-    if(!uid) return { role:null };
-
-    // Admin?
-    try{
-      const rA = await supa.from('admins').select('user_id').eq('user_id', uid).maybeSingle();
-      if(!rA.error && rA.data && rA.data.user_id) return { role:'ADMIN' };
-    }catch(_e){}
-
-    // app user
-    const rU = await supa.from('app_users').select('role,cuenta,cedis').eq('user_id', uid).single();
-    if(rU.error) throw rU.error;
-    return { role: rU.data.role, cuenta: rU.data.cuenta || null, cedis: rU.data.cedis || null };
-  }
-
-  function applyRoleUI(info){
-    STATE.role = info?.role || null;
-    STATE.scope = { cuenta: info?.cuenta || null, cedis: info?.cedis || null };
-
-    const isCliente = STATE.role === 'CLIENTE';
-    const isUsuario = STATE.role === 'USUARIO';
-    const isAdmin = STATE.role === 'ADMIN';
-
-// Permisos por rol
-STATE.canOperate = (isUsuario || isAdmin);
-STATE.canEdit = isAdmin;
-// Compatibilidad
-window.canOperate = STATE.canOperate;
-window.canEdit = STATE.canEdit;
-window.canDelete = STATE.canEdit;
-
-// Restricciones de UI por rol
-const lockToday = (isCliente || isUsuario);
-const lockCols = (isCliente || isUsuario);
-
-// Forzar fecha a HOY para Cliente/Usuario (sin histórico)
-if(lockToday){
-  try{
-    el('workDate').value = ymd();
-    el('workDate').setAttribute('disabled','disabled');
-    el('btnToday').style.display = 'none';
-  }catch(_e){}
-}else{
-  try{
-    el('workDate').removeAttribute('disabled');
-    el('btnToday').style.display = '';
-  }catch(_e){}
-}
-
-// Columnas: Cliente/Usuario fijo (sin selector)
-if(lockCols){
-  try{
-    const fixed = ['contenedor','cuenta','cedis','status','anden','arribo','inicio','fin'];
-    localStorage.setItem(LS_COLS, JSON.stringify(fixed));
-    el('toggleCols').style.display = 'none';
-    el('colsCard').classList.add('hidden');
-  }catch(_e){}
-}else{
-  try{ el('toggleCols').style.display = ''; }catch(_e){}
-}
-
-// CEDIS bloqueado para Cliente/Usuario
-try{
-  if(isCliente || isUsuario){
-    if(STATE.scope?.cedis) el('cedis').value = STATE.scope.cedis;
-    el('cedis').setAttribute('disabled','disabled');
-  }else{
-    el('cedis').removeAttribute('disabled');
-  }
-}catch(_e){}
-
-// Usuario/Cliente: solo TABLERO
-try{
-  if(isUsuario || isCliente){
-    el('tabGroup').style.display = 'none';
-    setTab('board');
-  }
-}catch(_e){}
-
-
-    // Show/hide tabGroup
-    el('tabGroup').style.display = (isUsuario || isAdmin) ? '' : 'none';
-
-    // Cliente: solo tablero
-    if(isCliente){
-      setTab('board');
-      el('tabGroup').style.display = 'none';
-      el('chipMode').textContent = 'Modo: Cliente';
-      try{
-        el('workDate').value = ymd();
-        el('workDate').disabled = true;
-        el('btnToday').disabled = true;
-      }catch(_e){}
-      try{
-        el('fCedis').value = (STATE.scope?.cedis || el('fCedis').value);
-        el('fCedis').disabled = true;
-      }catch(_e){}
-    } else if(isUsuario){
-      el('chipMode').textContent = 'Modo: Usuario';
-    } else if(isAdmin){
-      el('chipMode').textContent = 'Modo: Admin';
-    } else {
-      el('chipMode').textContent = 'Modo: —';
-    }
-
-    setPreauth(false);
-  }
-
-  function normalizeLoginEmail(raw){
-    const t = (raw||'').trim();
-    if(!t) return '';
-    if(t.includes('@')) return t;
-    return t + '@valrani.com.mx';
-  }
-
-
 // ------------------- UI wiring -------------------
   function setTab(which){
     const isBoard = which==='board';
@@ -2167,27 +1620,8 @@ try{
   setInterval(tick, 1000); tick();
 
   // Eventos
-  // Accesos (pantalla inicial)
-  el('btnAccessCliente').addEventListener('click', ()=>{
-    STATE.intent = 'CLIENTE';
-    el('authTitle').textContent = 'Acceso CLIENTE';
-    el('authEmail').value = 'cliente';
-    openAuthDialog();
-  });
-  el('btnAccessUsuario').addEventListener('click', ()=>{
-    STATE.intent = 'USUARIO';
-    el('authTitle').textContent = 'Acceso USUARIO';
-    el('authEmail').value = 'cuautipark2@valrani.com.mx';
-    openAuthDialog();
-  });
-  el('btnAccessAdmin').addEventListener('click', ()=>{
-    STATE.intent = 'ADMIN';
-    el('authTitle').textContent = 'Acceso ADMIN';
-    openAuthDialog();
-  });
-
   el('tabBoard').addEventListener('click', ()=>setTab('board'));
-  el('tabAdmin').addEventListener('click', ()=>{ if(STATE.role==='ADMIN') setTab('admin'); });
+  el('tabAdmin').addEventListener('click', ()=>setTab('admin'));
 
   el('q').addEventListener('input', ()=>renderBoard());
   el('cedis').addEventListener('change', ()=>renderBoard());
@@ -2224,9 +1658,6 @@ try{
 
   // Admin add
   el('btnAdd').addEventListener('click', async ()=>{
-    const btn = el('btnAdd');
-    btn.disabled = true;
-    btn.textContent = 'Agregando…';
     const cedis = (el('f_cedis').value || '').trim();
     const cont = (el('f_contenedor').value || '').trim();
     if(!cedis || !cont){ alert('CEDIS y Contenedor/Unidad son obligatorios'); return; }
@@ -2247,17 +1678,12 @@ try{
       setTab('board');
     }catch(e){
       alert('Error al agregar: ' + (e?.message || e));
-    }    btn.disabled = false;
-    btn.textContent = 'Agregar';
-
+    }
   });
 
   // Histórico 2026/01/07 (opcional)
   el('btnSeed').addEventListener('click', async ()=>{
     try{
-      const btn = el('btnLogin');
-      const oldTxt = btn?.textContent || 'Entrar';
-      if(btn){ btn.disabled = true; btn.textContent='Entrando…'; }
       await ensureSupabase();
       await seedExampleCloud();
     }catch(e){
@@ -2268,9 +1694,6 @@ try{
   // Cierre del día (archivar concluidos)
   el('btnCloseDay').addEventListener('click', async ()=>{
     try{
-      const btn = el('btnLogin');
-      const oldTxt = btn?.textContent || 'Entrar';
-      if(btn){ btn.disabled = true; btn.textContent='Entrando…'; }
       await ensureSupabase();
       const day = getWorkDate();
       await closeDayCloud(day, false);
@@ -2303,9 +1726,6 @@ try{
     closeCfg();
     setCloudChip();
     try{
-      const btn = el('btnLogin');
-      const oldTxt = btn?.textContent || 'Entrar';
-      if(btn){ btn.disabled = true; btn.textContent='Entrando…'; }
       await ensureSupabase();
       await reloadData(true);
       alert('Conexión guardada.');
@@ -2344,57 +1764,14 @@ try{
     window.addEventListener('resize', resizeTableWrap);
     document.addEventListener('fullscreenchange', resizeTableWrap);
 
-    // Arranque: no cargar datos hasta iniciar sesión (roles).
-    setPreauth(true);
-    // Intenta restaurar sesión si ya existe y hay configuración nube
-    (async ()=>{
-      try{
-        const cfg = loadCfg();
-        if(cfg && cfg.url && cfg.anon){
-          supa = window.supabase.createClient(cfg.url, cfg.anon);
-          setCloudChip();
-          const { data } = await supa.auth.getSession();
-          if(data?.session){
-            authUser = data.session.user;
-            setAuthUI();
-            const info = await resolveRole();
-            applyRoleUI(info);
-      try{ syncAdminButtons(); }catch(_e){}
-            await reloadData(true);
-          }
-        }
-      }catch(e){
-        console.warn(e);
-      }
-      setInterval(()=>{ if(!document.hidden && authUser) reloadData(false); }, 12000);
-    })();
-})();
+    // intenta conectar; si falta config, abre modal
+    reloadData(true);
+
+    // refresco cada 12s (además de realtime)
+    setInterval(()=>{ if(!document.hidden) reloadData(false); }, 12000);
+  })();
 
 
 </script>
-
-<script>
-(function(){
-  const jsChip = document.getElementById('chipJS');
-  if(jsChip){ jsChip.textContent = 'JS: OK'; jsChip.style.borderColor='rgba(120,255,120,.35)'; jsChip.style.color='rgba(190,255,190,1)'; }
-  // Si no hay configuración de nube, abre el modal automáticamente
-  try{
-    const cfg = (typeof loadCfg==='function') ? (loadCfg()||{}) : {};
-    const need = !cfg || !cfg.url || !cfg.anon;
-    if(need && typeof openCfg==='function'){
-      // espera un tick para que el DOM esté listo
-      setTimeout(()=>{ try{ openCfg(); }catch(e){} }, 50);
-    }
-  }catch(e){}
-  // Captura errores globales y marca el chip
-  function markErr(){
-    const c = document.getElementById('chipJS');
-    if(c){ c.textContent='JS: ERROR'; c.style.borderColor='rgba(255,80,80,.55)'; c.style.color='rgba(255,170,170,1)'; }
-  }
-  window.addEventListener('error', markErr);
-  window.addEventListener('unhandledrejection', markErr);
-})();
-</script>
-
 </body>
 </html>
