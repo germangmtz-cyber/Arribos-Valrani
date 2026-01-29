@@ -140,6 +140,42 @@
   body.preauth #tabGroup{ display:none !important; }
   body:not(.preauth) #accessGroup{ display:none !important; }
 </style>
+
+<script>
+(function(){
+  // v7.6.5 diagnostics: show any click + allow URL auto-open
+  function setChip(msg){
+    const chip = document.getElementById('chipJS');
+    if(chip) chip.textContent = msg;
+  }
+  document.addEventListener('click', function(e){
+    const t = e.target;
+    const id = t && t.id ? ('#'+t.id) : (t && t.tagName ? t.tagName : 'elem');
+    setChip('JS: CLICK ' + id);
+  }, true);
+
+  // Auto-open modals based on URL params (works even if buttons are blocked)
+  function tryOpenFromURL(){
+    try{
+      const q = new URLSearchParams(location.search);
+      const open = (q.get('open')||'').toLowerCase();
+      // defer until DOM loaded
+      const run = () => {
+        if(open === 'cfg' || open === 'nube'){
+          try{ window.openCfgDialog && window.openCfgDialog(); }catch(e){}
+        }
+        if(open === 'cliente' || open === 'usuario' || open === 'admin'){
+          try{ window.openAuth && window.openAuth(open.toUpperCase()); }catch(e){}
+        }
+      };
+      if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+      else run();
+    }catch(e){}
+  }
+  tryOpenFromURL();
+})();
+</script>
+
 </head>
 <body class="preauth">
   <div class="topbar" id="topbar">
@@ -163,9 +199,9 @@
     </div>
 
     <div class="right">
-      <button class="btn secondary" id="btnCloud" onclick="try{openCfgDialog&&openCfgDialog()}catch(e){console.error(e)}">Nube</button>
-      <div class="chip" id="chipCloud" onclick="try{openCfgDialog&&openCfgDialog()}catch(e){console.error(e)}">Nube: —</div>
-      <div class="chip" id="chipVer">v7.6.4</div>
+      <button class="btn secondary" id="btnCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube</button>
+      <div class="chip" id="chipCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube: —</div>
+      <div class="chip" id="chipVer">v7.6.5</div>
       <div class="chip" id="chipJS">JS: …</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
@@ -1774,7 +1810,7 @@ function renderAdmin(){
     el('authBackdrop').classList.add('hidden');
   }
 
-  // --- v7.6.4: expose global openAuth(role) for header buttons ---
+  // --- v7.6.5: expose global openAuth(role) for header buttons ---
   window.openAuth = function(role){
     try{
       if(typeof STATE !== 'undefined') STATE.intent = role;
