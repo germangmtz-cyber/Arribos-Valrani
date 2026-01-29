@@ -143,7 +143,7 @@
 
 <script>
 (function(){
-  // v7.6.7 diagnostics: show any click + allow URL auto-open
+  // v7.6.8 diagnostics: show any click + allow URL auto-open
   function setChip(msg){
     const chip = document.getElementById('chipJS');
     if(chip) chip.textContent = msg;
@@ -178,8 +178,9 @@
 
 
 
+
 <script>
-/* v7.6.7 click-router: forces buttons to work + implements Nube Save/Test/Copy/Clear */
+/* v7.6.8 click-router: fixes IDs (cfgAnon/cfgShare) + makes Guardar/Probar work reliably */
 (function(){
   function $(id){ return document.getElementById(id); }
   function show(id){ const el=$(id); if(el) el.classList.remove('hidden'); }
@@ -207,10 +208,18 @@
     return u.replace(/\/+$/,'');
   }
 
+  function readCfg(){
+    const url = normalizeUrl(($('cfgUrl')?.value) || localStorage.getItem('supabase_url') || '');
+    const key = ((($('cfgAnon')?.value) || localStorage.getItem('supabase_anon') || '') + '').trim();
+    return {url, key};
+  }
+
   function saveCfg(){
-    const url = normalizeUrl($('cfgUrl')?.value || '');
-    const key = ($('cfgKey')?.value || '').trim();
-    if(!url || !key){ toast('Falta Project URL o anon key'); return; }
+    const {url, key} = readCfg();
+    if(!url || !key){
+      toast('Falta Project URL o anon key (pega ambos campos).');
+      return;
+    }
     try{
       localStorage.setItem('supabase_url', url);
       localStorage.setItem('supabase_anon', key);
@@ -223,9 +232,11 @@
   }
 
   async function testCfg(){
-    const url = normalizeUrl($('cfgUrl')?.value || localStorage.getItem('supabase_url') || '');
-    const key = ($('cfgKey')?.value || localStorage.getItem('supabase_anon') || '').trim();
-    if(!url || !key){ toast('Falta Project URL o anon key'); return; }
+    const {url, key} = readCfg();
+    if(!url || !key){
+      toast('Falta Project URL o anon key (pega ambos campos).');
+      return;
+    }
     setJS('JS: TEST');
     try{
       const resp = await fetch(url + '/auth/v1/health', { headers: { 'apikey': key } });
@@ -257,9 +268,11 @@
   }
 
   function copyLink(){
-    const url = normalizeUrl($('cfgUrl')?.value || localStorage.getItem('supabase_url') || '');
-    const key = ($('cfgKey')?.value || localStorage.getItem('supabase_anon') || '').trim();
-    if(!url || !key){ toast('Primero llena y guarda Project URL y anon key'); return; }
+    const {url, key} = readCfg();
+    if(!url || !key){
+      toast('Primero llena y guarda Project URL y anon key');
+      return;
+    }
     const u = new URL(location.href);
     u.searchParams.set('sb_url', url);
     u.searchParams.set('sb_anon', key);
@@ -284,7 +297,7 @@
 
     if(id==='cfgSave'){ e.preventDefault(); e.stopPropagation(); saveCfg(); return; }
     if(id==='cfgTest'){ e.preventDefault(); e.stopPropagation(); testCfg(); return; }
-    if(id==='cfgCopy'){ e.preventDefault(); e.stopPropagation(); copyLink(); return; }
+    if(id==='cfgShare'){ e.preventDefault(); e.stopPropagation(); copyLink(); return; }
     if(id==='cfgClear'){ e.preventDefault(); e.stopPropagation(); clearCfg(); return; }
 
     if(id==='authClose'){ e.preventDefault(); e.stopPropagation(); hide('authBackdrop'); return; }
@@ -300,7 +313,7 @@
       const u = q.get('sb_url');
       const k = q.get('sb_anon');
       if(u && $('cfgUrl')) $('cfgUrl').value = u;
-      if(k && $('cfgKey')) $('cfgKey').value = k;
+      if(k && $('cfgAnon')) $('cfgAnon').value = k;
     }catch(e){}
   }
 
@@ -320,6 +333,7 @@
   });
 })();
 </script>
+
 
 
 </head>
@@ -347,7 +361,7 @@
     <div class="right">
       <button class="btn secondary" id="btnCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube</button>
       <div class="chip" id="chipCloud" onclick="try{window.openCfgDialog&&window.openCfgDialog()}catch(e){console.error(e)}">Nube: —</div>
-      <div class="chip" id="chipVer">v7.6.7</div>
+      <div class="chip" id="chipVer">v7.6.8</div>
       <div class="chip" id="chipJS">JS: …</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
@@ -1956,7 +1970,7 @@ function renderAdmin(){
     el('authBackdrop').classList.add('hidden');
   }
 
-  // --- v7.6.7: expose global openAuth(role) for header buttons ---
+  // --- v7.6.8: expose global openAuth(role) for header buttons ---
   window.openAuth = function(role){
     try{
       if(typeof STATE !== 'undefined') STATE.intent = role;
