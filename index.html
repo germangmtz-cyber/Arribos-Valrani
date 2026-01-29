@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — v7.7.1-fixed</title>
+  <title>Arribos a Cedis</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -194,7 +194,6 @@
             <th data-key="cuenta">Cuenta</th>
             <th data-key="cedis">Cedis</th>
             <th data-key="status">Estatus</th>
-            <th data-key="fecha">Fecha</th>
             <th data-key="indicacion">Indicación</th>
             <th data-key="anden">Andén</th>
             <th data-key="arribo_at">Arribo</th>
@@ -464,18 +463,6 @@
     const day=String(d.getDate()).padStart(2,'0');
     return `${y}-${m}-${day}`;
   }
-  function fmtYMD(ymdStr){
-    if(!ymdStr) return '';
-    // Accept Date, ISO, or y-m-d
-    if(ymdStr instanceof Date) ymdStr = ymd(ymdStr);
-    if(typeof ymdStr === 'string'){
-      // ISO -> take date part
-      if(ymdStr.includes('T')) ymdStr = ymdStr.slice(0,10);
-      return ymdStr.replace(/-/g,'/');
-    }
-    return '';
-  }
-
 
   function fmtTime(iso){
     if(!iso) return '';
@@ -693,7 +680,6 @@
     {key:'cuenta', label:'Cuenta'},
     {key:'cedis', label:'Cedis'},
     {key:'status', label:'Estatus'},
-    {key:'fecha', label:'Fecha'},
     {key:'indicacion', label:'Indicación'},
     {key:'anden', label:'Andén'},
     {key:'arribo_at', label:'Arribo'},
@@ -814,9 +800,6 @@
     if(row.is_deleted) return false;
     const today = ymd();
     if(work === today){
-      // En HOY: muestra lo de hoy + pendientes (activos) de días previos,
-      // pero NO muestra liberados de días anteriores.
-      if(row.arribo_ymd !== work && row.status === 'LIBERADO') return false;
       return row.arribo_ymd === work || !!row.is_active;
     }
     return row.arribo_ymd === work;
@@ -908,40 +891,17 @@
     if(st) rows = rows.filter(r=>r.status===st);
     if(q) rows = rows.filter(r=>matches(r, q));
 
-    
-    // Orden cronológico: más reciente arriba
-    rows.sort((a,b)=>{
-      const aa = (b.arribo_at||'');
-      
-    // Dedup visual (si hay duplicados en BD): cedis+cuenta+contenedor+fecha
-    const sigMap = new Map();
-    for(const r of rows){
-      const sig = `${r.cedis}||${r.cuenta}||${r.contenedor}||${r.arribo_ymd}`;
-      const prev = sigMap.get(sig);
-      if(!prev) { sigMap.set(sig, r); continue; }
-      const pu = prev.updated_at || '';
-      const ru = r.updated_at || '';
-      if(ru > pu) sigMap.set(sig, r);
-    }
-    rows = Array.from(sigMap.values());
-const bb = (a.arribo_at||'');
-      if(aa!==bb) return aa.localeCompare(bb);
-      const au = (b.updated_at||b.created_at||'');
-      const bu = (a.updated_at||a.created_at||'');
-      return au.localeCompare(bu);
-    });
-rows.sort(cmp);
+    rows.sort(cmp);
 
     renderKPIs(rows);
 
-    el('tbody').innerHTML = rows.map((r,i)=>`
+    el('tbody').innerHTML = rows.map(r=>`
       <tr data-id="${r.id}">
-        <td data-key="folio" class="mono">${i+1}</td>
+        <td data-key="folio" class="mono">${esc(r.folio)}</td>
         <td data-key="contenedor" class="mono"><div class="clamp2">${esc(r.contenedor)}</div></td>
         <td data-key="cuenta">${esc(r.cuenta)}</td>
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
-        <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
         <td data-key="indicacion">${esc(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
@@ -1309,29 +1269,13 @@ No se borran: quedan disponibles en Histórico por fecha.
     const work = getWorkDate();
     let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, work));
 
-    // Orden cronológico: más reciente arriba (sin reordenar por estatus)
+    // activos primero
     rows.sort((a,b)=>{
-      const aa = (b.arribo_at||'');
-      const bb = (a.arribo_at||'');
-      if(aa!==bb) return aa.localeCompare(bb);
-      const au = (b.updated_at||b.created_at||'');
-      const bu = (a.updated_at||a.created_at||'');
-      return au.localeCompare(bu);
+      const aa = CONCLUIDOS.has(a.status) ? 1 : 0;
+      const bb = CONCLUIDOS.has(b.status) ? 1 : 0;
+      if(aa!==bb) return aa-bb;
+      return Number(a.folio)-Number(b.folio);
     });
-
-    // Dedup visual (si hay duplicados en BD): cedis+cuenta+contenedor+fecha
-    const sigMap = new Map();
-    for(const r of rows){
-      const sig = `${r.cedis}||${r.cuenta}||${r.contenedor}||${r.arribo_ymd}`;
-      const prev = sigMap.get(sig);
-      if(!prev) { sigMap.set(sig, r); continue; }
-      const pu = prev.updated_at || '';
-      const ru = r.updated_at || '';
-      if(ru > pu) sigMap.set(sig, r);
-    }
-    rows = Array.from(sigMap.values());
-
-});
 
     el('adminList').innerHTML = rows.map(r=>{
       const opts = nextActions(r.status);
