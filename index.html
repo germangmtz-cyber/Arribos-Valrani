@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no</title>
+  <title>Arribos a Cedis — contenedor 3x</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -133,6 +133,16 @@
     /* Auth modal */
     .modal.auth{width:min(680px, 96vw);}
 
+
+/* --- Ajuste solicitado: CONTENEDOR 3x (solo TABLERO) --- */
+#boardTable tbody td:nth-child(2){
+  font-size: 300%;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  line-height: 1.05;
+}
+/* ------------------------------------------------------- */
+
 </style>
 </head>
 <body>
@@ -194,7 +204,6 @@
             <th data-key="cuenta">Cuenta</th>
             <th data-key="cedis">Cedis</th>
             <th data-key="status">Estatus</th>
-            <th data-key="fecha">Fecha</th>
             <th data-key="indicacion">Indicación</th>
             <th data-key="anden">Andén</th>
             <th data-key="arribo_at">Arribo</th>
@@ -464,13 +473,6 @@
     const day=String(d.getDate()).padStart(2,'0');
     return `${y}-${m}-${day}`;
   }
-  function fmtYMD(ymdStr){
-    if(!ymdStr) return '';
-    // acepta 'YYYY-MM-DD' o ISO
-    if(typeof ymdStr === 'string' && ymdStr.includes('T')) ymdStr = ymdStr.slice(0,10);
-    return String(ymdStr).slice(0,10).replace(/-/g,'/');
-  }
-
 
   function fmtTime(iso){
     if(!iso) return '';
@@ -688,7 +690,6 @@
     {key:'cuenta', label:'Cuenta'},
     {key:'cedis', label:'Cedis'},
     {key:'status', label:'Estatus'},
-    {key:'fecha', label:'Fecha'},
     {key:'indicacion', label:'Indicación'},
     {key:'anden', label:'Andén'},
     {key:'arribo_at', label:'Arribo'},
@@ -701,11 +702,7 @@
   function loadCols(){
     try{
       const v = JSON.parse(localStorage.getItem(LS_COLS) || 'null');
-      if(Array.isArray(v) && v.length){
-        // migración: agrega 'fecha' por defecto si no existe
-        if(!v.includes('fecha')) v.push('fecha');
-        return v;
-      }
+      if(Array.isArray(v) && v.length) return v;
     }catch{}
     const def = COLS.map(c=>c.key);
     localStorage.setItem(LS_COLS, JSON.stringify(def));
@@ -813,8 +810,6 @@
     if(row.is_deleted) return false;
     const today = ymd();
     if(work === today){
-      // Regla HOY: ocultar LIBERADO de días previos (mantener pendientes previos)
-      if(row.arribo_ymd !== work && String(row.status||'').toUpperCase()==='LIBERADO') return false;
       return row.arribo_ymd === work || !!row.is_active;
     }
     return row.arribo_ymd === work;
@@ -910,14 +905,13 @@
 
     renderKPIs(rows);
 
-    el('tbody').innerHTML = rows.map((r,i)=>`
+    el('tbody').innerHTML = rows.map(r=>`
       <tr data-id="${r.id}">
-        <td data-key="folio" class="mono">${i+1}</td>
+        <td data-key="folio" class="mono">${esc(r.folio)}</td>
         <td data-key="contenedor" class="mono"><div class="clamp2">${esc(r.contenedor)}</div></td>
         <td data-key="cuenta">${esc(r.cuenta)}</td>
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
-        <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
         <td data-key="indicacion">${esc(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
