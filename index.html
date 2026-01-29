@@ -163,9 +163,9 @@
     </div>
 
     <div class="right">
-      <button class="btn secondary" id="btnCloud" onclick="try{markClick&&markClick(); openCfg&&openCfg()}catch(e){console.error(e)}">Nube</button>
-      <div class="chip" id="chipCloud" onclick="try{markClick&&markClick(); openCfg&&openCfg()}catch(e){console.error(e)}">Nube: —</div>
-      <div class="chip" id="chipVer">v7.6.3</div>
+      <button class="btn secondary" id="btnCloud" onclick="try{openCfgDialog&&openCfgDialog()}catch(e){console.error(e)}">Nube</button>
+      <div class="chip" id="chipCloud" onclick="try{openCfgDialog&&openCfgDialog()}catch(e){console.error(e)}">Nube: —</div>
+      <div class="chip" id="chipVer">v7.6.4</div>
       <div class="chip" id="chipJS">JS: …</div>
       <div class="chip" id="chipMode">Modo: Tablero</div>
       <div class="clock" id="clock">--</div>
@@ -1773,6 +1773,29 @@ function renderAdmin(){
   function closeAuthDialog(){
     el('authBackdrop').classList.add('hidden');
   }
+
+  // --- v7.6.4: expose global openAuth(role) for header buttons ---
+  window.openAuth = function(role){
+    try{
+      if(typeof STATE !== 'undefined') STATE.intent = role;
+      if(typeof openAuthDialog === 'function') openAuthDialog();
+      const chip = document.getElementById('chipJS');
+      if(chip) chip.textContent = 'JS: CLICK';
+    }catch(e){
+      console.error(e);
+      alert('Error al abrir login: ' + (e?.message||e));
+    }
+  };
+  window.openCfgDialog = function(){
+    try{
+      if(typeof openCfg === 'function') openCfg();
+      const chip = document.getElementById('chipJS');
+      if(chip) chip.textContent = 'JS: CLICK';
+    }catch(e){
+      console.error(e);
+      alert('Error al abrir Nube: ' + (e?.message||e));
+    }
+  };
   function setPreauth(on){
     document.body.classList.toggle('preauth', !!on);
   }
