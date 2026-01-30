@@ -133,6 +133,8 @@
     /* Auth modal */
     .modal.auth{width:min(680px, 96vw);}
 
+
+    .btn.tiny{padding:7px 10px;border-radius:10px;font-size:12px;font-weight:800;}
 </style>
 </head>
 <body>
@@ -1279,6 +1281,68 @@ No se borran: quedan disponibles en Histórico por fecha.
     await reloadData(true);
   }
 
+  async function rollbackOneStepCloud(id){
+    if(!authUser){ alert('Necesitas iniciar sesión para editar.'); return; }
+    const row = (STATE.rows || []).find(r=>r.id===id);
+    if(!row){ alert('No se encontró el registro en memoria.'); return; }
+
+    const cur = row.status;
+    const s = await ensureSupabase();
+
+    // buscar el último cambio que llevó al estatus actual
+    const q = await s.from('shipment_events')
+      .select('from_status,to_status,event_at')
+      .eq('shipment_id', id)
+      .order('event_at', { ascending:false })
+      .limit(25);
+    if(q.error) throw q.error;
+
+    const evs = q.data || [];
+    const last = evs.find(e=>e.to_status===cur) || evs[0];
+    const prev = last?.from_status;
+
+    if(!prev || prev===cur){
+      alert('No hay paso anterior registrado.');
+      return;
+    }
+
+    const motivo = prompt('Motivo de regresar un paso (opcional):', 'Corrección de captura');
+    const note = (motivo||'').trim();
+
+    // limpiar timestamps "hacia adelante" cuando aplica
+    const stage = (st)=>{
+      st = String(st||'');
+      if(st==='LIBERADO') return 4;
+      if(st==='DESCARGA_CONCL') return 3;
+      if(st==='DESCARGA_PROCESO') return 2;
+      if(st==='CORTINA_ASIGNADA' || st==='ESPERA_DESCARGA') return 1;
+      return 0;
+    };
+    const pStage = stage(prev);
+
+    const patch = { estatus: prev };
+
+    if(pStage < 3) patch.fin_descarga_at = null;
+    if(pStage < 2) patch.inicio_descarga_at = null;
+    if(pStage < 1) patch.asig_cortina_at = null;
+
+    const u = await s.from('shipments').update(patch).eq('id', id);
+    if(u.error) throw u.error;
+
+    const ins = await s.from('shipment_events').insert([{
+      shipment_id: id,
+      actor: authUser.email || authUser.id,
+      from_status: cur,
+      to_status: prev,
+      note: note || 'Rollback 1 paso',
+      patch,
+    }]);
+    if(ins.error) throw ins.error;
+
+    await reloadData(true);
+  }
+
+
   function renderAdmin(){
     const canEdit = !!authUser;
 
@@ -1305,6 +1369,7 @@ No se borran: quedan disponibles en Histórico por fecha.
                 ${optHtml}
               </select>
               <button class="btn" data-apply="${r.id}" ${canEdit?'':'disabled'}>Aplicar</button>
+              <button class="btn secondary tiny" data-back="${r.id}" ${canEdit?'':'disabled'} style="flex-basis:100%;max-width:180px">Paso anterior</button>
               <button class="btn secondary" data-detail="${r.id}">Detalle</button>
               <button class="btn secondary" data-edit="${r.id}" ${canEdit?'':'disabled'}>Editar</button>
               <button class="btn danger" data-del="${r.id}" ${canEdit?'':'disabled'}>Eliminar</button>
@@ -1327,6 +1392,17 @@ No se borran: quedan disponibles en Histórico por fecha.
       b.addEventListener('click', async ()=>{
         const id = b.dataset.apply;
         const sel = document.querySelector(`select[data-next="${id}"]`);
+
+    document.querySelectorAll('button[data-back]').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        const id = b.dataset.back;
+        try{
+          await rollbackOneStepCloud(id);
+        }catch(e){
+          alert('Error al regresar un paso: ' + (e?.message || e));
+        }
+      });
+    });
         const to = sel.value;
         if(!to){ alert('Selecciona un estatus'); return; }
         try{
