@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no</title>
+  <title>Arribos a Cedis — base+fecha+no — v2.1-tabla-2x</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -135,6 +135,22 @@
 
 
     .btn.tiny{padding:7px 10px;border-radius:10px;font-size:12px;font-weight:800;}
+
+/* --- Ajuste: tabla más compacta + letras 2x con auto-escala por columnas visibles --- */
+:root{ --tblScale: 2; }
+.table thead th, .table tbody td{
+  font-size: calc(12px * var(--tblScale)) !important;
+}
+.table thead th{
+  padding: 4px 6px !important;
+  letter-spacing: 0.06em;
+}
+.table tbody td{
+  padding: 4px 6px !important;
+  line-height: 1.15;
+}
+/* ----------------------------------------------------------------------------------- */
+
 </style>
 </head>
 <body>
@@ -739,7 +755,19 @@
     document.querySelectorAll('#table thead th[data-key]').forEach(th=>{
       const key = th.dataset.key;
       th.classList.toggle('hidden-col', !selected.has(key));
-    });
+    
+    updateTableScale();
+  }
+  function updateTableScale(){
+    const ths = Array.from(document.querySelectorAll('#table thead th[data-key]'));
+    const visible = ths.filter(th=>!th.classList.contains('hidden-col')).length || 1;
+    let scale = 2;
+    if(visible <= 8) scale = 2.2;
+    if(visible <= 6) scale = 2.4;
+    if(visible <= 4) scale = 2.8;
+    document.documentElement.style.setProperty('--tblScale', String(scale));
+  }
+);
     document.querySelectorAll('#tbody td[data-key]').forEach(td=>{
       const key = td.dataset.key;
       td.classList.toggle('hidden-col', !selected.has(key));
