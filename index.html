@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -956,6 +956,8 @@
         <td data-key="responsable">${esc(r.responsable)}</td>
         <td data-key="inicio_at" class="mono">${fmtTime(r.inicio_at)}</td>
         <td data-key="fin_at" class="mono">${fmtTime(r.fin_at)}</td>
+        <td data-key="cajas" class="mono">${esc(r.cajas==null?'':String(r.cajas))}</td>
+        <td data-key="tarimas" class="mono">${esc(r.tarimas==null?'':String(r.tarimas))}</td>
       </tr>
     `).join('');
 
