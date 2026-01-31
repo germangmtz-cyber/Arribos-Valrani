@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -144,6 +144,19 @@
 .table thead th{ padding: 4px 6px; letter-spacing: 0.06em; }
 .table tbody td{ padding: 4px 6px; line-height: 1.15; }
 /* ----------------------------------------------------------------------------------- */
+
+
+/* --- Ajuste: TABLERO sin barras visibles + auto-fit a pantalla --- */
+.tableWrap{
+  overflow:auto;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+}
+.tableWrap::-webkit-scrollbar{
+  width:0; height:0; display:none;
+}
+#table{ width:100%; }
+/* --------------------------------------------------------------- */
 
 </style>
 </head>
@@ -764,15 +777,30 @@
     updateTableScale();
   }
 
+  
   function updateTableScale(){
     const ths = Array.from(document.querySelectorAll('#table thead th[data-key]'));
     const visible = ths.filter(th=>!th.classList.contains('hidden-col')).length || 1;
-    let scale = 2;
-    if(visible <= 8) scale = 2.2;
-    if(visible <= 6) scale = 2.4;
-    if(visible <= 4) scale = 2.8;
+
+    let base = 2.0;
+    if(visible <= 8) base = 2.2;
+    if(visible <= 6) base = 2.4;
+    if(visible <= 4) base = 2.8;
+
+    const wrap = document.querySelector('.tableWrap') || document.getElementById('tableWrap') || document.body;
+    const table = document.getElementById('table');
+    let fitFactor = 1;
+    try{
+      const cw = (wrap.clientWidth || window.innerWidth || 1200);
+      const tw = (table ? table.scrollWidth : cw);
+      fitFactor = tw>0 ? Math.min(1, cw / tw) : 1;
+      fitFactor = Math.max(0.65, fitFactor * 0.98);
+    }catch(e){ fitFactor = 1; }
+
+    const scale = base * fitFactor;
     document.documentElement.style.setProperty('--tblScale', String(scale));
   }
+
 
 
   // ------------------- Sorting -------------------
@@ -966,7 +994,9 @@
 
     document.querySelectorAll('#tbody tr[data-id]').forEach(tr=>{
       tr.addEventListener('click', ()=>openDetail(tr.dataset.id));
-    });
+    
+    try{ updateTableScale(); }catch(e){}
+  });
 
     resizeTableWrap();
   }
@@ -1379,6 +1409,17 @@ No se borran: quedan disponibles en Histórico por fecha.
 
     const work = getWorkDate();
     let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, work));
+
+    // Orden cronológico admin: más reciente arriba
+    rows.sort((a,b)=>{
+      const ba=(b.arribo_at||'');
+      const aa=(a.arribo_at||'');
+      if(ba!==aa) return ba.localeCompare(aa);
+      const bu=(b.updated_at||b.created_at||'');
+      const au=(a.updated_at||a.created_at||'');
+      return bu.localeCompare(au);
+    });
+
 
     // activos primero
     rows.sort((a,b)=>{
