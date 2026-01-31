@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -1410,13 +1410,14 @@ No se borran: quedan disponibles en Histórico por fecha.
     const work = getWorkDate();
     let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, work));
 
-    // Orden cronológico admin: más reciente arriba
+    
+    // Orden cronológico admin: más reciente arriba (fecha+hora)
     rows.sort((a,b)=>{
-      const ba=(b.arribo_at||'');
-      const aa=(a.arribo_at||'');
-      if(ba!==aa) return ba.localeCompare(aa);
-      const bu=(b.updated_at||b.created_at||'');
-      const au=(a.updated_at||a.created_at||'');
+      const ba=(b.arribo_at||''); const aa=(a.arribo_at||'');
+      if(ba && aa && ba!==aa) return ba.localeCompare(aa);
+      const bymd=(b.arribo_ymd||''); const aymd=(a.arribo_ymd||'');
+      if(bymd && aymd && bymd!==aymd) return bymd.localeCompare(aymd);
+      const bu=(b.updated_at||b.created_at||''); const au=(a.updated_at||a.created_at||'');
       return bu.localeCompare(au);
     });
 
