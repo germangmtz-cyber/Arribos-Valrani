@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — detalle-con-acciones</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -1740,6 +1740,52 @@ No se borran: quedan disponibles en Histórico por fecha.
     el('modalBody').innerHTML = fields.map(([k,v])=>`
       <div class="row"><div class="k">${esc(k)}</div><div class="v">${esc(v||'')}</div></div>
     `).join('');
+
+    // Acciones rápidas (desde TABLERO / Detalle) - solo si hay sesión
+    const can = !!authUser;
+    const acts = nextActions(r.status);
+    const opt = acts.map(a=>`<option value="${a.to}">${esc(a.label)}</option>`).join('');
+    el('modalBody').innerHTML += `
+      <div style="height:10px"></div>
+      <div class="hr"></div>
+      <div class="admin-actions" style="gap:10px;flex-wrap:wrap">
+        <select class="input" id="d_next" style="min-width:240px">
+          <option value="">Siguiente estatus…</option>
+          ${opt}
+        </select>
+        <button class="btn" id="d_apply" ${can?'':'disabled'}>Aplicar</button>
+        <button class="btn secondary tiny" id="d_back" ${can?'':'disabled'}>Paso anterior</button>
+        <button class="btn secondary" id="d_edit" ${can?'':'disabled'}>Editar</button>
+        <button class="btn danger" id="d_del" ${can?'':'disabled'}>Eliminar</button>
+      </div>
+      ${can?'':`<div class="muted" style="margin-top:6px;font-size:12px">Inicia sesión en ADMIN para ejecutar cambios.</div>`}
+    `;
+    // Handlers (evita depender de la vista ADMIN)
+    const btnA = document.getElementById('d_apply');
+    if(btnA) btnA.onclick = async ()=>{
+      const to = (document.getElementById('d_next')?.value || '');
+      if(!to){ alert('Selecciona un estatus'); return; }
+      try{ await applyTransitionCloud(id, to); }catch(e){ alert('Error al actualizar: ' + (e?.message||e)); }
+    };
+    const btnB = document.getElementById('d_back');
+    if(btnB) btnB.onclick = async ()=>{
+      try{ await rollbackOneStepCloud(id); }catch(e){ alert('Error al regresar un paso: ' + (e?.message||e)); }
+    };
+    const btnE = document.getElementById('d_edit');
+    if(btnE) btnE.onclick = ()=>{
+      if(!authUser){ alert('Inicia sesión para editar.'); return; }
+      el('modalBackdrop').classList.add('hidden');
+      openEdit(id);
+    };
+    const btnD = document.getElementById('d_del');
+    if(btnD) btnD.onclick = async ()=>{
+      if(!authUser){ alert('Inicia sesión para eliminar.'); return; }
+      const reason = prompt('Motivo de eliminación:', 'Duplicado');
+      if(reason===null) return;
+      try{ await softDeleteCloud(id, (reason||'').trim() || 'Duplicado'); }catch(e){ alert('Error al eliminar: ' + (e?.message||e)); }
+    };
+
+
 
     el('modalBackdrop').classList.remove('hidden');
   }
