@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -1411,18 +1411,27 @@ No se borran: quedan disponibles en Histórico por fecha.
     let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, work));
 
     
-    // Orden cronológico admin: más reciente arriba (fecha+hora)
+    // Orden cronológico admin: más reciente arriba (fecha+hora, robusto)
+    const arriboTs = (r)=>{
+      const y = r.arribo_ymd || '';
+      const a = r.arribo_at || '';
+      try{
+        if(typeof a === 'string' && a){
+          if(a.includes('T')){ const t = Date.parse(a); if(!Number.isNaN(t)) return t; }
+          if(/^\d{2}:\d{2}/.test(a) && y){ const t = Date.parse(y + 'T' + a + ':00'); if(!Number.isNaN(t)) return t; }
+        }
+        if(y){ const t = Date.parse(y + 'T00:00:00'); if(!Number.isNaN(t)) return t; }
+      }catch(e){}
+      return 0;
+    };
     rows.sort((a,b)=>{
-      const ba=(b.arribo_at||''); const aa=(a.arribo_at||'');
-      if(ba && aa && ba!==aa) return ba.localeCompare(aa);
-      const bymd=(b.arribo_ymd||''); const aymd=(a.arribo_ymd||'');
-      if(bymd && aymd && bymd!==aymd) return bymd.localeCompare(aymd);
+      const dt = arriboTs(b) - arriboTs(a);
+      if(dt) return dt;
       const bu=(b.updated_at||b.created_at||''); const au=(a.updated_at||a.created_at||'');
-      return bu.localeCompare(au);
+      if(bu!==au) return bu.localeCompare(au);
+      return (b.contenedor||'').localeCompare(a.contenedor||'');
     });
-
-
-    // activos primero
+// activos primero
     rows.sort((a,b)=>{
       const aa = CONCLUIDOS.has(a.status) ? 1 : 0;
       const bb = CONCLUIDOS.has(b.status) ? 1 : 0;
@@ -1449,7 +1458,7 @@ No se borran: quedan disponibles en Histórico por fecha.
             </div>
 
             <div class="admin-info">
-              <div class="mono admin-title">${esc(r.folio)} · ${esc(r.contenedor)}</div>
+              <div class="mono admin-title">${i+1} · ${esc(r.contenedor)}</div>
               <div class="muted admin-meta">CUENTA: <b>${esc(r.cuenta||'')}</b> · CEDIS: <b>${esc(r.cedis)}</b> · Andén: <span class="mono">${esc(r.anden)}</span></div>
               <div class="muted admin-meta">Arribo: <span class="mono">${fmtTime(r.arribo_at)}</span> · Asig.: <span class="mono">${fmtTime(r.asignacion_at)}</span> · Inicio: <span class="mono">${fmtTime(r.inicio_at)}</span> · Fin: <span class="mono">${fmtTime(r.fin_at)}</span></div>
               <div class="muted admin-meta">Indicación: ${esc(r.indicacion||'')}</div>
