@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones — req123</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones — req123 — backmenu+libdate</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -253,6 +253,7 @@
             <th data-key="cedis">Cedis</th>
             <th data-key="status">Estatus</th>
             <th data-key="fecha">Fecha</th>
+            <th data-key="liberado_fecha">F. liberación</th>
             <th data-key="indicacion">Indicación</th>
             <th data-key="anden">Andén</th>
             <th data-key="arribo_at">Arribo</th>
@@ -749,6 +750,7 @@
     {key:'cedis', label:'Cedis'},
     {key:'status', label:'Estatus'},
     {key:'fecha', label:'Fecha'},
+    {key:'liberado_fecha', label:'F. liberación'},
     {key:'indicacion', label:'Indicación'},
     {key:'anden', label:'Andén'},
     {key:'arribo_at', label:'Arribo'},
@@ -1434,7 +1436,96 @@ No se borran: quedan disponibles en Histórico por fecha.
     await reloadData(true);
   }
 
-  async function rollbackOneStepCloud(id){
+  
+
+  // --------- Extra: fechas de liberación (desde shipment_events) ----------
+  async function fetchLiberadoEventMap(ids){
+    if(!ids || !ids.length) return {};
+    const s = await ensureSupabase();
+    const out = {};
+    const chunk = 200;
+    for(let i=0;i<ids.length;i+=chunk){
+      const part = ids.slice(i,i+chunk);
+      const q = await s.from('shipment_events')
+        .select('shipment_id,event_at,to_status')
+        .in('shipment_id', part)
+        .eq('to_status','LIBERADO')
+        .order('event_at', {ascending:false})
+        .limit(5000);
+      if(q.error) throw q.error;
+      for(const r of (q.data||[])){
+        if(!out[r.shipment_id] && r.event_at){
+          out[r.shipment_id] = String(r.event_at).slice(0,10);
+        }
+      }
+    }
+    return out;
+  }
+
+  // --------- Extra: back options por historial (para Detalle TABLERO) ----------
+  async function fetchBackOptions(id, curStatus){
+    const s = await ensureSupabase();
+    const q = await s.from('shipment_events')
+      .select('from_status,to_status,event_at')
+      .eq('shipment_id', id)
+      .order('event_at', {ascending:false})
+      .limit(50);
+    if(q.error) throw q.error;
+    const evs = q.data || [];
+    const seen = new Set();
+    const opts = [];
+    for(const e of evs){
+      const fs = e.from_status;
+      if(!fs || fs===curStatus) continue;
+      if(seen.has(fs)) continue;
+      seen.add(fs);
+      opts.push({status: fs, at: (e.event_at? String(e.event_at).slice(0,16).replace('T',' '): '')});
+      if(opts.length>=12) break;
+    }
+    return opts;
+  }
+
+  async function rollbackToStatusCloud(id, targetStatus){
+    if(!authUser){ alert('Necesitas iniciar sesión para editar.'); return; }
+    const row = (STATE.rows || []).find(r=>r.id===id);
+    if(!row){ alert('No se encontró el registro.'); return; }
+    const cur = row.status;
+    if(!targetStatus || targetStatus===cur){ alert('Selecciona un estatus válido.'); return; }
+
+    const motivo = prompt('Motivo de regresar a "'+statusLabel(targetStatus)+'" (opcional):', 'Corrección de dedo');
+    if(motivo===null) return;
+
+    const patch = {};
+    const early = ['REPORTADO_PATIO','ESPERA_CORTINA','HOLD_NO_DESCARGAR','ESPERA_CONFRONTA','FUMIG_PEND','FUMIG_CUARENTENA','TRASPALEO_CURSO','TRASPALEO_CONCL'];
+    if(early.includes(targetStatus)){
+      patch.asignacion_at = null;
+      patch.inicio_at = null;
+      patch.fin_at = null;
+      patch.responsable = '';
+    }else if(targetStatus === 'CORTINA_ASIGNADA'){
+      patch.inicio_at = null;
+      patch.fin_at = null;
+    }else if(targetStatus === 'DESCARGA_PROCESO'){
+      patch.fin_at = null;
+    }
+
+    const s = await ensureSupabase();
+    const up = await s.from('shipments').update({ status: targetStatus, ...patch }).eq('id', id);
+    if(up.error) throw up.error;
+
+    const ev = await s.from('shipment_events').insert([{
+      shipment_id: id,
+      actor: authUser.email || authUser.id,
+      from_status: cur,
+      to_status: targetStatus,
+      note: motivo || null,
+      patch,
+    }]);
+    if(ev.error) throw ev.error;
+
+    await reloadData(true);
+  }
+async function rollbackOneStepCloud(id){
     if(!authUser){ alert('Necesitas iniciar sesión para editar.'); return; }
     const row = (STATE.rows || []).find(r=>r.id===id);
     if(!row){ alert('No se encontró el registro en memoria.'); return; }
@@ -1583,7 +1674,9 @@ No se borran: quedan disponibles en Histórico por fecha.
       b.addEventListener('click', async ()=>{
         const id = b.dataset.back;
         try{
-          await rollbackOneStepCloud(id);
+          const target = document.getElementById('d_back_to') ? document.getElementById('d_back_to').value : '';
+          if(!target){ alert('Selecciona a qué estatus regresar'); return; }
+          await rollbackToStatusCloud(id, target);
         }catch(e){
           alert('Error al regresar un paso: ' + (e?.message || e));
         }
@@ -1849,7 +1942,10 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
           ${optHtml}
         </select>
         <button class="btn" id="d_apply" ${dis}>Aplicar</button>
-        <button class="btn secondary tiny" id="d_back" ${dis} style="max-width:180px">Paso anterior</button>
+        <select class="input" id="d_back_to" ${dis} style="min-width:220px;max-width:320px">
+          <option value="">Regresar a…</option>
+        </select>
+        <button class="btn secondary tiny" id="d_back_apply" ${dis} style="max-width:180px">Regresar</button>
         <button class="btn secondary" id="d_edit" ${dis}>Editar</button>
         <button class="btn danger" id="d_del" ${dis}>Eliminar</button>
         ${authUser ? '' : '<div class="muted" style="font-size:12px;opacity:.9">Inicia sesión en ADMIN para ejecutar acciones.</div>'}
@@ -1857,6 +1953,22 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     `;
 
     el('modalBackdrop').dataset.curId = id;
+    // poblar opciones de regreso (historial)
+    if(authUser){
+      const selBack = document.getElementById('d_back_to');
+      if(selBack){
+        selBack.innerHTML = '<option value="">Regresar a…</option>';
+        fetchBackOptions(id, r.status).then(opts=>{
+          opts.forEach(o=>{
+            const op = document.createElement('option');
+            op.value = o.status;
+            op.textContent = (statusLabel(o.status) + (o.at?(' · '+o.at):''));
+            selBack.appendChild(op);
+          });
+        }).catch(e=>console.warn(e));
+      }
+    }
+
 
 
     el('modalBackdrop').classList.remove('hidden');
@@ -2019,7 +2131,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
         }
       }
 
-      if(t && t.id === 'd_back'){
+      if(t && t.id === 'd_back_apply'){
         try{
           await rollbackOneStepCloud(id);
           openDetail(id);
