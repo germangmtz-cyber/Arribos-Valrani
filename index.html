@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones — req123</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -157,6 +157,39 @@
 }
 #table{ width:100%; }
 /* --------------------------------------------------------------- */
+
+
+/* --- REQ#2 TABLERO: auto-ajuste a pantalla (sin scroll de página, sin barras visibles) --- */
+:root{ --tblScale: 2; }
+#boardView{ height: calc(100vh - 90px); overflow: hidden; }
+#boardView .tableWrap{
+  overflow:auto;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+}
+#boardView .tableWrap::-webkit-scrollbar{ width:0; height:0; display:none; }
+
+#boardView #table{ width:100%; table-layout:auto; }
+#boardView #table thead th, #boardView #table tbody td{
+  font-size: calc(12px * var(--tblScale));
+  text-align:center;
+  vertical-align:middle;
+  white-space:nowrap;
+}
+#boardView #table thead th{ padding: 4px 6px; letter-spacing:0.06em; }
+#boardView #table tbody td{ padding: 4px 6px; line-height:1.1; }
+/* -------------------------------------------------------------------- */
+
+/* --- REQ#3 ADMIN: mostrar conceptos completos (sin scroll) --- */
+#adminView #statusHelp{
+  max-height:none !important;
+  overflow:visible !important;
+}
+/* ----------------------------------------------------------- */
+
+/* --- REQ#3 ADMIN: solo captura + conceptos (oculta Unidades/Historial) --- */
+#adminView .unitsCard, #adminView .historyCard{ display:none !important; }
+/* ----------------------------------------------------------------------- */
 
 </style>
 </head>
@@ -318,7 +351,7 @@
       <div class="card compact">
         <div style="font-weight:900;margin-bottom:8px">Unidades (acciones permitidas)</div>
         <div class="muted" style="font-size:12px;margin-bottom:10px">Los botones se ajustan al estatus actual (solo transiciones válidas).</div>
-        <div id="adminList"></div>
+        <div id="adminList" class="unitsCard"></div>
       </div>
 
       <div style="height:12px"></div>
@@ -767,7 +800,9 @@
     document.querySelectorAll('#table thead th[data-key]').forEach(th=>{
       const key = th.dataset.key;
       th.classList.toggle('hidden-col', !selected.has(key));
-    });
+    
+    autoScaleBoard();
+  });
 
     document.querySelectorAll('#tbody td[data-key]').forEach(td=>{
       const key = td.dataset.key;
@@ -952,6 +987,60 @@
     el('kpis').innerHTML = chips.map(([k,v])=>`<span class="chip"><b>${v}</b> <span class="muted">${k}</span></span>`).join('');
   }
 
+  function fitBoardWrap(){
+    try{
+      const wrap = document.querySelector('#boardView .tableWrap');
+      if(!wrap) return;
+      const top = wrap.getBoundingClientRect().top;
+      const avail = Math.max(260, window.innerHeight - top - 12);
+      wrap.style.height = avail + 'px';
+      wrap.style.maxHeight = avail + 'px';
+    }catch(e){}
+  }
+
+  function autoScaleBoard(){
+    try{
+      const table = document.getElementById('table');
+      const wrap  = document.querySelector('#boardView .tableWrap');
+      if(!table || !wrap) return;
+
+      const ths = Array.from(table.querySelectorAll('thead th[data-key]'));
+      const visibleCols = ths.filter(th=>!th.classList.contains('hidden-col')).length || 1;
+
+      // base scale
+      let base = 2.0;
+      if(visibleCols <= 8) base = 2.2;
+      if(visibleCols <= 6) base = 2.4;
+      if(visibleCols <= 4) base = 2.8;
+
+      // apply base for measurement
+      document.documentElement.style.setProperty('--tblScale', String(base));
+
+      // fit width
+      const cw = wrap.clientWidth || window.innerWidth || 1200;
+      const tw = table.scrollWidth || cw;
+      let fitW = tw>0 ? Math.min(1, cw / tw) : 1;
+      fitW = Math.max(0.55, fitW * 0.98);
+
+      // fit height for ~10 rows
+      const availH = wrap.clientHeight || 600;
+      const headH = (table.querySelector('thead')?.getBoundingClientRect().height) || 0;
+      const row = table.querySelector('tbody tr');
+      const rowH = row ? row.getBoundingClientRect().height : 0;
+      const want = 10;
+      const needH = headH + (rowH * want) + 16;
+      let fitH = 1;
+      if(rowH > 0 && needH > availH){
+        fitH = Math.max(0.55, (availH / needH) * 0.98);
+      }
+
+      const scale = base * Math.min(fitW, fitH);
+      document.documentElement.style.setProperty('--tblScale', String(scale));
+    }catch(e){}
+  }
+
+
+
   function renderBoard(){
     const work = getWorkDate();
     const q = (el('q').value || '').trim();
@@ -996,6 +1085,9 @@
       tr.addEventListener('click', ()=>openDetail(tr.dataset.id));
     
     try{ updateTableScale(); }catch(e){}
+  
+    fitBoardWrap();
+    autoScaleBoard();
   });
 
     resizeTableWrap();
