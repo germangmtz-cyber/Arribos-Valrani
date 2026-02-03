@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — detalle-con-acciones</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-fit</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -156,6 +156,21 @@
   width:0; height:0; display:none;
 }
 #table{ width:100%; }
+/* --------------------------------------------------------------- */
+
+
+/* --- TABLERO: auto-ajuste a pantalla (ancho) + 10 renglones visibles mínimo --- */
+#boardView{ height: calc(100vh - 92px); overflow: hidden; } /* evita scroll de página */
+#boardView .tableWrap{ overflow:auto; scrollbar-width:none; -ms-overflow-style:none; }
+#boardView .tableWrap::-webkit-scrollbar{ width:0; height:0; display:none; }
+#boardView #table{ width:100%; table-layout:auto; }
+#boardView #table thead th, #boardView #table tbody td{
+  text-align:center;
+  vertical-align:middle;
+  white-space:nowrap;          /* 1 renglón */
+}
+#boardView #table thead th{ padding: 4px 6px; }
+#boardView #table tbody td{ padding: 4px 6px; line-height:1.1; }
 /* --------------------------------------------------------------- */
 
 </style>
@@ -778,24 +793,49 @@
   }
 
   
+  
   function updateTableScale(){
-    const ths = Array.from(document.querySelectorAll('#table thead th[data-key]'));
-    const visible = ths.filter(th=>!th.classList.contains('hidden-col')).length || 1;
-
-    let base = 2.0;
-    if(visible <= 8) base = 2.2;
-    if(visible <= 6) base = 2.4;
-    if(visible <= 4) base = 2.8;
-
-    const wrap = document.querySelector('.tableWrap') || document.getElementById('tableWrap') || document.body;
-    const table = document.getElementById('table');
-    let fitFactor = 1;
     try{
-      const cw = (wrap.clientWidth || window.innerWidth || 1200);
-      const tw = (table ? table.scrollWidth : cw);
-      fitFactor = tw>0 ? Math.min(1, cw / tw) : 1;
-      fitFactor = Math.max(0.65, fitFactor * 0.98);
-    }catch(e){ fitFactor = 1; }
+      const table = document.getElementById('table');
+      const wrap = document.querySelector('#boardView .tableWrap');
+      if(!table || !wrap) return;
+
+      const ths = Array.from(table.querySelectorAll('thead th[data-key]'));
+      const visibleCols = ths.filter(th=>!th.classList.contains('hidden-col')).length || 1;
+
+      // Base: 2x, sube si hay menos columnas
+      let base = 2.0;
+      if(visibleCols <= 10) base = 2.0;
+      if(visibleCols <= 8)  base = 2.2;
+      if(visibleCols <= 6)  base = 2.4;
+      if(visibleCols <= 4)  base = 2.8;
+
+      // Fit ancho
+      const cw = wrap.clientWidth || window.innerWidth || 1200;
+      // aplicar base temporal para medir
+      document.documentElement.style.setProperty('--tblScale', String(base));
+      // medir después de aplicar
+      const tw = table.scrollWidth || cw;
+      let fitW = tw>0 ? Math.min(1, cw / tw) : 1;
+      fitW = Math.max(0.55, fitW * 0.98);
+
+      // Fit alto para 10 renglones visibles
+      const availH = wrap.clientHeight || 600;
+      const headH = (table.querySelector('thead')?.getBoundingClientRect().height) || 0;
+      const firstRow = table.querySelector('tbody tr');
+      const rowH = firstRow ? firstRow.getBoundingClientRect().height : 0;
+      const want = 10;
+      const needH = headH + (rowH * Math.max(1, Math.min(want, table.querySelectorAll('tbody tr').length || want))) + 14;
+      let fitH = 1;
+      if(needH > 0 && needH > availH){
+        fitH = Math.max(0.55, (availH / needH) * 0.98);
+      }
+
+      const scale = base * Math.min(fitW, fitH);
+      document.documentElement.style.setProperty('--tblScale', String(scale));
+    }catch(e){}
+  }
+catch(e){ fitFactor = 1; }
 
     const scale = base * fitFactor;
     document.documentElement.style.setProperty('--tblScale', String(scale));
@@ -952,7 +992,20 @@
     el('kpis').innerHTML = chips.map(([k,v])=>`<span class="chip"><b>${v}</b> <span class="muted">${k}</span></span>`).join('');
   }
 
-  function renderBoard(){
+  
+  function fitBoardTable(){
+    try{
+      const wrap = document.querySelector('#boardView .tableWrap');
+      if(!wrap) return;
+      const top = wrap.getBoundingClientRect().top;
+      const avail = Math.max(260, window.innerHeight - top - 12);
+      wrap.style.height = avail + 'px';
+      wrap.style.maxHeight = avail + 'px';
+    }catch(e){}
+  }
+
+
+function renderBoard(){
     const work = getWorkDate();
     const q = (el('q').value || '').trim();
     const cedis = el('cedis').value;
@@ -996,6 +1049,9 @@
       tr.addEventListener('click', ()=>openDetail(tr.dataset.id));
     
     try{ updateTableScale(); }catch(e){}
+  
+    fitBoardTable();
+    updateTableScale();
   });
 
     resizeTableWrap();
@@ -1740,52 +1796,6 @@ No se borran: quedan disponibles en Histórico por fecha.
     el('modalBody').innerHTML = fields.map(([k,v])=>`
       <div class="row"><div class="k">${esc(k)}</div><div class="v">${esc(v||'')}</div></div>
     `).join('');
-
-    // Acciones rápidas (desde TABLERO / Detalle) - solo si hay sesión
-    const can = !!authUser;
-    const acts = nextActions(r.status);
-    const opt = acts.map(a=>`<option value="${a.to}">${esc(a.label)}</option>`).join('');
-    el('modalBody').innerHTML += `
-      <div style="height:10px"></div>
-      <div class="hr"></div>
-      <div class="admin-actions" style="gap:10px;flex-wrap:wrap">
-        <select class="input" id="d_next" style="min-width:240px">
-          <option value="">Siguiente estatus…</option>
-          ${opt}
-        </select>
-        <button class="btn" id="d_apply" ${can?'':'disabled'}>Aplicar</button>
-        <button class="btn secondary tiny" id="d_back" ${can?'':'disabled'}>Paso anterior</button>
-        <button class="btn secondary" id="d_edit" ${can?'':'disabled'}>Editar</button>
-        <button class="btn danger" id="d_del" ${can?'':'disabled'}>Eliminar</button>
-      </div>
-      ${can?'':`<div class="muted" style="margin-top:6px;font-size:12px">Inicia sesión en ADMIN para ejecutar cambios.</div>`}
-    `;
-    // Handlers (evita depender de la vista ADMIN)
-    const btnA = document.getElementById('d_apply');
-    if(btnA) btnA.onclick = async ()=>{
-      const to = (document.getElementById('d_next')?.value || '');
-      if(!to){ alert('Selecciona un estatus'); return; }
-      try{ await applyTransitionCloud(id, to); }catch(e){ alert('Error al actualizar: ' + (e?.message||e)); }
-    };
-    const btnB = document.getElementById('d_back');
-    if(btnB) btnB.onclick = async ()=>{
-      try{ await rollbackOneStepCloud(id); }catch(e){ alert('Error al regresar un paso: ' + (e?.message||e)); }
-    };
-    const btnE = document.getElementById('d_edit');
-    if(btnE) btnE.onclick = ()=>{
-      if(!authUser){ alert('Inicia sesión para editar.'); return; }
-      el('modalBackdrop').classList.add('hidden');
-      openEdit(id);
-    };
-    const btnD = document.getElementById('d_del');
-    if(btnD) btnD.onclick = async ()=>{
-      if(!authUser){ alert('Inicia sesión para eliminar.'); return; }
-      const reason = prompt('Motivo de eliminación:', 'Duplicado');
-      if(reason===null) return;
-      try{ await softDeleteCloud(id, (reason||'').trim() || 'Duplicado'); }catch(e){ alert('Error al eliminar: ' + (e?.message||e)); }
-    };
-
-
 
     el('modalBackdrop').classList.remove('hidden');
   }
