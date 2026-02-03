@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-fit-safe</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -156,26 +156,6 @@
   width:0; height:0; display:none;
 }
 #table{ width:100%; }
-/* --------------------------------------------------------------- */
-
-
-/* --- v3.7 TABLERO fit-safe: sin scroll de página, tabla centrada, 1 renglón, auto-fit --- */
-#boardView{ height: calc(100vh - 92px); overflow: hidden; }
-#boardView .tableWrap{
-  overflow:auto;
-  scrollbar-width:none;
-  -ms-overflow-style:none;
-}
-#boardView .tableWrap::-webkit-scrollbar{ width:0; height:0; display:none; }
-#boardView #table{ width:100%; table-layout:auto; }
-#boardView #table thead th,
-#boardView #table tbody td{
-  text-align:center;
-  vertical-align:middle;
-  white-space:nowrap;
-}
-#boardView #table thead th{ padding:4px 6px; }
-#boardView #table tbody td{ padding:4px 6px; line-height:1.1; }
 /* --------------------------------------------------------------- */
 
 </style>
@@ -1459,7 +1439,7 @@ No se borran: quedan disponibles en Histórico por fecha.
       return Number(a.folio)-Number(b.folio);
     });
 
-    el('adminList').innerHTML = rows.map(r=>{
+    el('adminList').innerHTML = rows.map((r,i)=>{
       const opts = nextActions(r.status);
       const optHtml = opts.map(o=>`<option value="${o.to}">${esc(o.label)}</option>`).join('');
       return `
@@ -1490,11 +1470,23 @@ No se borran: quedan disponibles en Histórico por fecha.
       `;
     }).join('');
 
+    
+    // Aplicar siguiente estatus
     document.querySelectorAll('button[data-apply]').forEach(b=>{
       b.addEventListener('click', async ()=>{
         const id = b.dataset.apply;
         const sel = document.querySelector(`select[data-next="${id}"]`);
+        const to = sel ? sel.value : '';
+        if(!to){ alert('Selecciona un estatus'); return; }
+        try{
+          await applyTransitionCloud(id, to);
+        }catch(e){
+          alert('Error al actualizar: ' + (e?.message || e));
+        }
+      });
+    });
 
+    // Paso anterior
     document.querySelectorAll('button[data-back]').forEach(b=>{
       b.addEventListener('click', async ()=>{
         const id = b.dataset.back;
@@ -1505,17 +1497,8 @@ No se borran: quedan disponibles en Histórico por fecha.
         }
       });
     });
-        const to = sel.value;
-        if(!to){ alert('Selecciona un estatus'); return; }
-        try{
-          await applyTransitionCloud(id, to);
-        }catch(e){
-          alert('Error al actualizar: ' + (e?.message || e));
-        }
-      });
-    });
 
-    document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('click', ()=>openDetail(b.dataset.detail)));
+document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('click', ()=>openDetail(b.dataset.detail)));
 
     // Editar
     document.querySelectorAll('button[data-edit]').forEach(b=>b.addEventListener('click', ()=>{
@@ -1761,6 +1744,29 @@ No se borran: quedan disponibles en Histórico por fecha.
       <div class="row"><div class="k">${esc(k)}</div><div class="v">${esc(v||'')}</div></div>
     `).join('');
 
+    // Acciones en TABLERO (requiere sesión)
+    const opts = nextActions(r.status);
+    const optHtml = opts.map(o=>`<option value="${o.to}">${esc(o.label)}</option>`).join('');
+    const dis = authUser ? '' : 'disabled';
+
+    el('modalBody').innerHTML += `
+      <div class="sep" style="margin:10px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
+      <div id="detailActions" class="admin-controls" style="gap:10px;flex-wrap:wrap">
+        <select class="input" id="d_next" ${dis} style="min-width:220px">
+          <option value="">Siguiente estatus…</option>
+          ${optHtml}
+        </select>
+        <button class="btn" id="d_apply" ${dis}>Aplicar</button>
+        <button class="btn secondary tiny" id="d_back" ${dis} style="max-width:180px">Paso anterior</button>
+        <button class="btn secondary" id="d_edit" ${dis}>Editar</button>
+        <button class="btn danger" id="d_del" ${dis}>Eliminar</button>
+        ${authUser ? '' : '<div class="muted" style="font-size:12px;opacity:.9">Inicia sesión en ADMIN para ejecutar acciones.</div>'}
+      </div>
+    `;
+
+    el('modalBackdrop').dataset.curId = id;
+
+
     el('modalBackdrop').classList.remove('hidden');
   }
 
@@ -1904,6 +1910,51 @@ No se borran: quedan disponibles en Histórico por fecha.
   el('modalBackdrop').addEventListener('click', (e)=>{ if(e.target===el('modalBackdrop')) closeDetail(); });
   document.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ closeDetail(); closeCfg(); } });
 
+    // DETAIL_ACTIONS_WIRE: acciones en Detalle (TABLERO)
+    el('modalBody').addEventListener('click', async (ev)=>{
+      const t = ev.target;
+      const id = el('modalBackdrop').dataset.curId;
+      if(!id) return;
+
+      if(t && t.id === 'd_apply'){
+        const to = el('d_next') ? el('d_next').value : '';
+        if(!to){ alert('Selecciona un estatus'); return; }
+        try{
+          await applyTransitionCloud(id, to);
+          openDetail(id);
+        }catch(e){
+          alert('Error al actualizar: ' + (e?.message || e));
+        }
+      }
+
+      if(t && t.id === 'd_back'){
+        try{
+          await rollbackOneStepCloud(id);
+          openDetail(id);
+        }catch(e){
+          alert('Error al regresar un paso: ' + (e?.message || e));
+        }
+      }
+
+      if(t && t.id === 'd_edit'){
+        if(!authUser){ alert('Inicia sesión para editar.'); return; }
+        openEdit(id);
+      }
+
+      if(t && t.id === 'd_del'){
+        if(!authUser){ alert('Inicia sesión para eliminar.'); return; }
+        const ok = confirm('¿Eliminar este registro? (se guarda huella)');
+        if(!ok) return;
+        try{
+          await softDelete(id);
+          closeDetail();
+        }catch(e){
+          alert('Error al eliminar: ' + (e?.message || e));
+        }
+      }
+    });
+
+
   // Config modal
   el('btnCloud').addEventListener('click', openCfg);
   el('chipCloud').addEventListener('click', openCfg);
@@ -1967,102 +2018,5 @@ No se borran: quedan disponibles en Histórico por fecha.
 
 
 </script>
-
-<script>
-/* v3.7 fit-safe: auto-ajusta escala del TABLERO para que quepan columnas visibles y ~10 renglones */
-(function(){
-  function q(sel){ return document.querySelector(sel); }
-  function qa(sel){ return Array.from(document.querySelectorAll(sel)); }
-
-  function setScale(v){
-    document.documentElement.style.setProperty('--tblScale', String(v));
-  }
-
-  function fitOnce(){
-    try{
-      var board = document.getElementById('boardView');
-      if(!board || board.classList.contains('hidden')) return;
-
-      var wrap = q('#boardView .tableWrap');
-      var table = document.getElementById('table');
-      if(!wrap || !table) return;
-
-      // ensure wrap fills remaining viewport height
-      var top = wrap.getBoundingClientRect().top;
-      var availH = Math.max(260, window.innerHeight - top - 12);
-      wrap.style.height = availH + 'px';
-      wrap.style.maxHeight = availH + 'px';
-
-      // Count visible columns
-      var ths = qa('#table thead th[data-key]').filter(th=>!th.classList.contains('hidden-col'));
-      var visible = ths.length || 1;
-
-      // Start from base scale (2x) and adjust by #cols
-      var base = 2.0;
-      if(visible <= 8) base = 2.2;
-      if(visible <= 6) base = 2.4;
-      if(visible <= 4) base = 2.8;
-
-      // apply base first for measurement
-      setScale(base);
-
-      // Fit width
-      var cw = wrap.clientWidth || window.innerWidth || 1200;
-      var tw = table.scrollWidth || cw;
-      var fitW = tw>0 ? Math.min(1, (cw / tw)) : 1;
-      fitW = Math.max(0.55, fitW * 0.98);
-
-      // Fit height for at least 10 visible rows (if there are >=10)
-      var headH = (q('#table thead')?.getBoundingClientRect().height) || 0;
-      var firstRow = q('#table tbody tr');
-      var rowH = firstRow ? firstRow.getBoundingClientRect().height : 0;
-      var want = 10;
-      var rows = qa('#table tbody tr').length || want;
-      var show = Math.min(rows, want);
-      var needH = headH + (rowH * show) + 18;
-      var fitH = 1;
-      if(needH > availH && needH > 0){
-        fitH = Math.max(0.55, (availH / needH) * 0.98);
-      }
-
-      var finalScale = base * Math.min(fitW, fitH);
-      setScale(finalScale);
-    }catch(e){
-      // do nothing; keep stable
-      console && console.debug && console.debug('fitOnce', e);
-    }
-  }
-
-  // Observe table changes (filters, realtime)
-  var obs;
-  function attachObserver(){
-    try{
-      var tbody = q('#table tbody');
-      if(!tbody) return;
-      if(obs) obs.disconnect();
-      obs = new MutationObserver(function(){ fitOnce(); });
-      obs.observe(tbody, { childList:true, subtree:false });
-    }catch(e){}
-  }
-
-  window.addEventListener('resize', function(){ fitOnce(); });
-  document.addEventListener('DOMContentLoaded', function(){
-    attachObserver();
-    // run after first paint
-    setTimeout(fitOnce, 0);
-    setTimeout(fitOnce, 250);
-  });
-
-  // also run when switching tabs (Tablero/Admin)
-  document.addEventListener('click', function(e){
-    var t = e.target;
-    if(!t) return;
-    if(t.id === 'btnBoard' || t.id === 'btnAdmin' || t.closest && (t.closest('#btnBoard') || t.closest('#btnAdmin'))){
-      setTimeout(function(){ attachObserver(); fitOnce(); }, 50);
-    }
-  }, true);
-})();
-</script>
-
 </body>
 </html>
