@@ -23,6 +23,8 @@
       --st-rep:#F4B6E3;          /* reportado */
       --st-esp:#D9E1F2;          /* espera (neutro) */
     }
+html,body{overflow-y:auto;overflow-x:hidden;}
+
     html,body{height:100%;}
     body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
 
@@ -55,7 +57,7 @@
     .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 12px 0;}
     .kpis .chip b{color:var(--fg)}
 
-        .tableWrap{width:100%;border:1px solid var(--line);border-radius:14px;overflow:auto;background:rgba(17,24,38,0.6);}
+        .tableWrap{width:100%;border:1px solid var(--line);border-radius:14px;overflow:visible;background:rgba(17,24,38,0.6);}
     .table{width:100%;border-collapse:separate;border-spacing:0;overflow:visible;border-radius:0;border:0;background:transparent;}
     .table thead th{
       position:sticky;top:0;
@@ -161,7 +163,7 @@
 
 /* --- REQ#2 TABLERO: auto-ajuste a pantalla (sin scroll de página, sin barras visibles) --- */
 :root{ --tblScale: 2; }
-#boardView{ height: calc(100vh - 90px); overflow: hidden; }
+#boardView{min-height:calc(100vh - 90px);height:auto;overflow:visible;}
 #boardView .tableWrap{
   overflow:auto;
   scrollbar-width:none;
@@ -190,6 +192,23 @@
 /* --- REQ#3 ADMIN: solo captura + conceptos (oculta Unidades/Historial) --- */
 #adminView .unitsCard, #adminView .historyCard{ display:none !important; }
 /* ----------------------------------------------------------------------- */
+
+
+/* Multi-select filter (Estatus) */
+.ms{position:relative;display:inline-block;}
+.msBtn{cursor:pointer;white-space:nowrap;}
+.msMenu{position:absolute;top:calc(100% + 8px);left:0;min-width:260px;max-height:320px;overflow:auto;
+  background:#0e1727;border:1px solid rgba(255,255,255,.12);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.45);
+  padding:10px;z-index:50;}
+.msMenu.hidden{display:none;}
+.msHead{display:flex;gap:8px;justify-content:space-between;margin-bottom:8px;}
+.msAction{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--fg);
+  border-radius:10px;padding:6px 8px;font-weight:700;cursor:pointer;}
+.msList{display:flex;flex-direction:column;gap:6px;}
+.msItem{display:flex;gap:10px;align-items:center;padding:6px 8px;border-radius:10px;cursor:pointer;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);}
+.msItem:hover{background:rgba(255,255,255,.06);}
+.msItem input{transform:scale(1.15);}
 
 </style>
 </head>
@@ -225,9 +244,7 @@
           <option value="">CEDIS: Todos</option>
         </select>
 
-        <select id="estatus">
-          <option value="">Estatus: Todos</option>
-        </select>
+        <div class="ms" id="estatusMs"><button id="estatusBtn" class="input msBtn" type="button">Estatus: Todos ▾</button><div id="estatusMenu" class="msMenu hidden" role="menu" aria-label="Filtro Estatus"></div></div>
 
         <input class="input" id="workDate" type="date" style="min-width:160px" />
         <button class="btn secondary" id="btnToday">Hoy</button>
@@ -463,6 +480,8 @@
   let supa = null;
   let authUser = null;
   let realtime = null;
+  // Multi-select filter state (TABLERO)
+  let statusFilter = new Set();
 
   // ------------------- Datos base (catálogo autorizado) -------------------
   const CEDIS_LIST = ['4G','CUAUTIPARK II','NAVE 14','PARK','SMO','TULTIVAL'];
@@ -990,14 +1009,12 @@
   }
 
   function fitBoardWrap(){
-    try{
-      const wrap = document.querySelector('#boardView .tableWrap');
-      if(!wrap) return;
-      const top = wrap.getBoundingClientRect().top;
-      const avail = Math.max(260, window.innerHeight - top - 12);
-      wrap.style.height = avail + 'px';
-      wrap.style.maxHeight = avail + 'px';
-    }catch(e){}
+    // TABLERO: allow full vertical growth; rely on browser scroll (no internal scroll region).
+    const wrap = document.querySelector('#boardView .tableWrap');
+    if(!wrap) return;
+    wrap.style.height = 'auto';
+    wrap.style.maxHeight = 'none';
+    wrap.style.overflow = 'visible';
   }
 
   function autoScaleBoard(){
@@ -1047,13 +1064,13 @@
     const work = getWorkDate();
     const q = (el('q').value || '').trim();
     const cedis = el('cedis').value;
-    const st = el('estatus').value;
+    const stSet = statusFilter;
 
     let rows = (STATE.rows || []).slice();
 
     rows = rows.filter(r=>isVisible(r, work));
     if(cedis) rows = rows.filter(r=>r.cedis===cedis);
-    if(st) rows = rows.filter(r=>r.status===st);
+    if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
     if(q) rows = rows.filter(r=>matches(r, q));
 
     rows.sort(cmp);
@@ -2000,23 +2017,95 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
   }
 
   function renderFilters(){
+    // CEDIS (single select)
     const csel = el('cedis');
-    csel.innerHTML = '<option value="">CEDIS: Todos</option>' + CEDIS_LIST.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    if(csel){
+      csel.innerHTML = '<option value="">CEDIS: Todos</option>' + (CEDIS_LIST||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+      csel.onchange = ()=>renderBoard();
+    }
 
-    const esel = el('estatus');
-    esel.innerHTML = '<option value="">Estatus: Todos</option>' + STATUS.map(s=>`<option value="${s.code}">${esc(s.label)}</option>`).join('');
+    // Estatus (multi-select)
+    initStatusMulti();
 
+    // Admin capture (CEDIS list)
     const fcs = el('f_cedis');
-    fcs.innerHTML = CEDIS_LIST.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    if(fcs) fcs.innerHTML = (CEDIS_LIST||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   }
 
+  function initStatusMulti(){
+    const btn = el('estatusBtn');
+    const menu = el('estatusMenu');
+    if(!btn || !menu) return;
+    if(menu.dataset.ready === '1'){ updateStatusBtnText(); return; }
+    menu.dataset.ready = '1';
+
+    const items = (STATUS||[]).map(s=>s.label).filter(Boolean);
+    menu.innerHTML = `
+      <div class="msHead">
+        <button type="button" class="msAction" data-act="all">Todos</button>
+        <button type="button" class="msAction" data-act="close">Cerrar</button>
+      </div>
+      <div class="msList">
+        ${items.map(lbl => `
+          <label class="msItem">
+            <input type="checkbox" value="${esc(lbl)}" />
+            <span>${esc(lbl)}</span>
+          </label>
+        `).join('')}
+      </div>
+    `;
+
+    // Open/close
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      menu.classList.toggle('hidden');
+    });
+    document.addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
+    menu.addEventListener('click', (e)=>e.stopPropagation());
+
+    // Actions
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
+      statusFilter.clear();
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      updateStatusBtnText();
+      renderBoard();
+    });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
+
+    // Checkbox changes
+    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+      ch.addEventListener('change', ()=>{
+        if(ch.checked) statusFilter.add(ch.value);
+        else statusFilter.delete(ch.value);
+        updateStatusBtnText();
+        renderBoard();
+      });
+    });
+
+    updateStatusBtnText();
+  }
+
+  function updateStatusBtnText(){
+    const btn = el('estatusBtn');
+    if(!btn) return;
+    const n = statusFilter.size;
+    if(n===0) btn.textContent = 'Estatus: Todos ▾';
+    else if(n===1) btn.textContent = 'Estatus: ' + Array.from(statusFilter)[0] + ' ▾';
+    else btn.textContent = 'Estatus: ' + n + ' ▾';
+  }
+
+
   function resizeTableWrap(){
+    // TABLERO should show all rows; do not clamp table height.
     const w = document.getElementById('tableWrap');
     if(!w) return;
-    const r = w.getBoundingClientRect();
-    const gap = 18;
-    const avail = window.innerHeight - r.top - gap;
-    w.style.maxHeight = Math.max(240, avail) + 'px';
+    w.style.maxHeight = 'none';
+    w.style.height = 'auto';
+    w.style.overflow = 'visible';
   }
 
   // Clock
@@ -2029,9 +2118,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
   el('q').addEventListener('input', ()=>renderBoard());
   el('cedis').addEventListener('change', ()=>renderBoard());
-  el('estatus').addEventListener('change', ()=>renderBoard());
-
-  el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value));
+  // Estatus multi-select handled by initStatusMulti()
+el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value));
   el('btnToday').addEventListener('click', ()=>setWorkDate(ymd()));
 
   el('toggleCols').addEventListener('click', ()=>{ el('colsCard').classList.toggle('hidden'); resizeTableWrap(); });
