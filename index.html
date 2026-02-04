@@ -210,6 +210,14 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 .msItem:hover{background:rgba(255,255,255,.06);}
 .msItem input{transform:scale(1.15);}
 
+
+/* --- PANTALLA view styles --- */
+#screenView{ padding-top: 0; }
+#screenView .tableWrap{ overflow:hidden; }
+#tableScreen{ width:100%; table-layout:auto; }
+#tableScreen thead th, #tableScreen tbody td{ text-align:center; white-space:nowrap; }
+/* --------------------------- */
+
 </style>
 </head>
 <body>
@@ -223,6 +231,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
     <div class="tabs">
       <button class="tab active" id="tabBoard">TABLERO</button>
+      <button class="tab" id="tabScreen">PANTALLA</button>
       <button class="tab" id="tabAdmin">ADMIN</button>
     </div>
 
@@ -240,9 +249,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <div class="controls">
         <input class="input" id="q" placeholder="Buscar: contenedor / cedis / andén / responsable" style="flex:1;min-width:240px" />
 
-        <select id="cedis">
-          <option value="">CEDIS: Todos</option>
-        </select>
+        <div class="ms" id="cedisMs"><button id="cedisBtn" class="input msBtn" type="button">CEDIS: Todos ▾</button><div id="cedisMenu" class="msMenu hidden" role="menu" aria-label="Filtro CEDIS"></div></div><!-- keep legacy select hidden for compatibility (not used) --><select id="cedis" class="hidden"><option value=""></option></select>
 
         <div class="ms" id="estatusMs"><button id="estatusBtn" class="input msBtn" type="button">Estatus: Todos ▾</button><div id="estatusMenu" class="msMenu hidden" role="menu" aria-label="Filtro Estatus"></div></div>
 
@@ -286,13 +293,53 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       </table>
       </div>
 
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+        <button class="btn" id="toScreen">PANTALLA</button>
+        <div class="muted" style="font-size:12px">Muestra 10 renglones y rota cada 15s (respeta filtros/columnas).</div>
+      </div>
+
       <div style="height:12px"></div>
       <div class="chip">
         <b>Regla:</b> En <u>Hoy</u> se muestra <u>todo el día</u> + cualquier unidad <u>pendiente</u> de días previos (activo).
         El <u>histórico</u> se consulta seleccionando una fecha.
         Para terminar el día natural, usa <u>Cerrar día</u>: archiva concluidos (no se borran, solo salen del activo).
       </div>
+    
     </section>
+
+    <section id="screenView" class="hidden">
+      <div class="controls" style="justify-content:space-between">
+        <div class="chip"><b>PANTALLA</b> · Rotación 10 renglones / 15s · Respeta filtros y columnas</div>
+        <div class="muted" id="screenInfo" style="font-size:12px"></div>
+      </div>
+      <div class="tableWrap" id="screenWrap" style="overflow:hidden">
+        <table class="table" id="tableScreen">
+          <thead>
+            <tr>
+              <th data-key="folio">No</th>
+              <th data-key="contenedor">Contenedor</th>
+              <th data-key="cuenta">Cuenta</th>
+              <th data-key="cedis">Cedis</th>
+              <th data-key="status">Estatus</th>
+              <th data-key="fecha">Fecha</th>
+              <th data-key="liberado_fecha">F. liberación</th>
+              <th data-key="indicacion">Indicación</th>
+              <th data-key="anden">Andén</th>
+              <th data-key="arribo_at">Arribo</th>
+              <th data-key="asignacion_at">Asig.</th>
+              <th data-key="responsable">Responsable</th>
+              <th data-key="inicio_at">Inicio</th>
+              <th data-key="fin_at">Fin</th>
+              <th data-key="cajas">Cajas</th>
+              <th data-key="tarimas">Tarimas</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyScreen"></tbody>
+        </table>
+      </div>
+      <div style="height:10px"></div>
+      <div class="muted" style="font-size:12px">Para detener la rotación, presiona <b>TABLERO</b>.</div>
+
 
     <section id="adminView" class="hidden">
 
@@ -482,6 +529,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   let realtime = null;
   // Multi-select filter state (TABLERO)
   let statusFilter = new Set();
+  let cedisFilter = new Set();
 
   // ------------------- Datos base (catálogo autorizado) -------------------
   const CEDIS_LIST = ['4G','CUAUTIPARK II','NAVE 14','PARK','SMO','TULTIVAL'];
@@ -1063,13 +1111,13 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   function renderBoard(){
     const work = getWorkDate();
     const q = (el('q').value || '').trim();
-    const cedis = el('cedis').value;
+    const cSet = cedisFilter;
     const stSet = statusFilter;
 
     let rows = (STATE.rows || []).slice();
 
     rows = rows.filter(r=>isVisible(r, work));
-    if(cedis) rows = rows.filter(r=>r.cedis===cedis);
+    if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
     if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
     if(q) rows = rows.filter(r=>matches(r, q));
 
@@ -2005,24 +2053,36 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     el('authBackdrop').classList.add('hidden');
   }
 // ------------------- UI wiring -------------------
+  
   function setTab(which){
     const isBoard = which==='board';
+    const isAdmin = which==='admin';
+    const isScreen = which==='screen';
+
     el('boardView').classList.toggle('hidden', !isBoard);
-    el('adminView').classList.toggle('hidden', isBoard);
+    el('adminView').classList.toggle('hidden', !isAdmin);
+    el('screenView').classList.toggle('hidden', !isScreen);
+
     el('tabBoard').classList.toggle('active', isBoard);
-    el('tabAdmin').classList.toggle('active', !isBoard);
-    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : 'Admin'}`;
+    el('tabAdmin').classList.toggle('active', isAdmin);
+    if(el('tabScreen')) el('tabScreen').classList.toggle('active', isScreen);
+
+    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : 'Pantalla')}`;
+
     if(isBoard) closeAuthDialog();
-    if(!isBoard){ renderAudit(); if(!authUser) openAuthDialog(); }
+
+    if(!isScreen) stopScreen();
+    if(isScreen){ startScreen(); }
+
+    if(isAdmin){ renderAudit(); }
+    if(isBoard){ renderBoard(); }
   }
 
-  function renderFilters(){
-    // CEDIS (single select)
-    const csel = el('cedis');
-    if(csel){
-      csel.innerHTML = '<option value="">CEDIS: Todos</option>' + (CEDIS_LIST||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
-      csel.onchange = ()=>renderBoard();
-    }
+
+  
+function renderFilters(){
+    // CEDIS (multi-select)
+    initCedisMulti();
 
     // Estatus (multi-select)
     initStatusMulti();
@@ -2032,24 +2092,97 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(fcs) fcs.innerHTML = (CEDIS_LIST||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   }
 
-  function initStatusMulti(){
-    const btn = el('estatusBtn');
-    const menu = el('estatusMenu');
+
+    // Estatus (multi-select)
+    initStatusMulti();
+
+    // Admin capture (CEDIS list)
+    const fcs = el('f_cedis');
+    if(fcs) fcs.innerHTML = (CEDIS_LIST||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  }
+
+  
+  
+  function initCedisMulti(){
+    const btn = el('cedisBtn');
+    const menu = el('cedisMenu');
     if(!btn || !menu) return;
-    if(menu.dataset.ready === '1'){ updateStatusBtnText(); return; }
+    if(menu.dataset.ready === '1'){ updateCedisBtnText(); return; }
     menu.dataset.ready = '1';
 
-    const items = (STATUS||[]).map(s=>s.label).filter(Boolean);
+    const items = (CEDIS_LIST||[]).map(c=>String(c)).filter(Boolean);
+
     menu.innerHTML = `
       <div class="msHead">
         <button type="button" class="msAction" data-act="all">Todos</button>
         <button type="button" class="msAction" data-act="close">Cerrar</button>
       </div>
       <div class="msList">
-        ${items.map(lbl => `
+        ${items.map(v => `
           <label class="msItem">
-            <input type="checkbox" value="${esc(lbl)}" />
-            <span>${esc(lbl)}</span>
+            <input type="checkbox" value="${esc(v)}" ${cedisFilter.has(v) ? 'checked' : ''} />
+            <span>${esc(v)}</span>
+          </label>
+        `).join('')}
+      </div>
+    `;
+
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      menu.classList.toggle('hidden');
+    });
+    document.addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
+    menu.addEventListener('click', (e)=>e.stopPropagation());
+
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
+      cedisFilter.clear();
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      updateCedisBtnText();
+      renderAllViews();
+    });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=> menu.classList.add('hidden'));
+
+    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+      ch.addEventListener('change', ()=>{
+        if(ch.checked) cedisFilter.add(ch.value);
+        else cedisFilter.delete(ch.value);
+        updateCedisBtnText();
+        renderAllViews();
+      });
+    });
+
+    updateCedisBtnText();
+  }
+
+  function updateCedisBtnText(){
+    const btn = el('cedisBtn');
+    if(!btn) return;
+    const n = cedisFilter.size;
+    if(n===0) btn.textContent = 'CEDIS: Todos ▾';
+    else btn.textContent = 'CEDIS: ' + n + ' seleccionados ▾';
+  }
+
+function initStatusMulti(){
+    const btn = el('estatusBtn');
+    const menu = el('estatusMenu');
+    if(!btn || !menu) return;
+    if(menu.dataset.ready === '1'){ updateStatusBtnText(); return; }
+    menu.dataset.ready = '1';
+
+    const items = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
+
+    menu.innerHTML = `
+      <div class="msHead">
+        <button type="button" class="msAction" data-act="all">Todos</button>
+        <button type="button" class="msAction" data-act="close">Cerrar</button>
+      </div>
+      <div class="msList">
+        ${items.map(it => `
+          <label class="msItem">
+            <input type="checkbox" value="${esc(it.code)}" ${statusFilter.has(it.code) ? 'checked' : ''} />
+            <span>${esc(it.label)}</span>
           </label>
         `).join('')}
       </div>
@@ -2060,6 +2193,35 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       e.stopPropagation();
       menu.classList.toggle('hidden');
     });
+    document.addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
+    menu.addEventListener('click', (e)=>e.stopPropagation());
+
+    // Actions
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
+      statusFilter.clear();
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      updateStatusBtnText();
+      renderAllViews();
+    });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
+
+    // Checkbox changes
+    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+      ch.addEventListener('change', ()=>{
+        if(ch.checked) statusFilter.add(ch.value);
+        else statusFilter.delete(ch.value);
+        updateStatusBtnText();
+        renderAllViews();
+      });
+    });
+
+    updateStatusBtnText();
+  }
+);
     document.addEventListener('click', ()=>{
       menu.classList.add('hidden');
     });
@@ -2089,14 +2251,15 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     updateStatusBtnText();
   }
 
+  
   function updateStatusBtnText(){
     const btn = el('estatusBtn');
     if(!btn) return;
     const n = statusFilter.size;
     if(n===0) btn.textContent = 'Estatus: Todos ▾';
-    else if(n===1) btn.textContent = 'Estatus: ' + Array.from(statusFilter)[0] + ' ▾';
-    else btn.textContent = 'Estatus: ' + n + ' ▾';
+    else btn.textContent = 'Estatus: ' + n + ' seleccionados ▾';
   }
+
 
 
   function resizeTableWrap(){
@@ -2115,9 +2278,12 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
   // Eventos
   el('tabBoard').addEventListener('click', ()=>setTab('board'));
   el('tabAdmin').addEventListener('click', ()=>setTab('admin'));
+  if(el('tabScreen')) el('tabScreen').addEventListener('click', ()=>setTab('screen'));
+  el('toScreen').addEventListener('click', ()=>setTab('screen'));
 
   el('q').addEventListener('input', ()=>renderBoard());
-  el('cedis').addEventListener('change', ()=>renderBoard());
+  // CEDIS multi-select handled by initCedisMulti()
+
   // Estatus multi-select handled by initStatusMulti()
 el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value));
   el('btnToday').addEventListener('click', ()=>setWorkDate(ymd()));
@@ -2312,3 +2478,102 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
 </script>
 </body>
 </html>
+  // ------------------- PANTALLA (rotación) -------------------
+  let screenTimer = null;
+  let screenOffset = 0;
+
+  function getFilteredRows(){
+    const work = getWorkDate();
+    const q = (el('q')?.value || '').trim();
+    const cSet = cedisFilter;
+    const stSet = statusFilter;
+
+    let rows = (STATE.rows || []).slice();
+    rows = rows.filter(r=>isVisible(r, work));
+    if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
+    if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
+    if(q) rows = rows.filter(r=>matches(r, q));
+    rows.sort(cmp);
+    return rows;
+  }
+
+  function renderAllViews(){
+    // Re-render whichever view is active
+    const isScreen = !el('screenView').classList.contains('hidden');
+    renderBoard();
+    if(isScreen) renderScreen();
+  }
+
+  function renderScreen(){
+    const rows = getFilteredRows();
+    const total = rows.length;
+    const pageSize = 10;
+    if(total===0){
+      el('tbodyScreen').innerHTML = '';
+      el('screenInfo').textContent = 'Sin registros con los filtros actuales';
+      applyColsToScreen();
+      return;
+    }
+
+    // wrap offset
+    if(screenOffset >= total) screenOffset = 0;
+    const end = Math.min(total, screenOffset + pageSize);
+    const slice = rows.slice(screenOffset, end);
+
+    el('screenInfo').textContent = `Mostrando ${screenOffset+1}-${end} de ${total}`;
+
+    el('tbodyScreen').innerHTML = slice.map((r, idx)=>`
+      <tr data-id="${r.id}">
+        <td data-key="folio" class="mono">${screenOffset + idx + 1}</td>
+        <td data-key="contenedor" class="mono"><div class="clamp2">${esc(r.contenedor)}</div></td>
+        <td data-key="cuenta">${esc(r.cuenta)}</td>
+        <td data-key="cedis">${esc(r.cedis)}</td>
+        <td data-key="status">${statusPill(r.status)}</td>
+        <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
+        <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
+        <td data-key="indicacion">${esc(r.indicacion)}</td>
+        <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
+        <td data-key="arribo_at" class="mono">${fmtHM(r.arribo_at)}</td>
+        <td data-key="asignacion_at" class="mono">${fmtHM(r.asignacion_at)}</td>
+        <td data-key="responsable">${esc(r.responsable||'')}</td>
+        <td data-key="inicio_at" class="mono">${fmtHM(r.inicio_at)}</td>
+        <td data-key="fin_at" class="mono">${fmtHM(r.fin_at)}</td>
+        <td data-key="cajas" class="mono">${esc(r.cajas||'')}</td>
+        <td data-key="tarimas" class="mono">${esc(r.tarimas||'')}</td>
+      </tr>
+    `).join('');
+
+    applyColsToScreen();
+  }
+
+  function startScreen(){
+    stopScreen();
+    screenOffset = 0;
+    renderScreen();
+    screenTimer = setInterval(()=>{
+      const total = getFilteredRows().length;
+      if(total<=10){ renderScreen(); return; }
+      screenOffset += 10;
+      if(screenOffset >= total) screenOffset = 0;
+      renderScreen();
+    }, 15000);
+  }
+
+  function stopScreen(){
+    if(screenTimer){ clearInterval(screenTimer); screenTimer=null; }
+  }
+
+  function applyColsToScreen(){
+    const selected = new Set(loadCols());
+    document.querySelectorAll('#tableScreen thead th[data-key]').forEach(th=>{
+      const key = th.dataset.key;
+      th.classList.toggle('hidden-col', !selected.has(key));
+    });
+    document.querySelectorAll('#tbodyScreen td[data-key]').forEach(td=>{
+      const key = td.dataset.key;
+      td.classList.toggle('hidden-col', !selected.has(key));
+    });
+  }
+  // -----------------------------------------------------------
+
+
