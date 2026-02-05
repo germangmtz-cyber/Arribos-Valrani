@@ -237,9 +237,9 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     </div>
 
     <div class="tabs">
-      <button class="tab active" id="tabBoard">TABLERO</button>
-      <button class="tab" id="tabScreen">PANTALLA</button>
-      <button class="tab" id="tabAdmin">ADMIN</button>
+      <button type="button" class="tab active" id="tabBoard">TABLERO</button>
+      <button type="button" class="tab" id="tabScreen">PANTALLA</button>
+      <button type="button" class="tab" id="tabAdmin">ADMIN</button>
     </div>
 
     <div class="right">
@@ -301,7 +301,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       </div>
 
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
-        <button class="btn" id="toScreen">PANTALLA</button>
+        <button type="button" class="btn" id="toScreen">PANTALLA</button>
       </div>
 
       <div style="height:12px"></div>
@@ -355,8 +355,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <div class="muted" style="font-size:12px">Para detener la rotación, presiona <b>TABLERO</b>.</div>
 
 
-
-    </section>
+</section>
 
     <section id="adminView" class="hidden">
 
@@ -1036,21 +1035,32 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     try{
       const work = getWorkDate();
       const now = Date.now();
+
+      const isScreen = !el('screenView').classList.contains('hidden');
+      const isAdmin  = !el('adminView').classList.contains('hidden');
+
       if(!force && (now - STATE.lastLoadAt) < 3000) {
-        renderAllViews();
+        renderBoard();
         renderAdmin();
+        if(isScreen) renderScreen();
+        if(isAdmin) renderAudit();
         return;
       }
+
       STATE.rows = await fetchRows(work);
       STATE.lastLoadAt = now;
-      renderAllViews();
+
+      renderBoard();
       renderAdmin();
-      if(!el('adminView').classList.contains('hidden')) renderAudit();
+      if(isScreen) renderScreen();
+      if(isAdmin) renderAudit();
     }catch(e){
       console.error(e);
       // si no está configurado, solo muestra tablero vacío
-      renderAllViews();
+      renderBoard();
       renderAdmin();
+      const isScreen = !el('screenView').classList.contains('hidden');
+      if(isScreen) renderScreen();
     }
   }
 
@@ -1150,6 +1160,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
+        <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
         <td data-key="indicacion">${esc(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
@@ -2472,25 +2483,6 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     return rows;
   }
 
-
-  // ------------------- Filtrado para PANTALLA (FIDS) -------------------
-  // En PANTALLA NO aplicamos la regla de visibilidad por "Fecha de trabajo" (isVisible),
-  // porque el FIDS normalmente debe poder rotar TODO lo que coincida con CEDIS/Estatus.
-  // Si después quieres que la PANTALLA respete la fecha, se puede agregar un toggle.
-  function getScreenRows(){
-    const q = (el('q')?.value || '').trim();
-    const cSet = cedisFilter;
-    const stSet = statusFilter;
-
-    let rows = (STATE.rows || []).slice();
-    rows = rows.filter(r => !r.is_deleted);
-    if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
-    if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
-    if(q) rows = rows.filter(r=>matches(r, q));
-    rows.sort(cmp);
-    return rows;
-  }
-
   function renderAllViews(){
     // Re-render whichever view is active
     const isScreen = !el('screenView').classList.contains('hidden');
@@ -2499,16 +2491,16 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
   }
 
   function renderScreen(){
-    const rows = getScreenRows();
+    const rows = getFilteredRows();
     const total = rows.length;
     const pageSize = 10;
 
-    const dateStr = ''; // PANTALLA rota por filtro (CEDIS/Estatus).
+    const dateStr = fmtYMD(getWorkDate());
     const cedisTxt = (cedisFilter.size===0) ? 'CEDIS: Todos' : `CEDIS: ${cedisFilter.size} seleccionados`;
     const estTxt = (statusFilter.size===0) ? 'Estatus: Todos' : `Estatus: ${statusFilter.size} seleccionados`;
     const smc = el('screenMetaCedis'); if(smc) smc.textContent = cedisTxt;
     const sme = el('screenMetaEstatus'); if(sme) sme.textContent = estTxt;
-    const smf = el('screenMetaFecha'); if(smf) smf.textContent = 'Fecha: Todas';
+    const smf = el('screenMetaFecha'); if(smf) smf.textContent = dateStr ? `Fecha: ${dateStr}` : '';
 
     if(total===0){
       el('tbodyScreen').innerHTML = '';
@@ -2535,11 +2527,11 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
         <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
         <td data-key="indicacion">${esc(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
-        <td data-key="arribo_at" class="mono">${fmtHM(r.arribo_at)}</td>
-        <td data-key="asignacion_at" class="mono">${fmtHM(r.asignacion_at)}</td>
+        <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
+        <td data-key="asignacion_at" class="mono">${fmtTime(r.asignacion_at)}</td>
         <td data-key="responsable">${esc(r.responsable||'')}</td>
-        <td data-key="inicio_at" class="mono">${fmtHM(r.inicio_at)}</td>
-        <td data-key="fin_at" class="mono">${fmtHM(r.fin_at)}</td>
+        <td data-key="inicio_at" class="mono">${fmtTime(r.inicio_at)}</td>
+        <td data-key="fin_at" class="mono">${fmtTime(r.fin_at)}</td>
         <td data-key="cajas" class="mono">${esc(r.cajas||'')}</td>
         <td data-key="tarimas" class="mono">${esc(r.tarimas||'')}</td>
       </tr>
@@ -2553,7 +2545,7 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     screenOffset = 0;
     renderScreen();
     screenTimer = setInterval(()=>{
-      const total = getScreenRows().length;
+      const total = getFilteredRows().length;
       if(total<=10){ renderScreen(); return; }
       screenOffset += 10;
       if(screenOffset >= total) screenOffset = 0;
