@@ -75,11 +75,9 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .table th[data-key="cedis"], .table td[data-key="cedis"]{white-space:nowrap;width:1%;}
     .table th[data-key="contenedor"], .table td[data-key="contenedor"]{width:25ch;max-width:25ch;}
     .table td[data-key="contenedor"]{white-space:normal;}
-    .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;white-space:normal;}
+    .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;}
 
-    
-    .cell-2l{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;white-space:normal;}
-.mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;}
+    .mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;}
 
     .status-block{display:inline-block;padding:7px 10px;border-radius:8px;font-weight:1000;text-transform:uppercase;color:#111;}
     .st-reportado{background:var(--st-rep);} 
@@ -228,38 +226,56 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .screenMeta{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:center}
 
 
-/* --- TABLERO: scroll horizontal visible + INDICACIÓN/RESPONSABLE a 2 renglones --- */
+/* --- FIX 2026-02-05: TABLERO wrap 2 líneas + scroll horizontal visible --- */
 #boardView .tableWrap{
   overflow-x:auto !important;
   overflow-y:visible !important;
   scrollbar-width:auto !important;
   -ms-overflow-style:auto !important;
 }
-#boardView .tableWrap::-webkit-scrollbar{ height:12px !important; }
-#boardView .tableWrap::-webkit-scrollbar-thumb{ background: rgba(255,255,255,0.18); border-radius:10px; }
-#boardView .tableWrap::-webkit-scrollbar-track{ background: rgba(255,255,255,0.06); border-radius:10px; }
-
-#boardView #table{
-  width:max-content;
-  min-width:100%;
-  table-layout:auto;
+#boardView .tableWrap::-webkit-scrollbar{
+  height:12px !important;
+  width:12px !important;
+  display:block !important;
+}
+#boardView .tableWrap::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.22);
+  border-radius:999px;
+}
+#boardView .tableWrap::-webkit-scrollbar-track{
+  background: rgba(255,255,255,0.06);
+  border-radius:999px;
 }
 
-#boardView #table th[data-key="indicacion"],
+#boardView #table{
+  width:max-content !important;
+  min-width:100% !important;
+  table-layout:fixed !important;
+}
+
+/* Permite que INDICACIÓN y RESPONSABLE envuelvan y se “clampen” a 2 líneas */
 #boardView #table td[data-key="indicacion"],
-#boardView #table th[data-key="responsable"],
 #boardView #table td[data-key="responsable"]{
   white-space:normal !important;
   text-align:left !important;
-  vertical-align:top !important;
+}
+#boardView #table td[data-key="indicacion"] .clamp2,
+#boardView #table td[data-key="responsable"] .clamp2{
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  word-break:break-word;
 }
 
-#boardView #table th[data-key="indicacion"],
-#boardView #table td[data-key="indicacion"]{ max-width:44ch; }
-
-#boardView #table th[data-key="responsable"],
-#boardView #table td[data-key="responsable"]{ max-width:18ch; }
-/* --------------------------------------------------------------------------- */
+/* Anchos para evitar que el encabezado “F. liberación” desplace columnas */
+#boardView #table th[data-key="fecha"], #boardView #table td[data-key="fecha"]{ width:11ch; }
+#boardView #table th[data-key="liberado_fecha"], #boardView #table td[data-key="liberado_fecha"]{ width:12ch; }
+#boardView #table th[data-key="indicacion"], #boardView #table td[data-key="indicacion"]{ width:30ch; }
+#boardView #table th[data-key="responsable"], #boardView #table td[data-key="responsable"]{ width:18ch; }
+#boardView #table th[data-key="status"], #boardView #table td[data-key="status"]{ width:22ch; }
+#boardView #table th[data-key="contenedor"], #boardView #table td[data-key="contenedor"]{ width:20ch; max-width:20ch; }
+/* ------------------------------------------------------------------------ */
 
 </style>
 </head>
@@ -390,6 +406,8 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <div style="height:10px"></div>
       <div class="muted" style="font-size:12px">Para detener la rotación, presiona <b>TABLERO</b>.</div>
 
+
+    </section>
 
     <section id="adminView" class="hidden">
 
@@ -983,6 +1001,9 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     lastLoadAt: 0,
   };
 
+  // Cache de fechas por evento (para no consultar shipment_events en cada refresco)
+  const EVENT_YMD_CACHE = { LIBERADO: {}, RECHAZADO: {} };
+
   function localDayRangeISO(work){
     const start = new Date(work + 'T00:00:00');
     const end = new Date(work + 'T23:59:59.999');
@@ -1025,11 +1046,25 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   function isVisible(row, work){
     if(row.is_deleted) return false;
     const today = ymd();
+    const st = String(row.status||'').toUpperCase();
+
     if(work === today){
-      // Regla HOY: ocultar LIBERADO de días previos (mantener pendientes previos)
-      if(row.arribo_ymd !== work && String(row.status||'').toUpperCase()==='LIBERADO') return false;
+      // HOY: muestra todo lo de HOY + pendientes activos de días previos.
+      // Reglas especiales:
+      // - RECHAZADO: solo visible el día del rechazo.
+      // - LIBERADO: si llegó en día previo, solo visible el día que se liberó (y desaparece al día siguiente).
+      if(st === 'RECHAZADO'){
+        if(row.arribo_ymd === work) return true;
+        return (row.rechazado_ymd === work);
+      }
+      if(st === 'LIBERADO'){
+        if(row.arribo_ymd === work) return true;
+        return (row.liberado_ymd === work);
+      }
       return row.arribo_ymd === work || !!row.is_active;
     }
+
+    // Histórico por fecha (se consulta por fecha de arribo)
     return row.arribo_ymd === work;
   }
 
@@ -1075,6 +1110,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         return;
       }
       STATE.rows = await fetchRows(work);
+      await enrichEventDates(STATE.rows);
       STATE.lastLoadAt = now;
       renderBoard();
       renderAdmin();
@@ -1107,13 +1143,13 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   }
 
   function fitBoardWrap(){
-    // TABLERO: allow full vertical growth; rely on browser scroll (no internal scroll region).
+    // TABLERO: crecimiento vertical libre, pero con scroll horizontal visible.
     const wrap = document.querySelector('#boardView .tableWrap');
     if(!wrap) return;
     wrap.style.height = 'auto';
     wrap.style.maxHeight = 'none';
-    wrap.style.overflowY = 'visible';
     wrap.style.overflowX = 'auto';
+    wrap.style.overflowY = 'visible';
   }
 
   function autoScaleBoard(){
@@ -1133,12 +1169,8 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
       // apply base for measurement
       document.documentElement.style.setProperty('--tblScale', String(base));
-
-      // fit width
-      const cw = wrap.clientWidth || window.innerWidth || 1200;
-      const tw = table.scrollWidth || cw;
-      let fitW = tw>0 ? Math.min(1, cw / tw) : 1;
-      fitW = Math.max(0.55, fitW * 0.98);
+      // Nota: Para permitir scroll horizontal, NO reducimos escala para "fit width".
+      let fitW = 1;
 
       // fit height for ~10 rows
       const availH = wrap.clientHeight || 600;
@@ -1184,11 +1216,12 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
-        <td data-key="indicacion"><div class="cell-2l">${esc(r.indicacion)}</div></td>
+        <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
+        <td data-key="indicacion"><div class="clamp2">${esc(r.indicacion)}</div></td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
         <td data-key="asignacion_at" class="mono">${fmtTime(r.asignacion_at)}</td>
-        <td data-key="responsable"><div class="cell-2l">${esc(r.responsable)}</div></td>
+        <td data-key="responsable"><div class="clamp2">${esc(r.responsable||'')}</div></td>
         <td data-key="inicio_at" class="mono">${fmtTime(r.inicio_at)}</td>
         <td data-key="fin_at" class="mono">${fmtTime(r.fin_at)}</td>
         <td data-key="cajas" class="mono">${esc(r.cajas==null?'':String(r.cajas))}</td>
@@ -1201,13 +1234,11 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
     document.querySelectorAll('#tbody tr[data-id]').forEach(tr=>{
       tr.addEventListener('click', ()=>openDetail(tr.dataset.id));
-    
+    });
+
     try{ updateTableScale(); }catch(e){}
-  
     fitBoardWrap();
     autoScaleBoard();
-  });
-
     resizeTableWrap();
   }
 
@@ -1555,19 +1586,18 @@ No se borran: quedan disponibles en Histórico por fecha.
   
 
   // --------- Extra: fechas de liberación (desde shipment_events) ----------
-  async function fetchLiberadoEventMap(ids){
+  async function fetchStatusEventMap(ids, toStatus){
     if(!ids || !ids.length) return {};
     const s = await ensureSupabase();
     const out = {};
     const chunk = 200;
     for(let i=0;i<ids.length;i+=chunk){
-      const part = ids.slice(i,i+chunk);
+      const part = ids.slice(i, i+chunk);
       const q = await s.from('shipment_events')
         .select('shipment_id,event_at,to_status')
         .in('shipment_id', part)
-        .eq('to_status','LIBERADO')
-        .order('event_at', {ascending:false})
-        .limit(5000);
+        .eq('to_status', toStatus)
+        .order('event_at', {ascending:false});
       if(q.error) throw q.error;
       for(const r of (q.data||[])){
         if(!out[r.shipment_id] && r.event_at){
@@ -1576,6 +1606,62 @@ No se borran: quedan disponibles en Histórico por fecha.
       }
     }
     return out;
+  }
+
+  async function fetchLiberadoEventMap(ids){
+    return fetchStatusEventMap(ids, 'LIBERADO');
+  }
+
+  async function fetchRechazadoEventMap(ids){
+    return fetchStatusEventMap(ids, 'RECHAZADO');
+  }
+
+  // Enriquecer filas con fechas de evento (liberación / rechazo) para:
+  //  - Columna "F. liberación" (yyyy/mm/dd)
+  //  - Reglas de visibilidad HOY para LIBERADO/RECHAZADO
+  async function enrichEventDates(rows){
+    if(!rows || !rows.length) return;
+
+    // defaults
+    for(const r of rows){
+      r.liberado_ymd = r.liberado_ymd || '';
+      r.rechazado_ymd = r.rechazado_ymd || '';
+    }
+
+    const libIds = rows
+      .filter(r=>String(r.status||'').toUpperCase()==='LIBERADO')
+      .map(r=>r.id)
+      .filter(id=>id && !EVENT_YMD_CACHE.LIBERADO[id]);
+
+    const rechIds = rows
+      .filter(r=>String(r.status||'').toUpperCase()==='RECHAZADO')
+      .map(r=>r.id)
+      .filter(id=>id && !EVENT_YMD_CACHE.RECHAZADO[id]);
+
+    try{
+      const [libMap, rechMap] = await Promise.all([
+        libIds.length ? fetchLiberadoEventMap(libIds) : Promise.resolve({}),
+        rechIds.length ? fetchRechazadoEventMap(rechIds) : Promise.resolve({}),
+      ]);
+      Object.assign(EVENT_YMD_CACHE.LIBERADO, libMap);
+      Object.assign(EVENT_YMD_CACHE.RECHAZADO, rechMap);
+    }catch(e){
+      console.warn('Fechas de liberación/rechazo no disponibles:', e);
+    }
+
+    for(const r of rows){
+      const st = String(r.status||'').toUpperCase();
+      if(st === 'LIBERADO'){
+        r.liberado_ymd = EVENT_YMD_CACHE.LIBERADO[r.id]
+          || (r.updated_at ? String(r.updated_at).slice(0,10) : '')
+          || r.arribo_ymd;
+      }
+      if(st === 'RECHAZADO'){
+        r.rechazado_ymd = EVENT_YMD_CACHE.RECHAZADO[r.id]
+          || (r.updated_at ? String(r.updated_at).slice(0,10) : '')
+          || r.arribo_ymd;
+      }
+    }
   }
 
   // --------- Extra: back options por historial (para Detalle TABLERO) ----------
@@ -2275,13 +2361,13 @@ function initStatusMulti(){
 
 
   function resizeTableWrap(){
-    // TABLERO should show all rows; do not clamp table height.
+    // TABLERO: sin límite de altura; scroll horizontal visible.
     const w = document.getElementById('tableWrap');
     if(!w) return;
     w.style.maxHeight = 'none';
     w.style.height = 'auto';
-    w.style.overflowY = 'visible';
     w.style.overflowX = 'auto';
+    w.style.overflowY = 'visible';
   }
 
   // Clock
@@ -2549,11 +2635,11 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
         <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
-        <td data-key="indicacion"><div class="cell-2l">${esc(r.indicacion)}</div></td>
+        <td data-key="indicacion"><div class="clamp2">${esc(r.indicacion)}</div></td>
         <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
         <td data-key="arribo_at" class="mono">${fmtHM(r.arribo_at)}</td>
         <td data-key="asignacion_at" class="mono">${fmtHM(r.asignacion_at)}</td>
-        <td data-key="responsable">${esc(r.responsable||'')}</td>
+        <td data-key="responsable"><div class="clamp2">${esc(r.responsable||'')}</div></td>
         <td data-key="inicio_at" class="mono">${fmtHM(r.inicio_at)}</td>
         <td data-key="fin_at" class="mono">${fmtHM(r.fin_at)}</td>
         <td data-key="cajas" class="mono">${esc(r.cajas||'')}</td>
