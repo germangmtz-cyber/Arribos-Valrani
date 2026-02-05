@@ -75,9 +75,11 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .table th[data-key="cedis"], .table td[data-key="cedis"]{white-space:nowrap;width:1%;}
     .table th[data-key="contenedor"], .table td[data-key="contenedor"]{width:25ch;max-width:25ch;}
     .table td[data-key="contenedor"]{white-space:normal;}
-    .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;}
+    .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;white-space:normal;}
 
-    .mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;}
+    
+    .cell-2l{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;white-space:normal;}
+.mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;}
 
     .status-block{display:inline-block;padding:7px 10px;border-radius:8px;font-weight:1000;text-transform:uppercase;color:#111;}
     .st-reportado{background:var(--st-rep);} 
@@ -225,6 +227,40 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .screenSubtitle{font-size:12px;opacity:0.8;letter-spacing:0.18em}
     .screenMeta{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:center}
 
+
+/* --- TABLERO: scroll horizontal visible + INDICACIÓN/RESPONSABLE a 2 renglones --- */
+#boardView .tableWrap{
+  overflow-x:auto !important;
+  overflow-y:visible !important;
+  scrollbar-width:auto !important;
+  -ms-overflow-style:auto !important;
+}
+#boardView .tableWrap::-webkit-scrollbar{ height:12px !important; }
+#boardView .tableWrap::-webkit-scrollbar-thumb{ background: rgba(255,255,255,0.18); border-radius:10px; }
+#boardView .tableWrap::-webkit-scrollbar-track{ background: rgba(255,255,255,0.06); border-radius:10px; }
+
+#boardView #table{
+  width:max-content;
+  min-width:100%;
+  table-layout:auto;
+}
+
+#boardView #table th[data-key="indicacion"],
+#boardView #table td[data-key="indicacion"],
+#boardView #table th[data-key="responsable"],
+#boardView #table td[data-key="responsable"]{
+  white-space:normal !important;
+  text-align:left !important;
+  vertical-align:top !important;
+}
+
+#boardView #table th[data-key="indicacion"],
+#boardView #table td[data-key="indicacion"]{ max-width:44ch; }
+
+#boardView #table th[data-key="responsable"],
+#boardView #table td[data-key="responsable"]{ max-width:18ch; }
+/* --------------------------------------------------------------------------- */
+
 </style>
 </head>
 <body>
@@ -237,9 +273,9 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     </div>
 
     <div class="tabs">
-      <button type="button" class="tab active" id="tabBoard">TABLERO</button>
-      <button type="button" class="tab" id="tabScreen">PANTALLA</button>
-      <button type="button" class="tab" id="tabAdmin">ADMIN</button>
+      <button class="tab active" id="tabBoard">TABLERO</button>
+      <button class="tab" id="tabScreen">PANTALLA</button>
+      <button class="tab" id="tabAdmin">ADMIN</button>
     </div>
 
     <div class="right">
@@ -301,7 +337,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       </div>
 
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
-        <button type="button" class="btn" id="toScreen">PANTALLA</button>
+        <button class="btn" id="toScreen">PANTALLA</button>
       </div>
 
       <div style="height:12px"></div>
@@ -354,8 +390,6 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <div style="height:10px"></div>
       <div class="muted" style="font-size:12px">Para detener la rotación, presiona <b>TABLERO</b>.</div>
 
-
-</section>
 
     <section id="adminView" class="hidden">
 
@@ -1035,32 +1069,21 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     try{
       const work = getWorkDate();
       const now = Date.now();
-
-      const isScreen = !el('screenView').classList.contains('hidden');
-      const isAdmin  = !el('adminView').classList.contains('hidden');
-
       if(!force && (now - STATE.lastLoadAt) < 3000) {
         renderBoard();
         renderAdmin();
-        if(isScreen) renderScreen();
-        if(isAdmin) renderAudit();
         return;
       }
-
       STATE.rows = await fetchRows(work);
       STATE.lastLoadAt = now;
-
       renderBoard();
       renderAdmin();
-      if(isScreen) renderScreen();
-      if(isAdmin) renderAudit();
+      if(!el('adminView').classList.contains('hidden')) renderAudit();
     }catch(e){
       console.error(e);
       // si no está configurado, solo muestra tablero vacío
       renderBoard();
       renderAdmin();
-      const isScreen = !el('screenView').classList.contains('hidden');
-      if(isScreen) renderScreen();
     }
   }
 
@@ -1089,7 +1112,8 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     if(!wrap) return;
     wrap.style.height = 'auto';
     wrap.style.maxHeight = 'none';
-    wrap.style.overflow = 'visible';
+    wrap.style.overflowY = 'visible';
+    wrap.style.overflowX = 'auto';
   }
 
   function autoScaleBoard(){
@@ -1160,12 +1184,11 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
-        <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
-        <td data-key="indicacion">${esc(r.indicacion)}</td>
+        <td data-key="indicacion"><div class="cell-2l">${esc(r.indicacion)}</div></td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
         <td data-key="asignacion_at" class="mono">${fmtTime(r.asignacion_at)}</td>
-        <td data-key="responsable">${esc(r.responsable)}</td>
+        <td data-key="responsable"><div class="cell-2l">${esc(r.responsable)}</div></td>
         <td data-key="inicio_at" class="mono">${fmtTime(r.inicio_at)}</td>
         <td data-key="fin_at" class="mono">${fmtTime(r.fin_at)}</td>
         <td data-key="cajas" class="mono">${esc(r.cajas==null?'':String(r.cajas))}</td>
@@ -2257,7 +2280,8 @@ function initStatusMulti(){
     if(!w) return;
     w.style.maxHeight = 'none';
     w.style.height = 'auto';
-    w.style.overflow = 'visible';
+    w.style.overflowY = 'visible';
+    w.style.overflowX = 'auto';
   }
 
   // Clock
@@ -2495,7 +2519,7 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     const total = rows.length;
     const pageSize = 10;
 
-    const dateStr = fmtYMD(getWorkDate());
+    const dateStr = el('dateFilter')?.value || '';
     const cedisTxt = (cedisFilter.size===0) ? 'CEDIS: Todos' : `CEDIS: ${cedisFilter.size} seleccionados`;
     const estTxt = (statusFilter.size===0) ? 'Estatus: Todos' : `Estatus: ${statusFilter.size} seleccionados`;
     const smc = el('screenMetaCedis'); if(smc) smc.textContent = cedisTxt;
@@ -2525,13 +2549,13 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
         <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
-        <td data-key="indicacion">${esc(r.indicacion)}</td>
+        <td data-key="indicacion"><div class="cell-2l">${esc(r.indicacion)}</div></td>
         <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
-        <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
-        <td data-key="asignacion_at" class="mono">${fmtTime(r.asignacion_at)}</td>
+        <td data-key="arribo_at" class="mono">${fmtHM(r.arribo_at)}</td>
+        <td data-key="asignacion_at" class="mono">${fmtHM(r.asignacion_at)}</td>
         <td data-key="responsable">${esc(r.responsable||'')}</td>
-        <td data-key="inicio_at" class="mono">${fmtTime(r.inicio_at)}</td>
-        <td data-key="fin_at" class="mono">${fmtTime(r.fin_at)}</td>
+        <td data-key="inicio_at" class="mono">${fmtHM(r.inicio_at)}</td>
+        <td data-key="fin_at" class="mono">${fmtHM(r.fin_at)}</td>
         <td data-key="cajas" class="mono">${esc(r.cajas||'')}</td>
         <td data-key="tarimas" class="mono">${esc(r.tarimas||'')}</td>
       </tr>
