@@ -277,6 +277,35 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 #boardView #table th[data-key="contenedor"], #boardView #table td[data-key="contenedor"]{ width:20ch; max-width:20ch; }
 /* ------------------------------------------------------------------------ */
 
+    /* -------- RESUMEN -------- */
+    .summaryTable thead th{
+      background: rgba(255, 170, 90, 0.14);
+      color: #f7f0e6;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-size: 11px;
+    }
+    .summaryTable th, .summaryTable td{ padding: 8px 10px; }
+    .summaryTable th.rowHdr, .summaryTable td.rowHdr{
+      background: rgba(255,255,255,0.04);
+      font-weight: 900;
+      color: #e7edf6;
+      white-space: nowrap;
+    }
+    .summaryTable td.num{ text-align: center; font-variant-numeric: tabular-nums; }
+    .summaryTable th.stickyLeft, .summaryTable td.stickyLeft{
+      position: sticky; left: 0; z-index: 6;
+    }
+    .summaryTable th.grand, .summaryTable td.grand{
+      background: rgba(255,255,255,0.04);
+      font-weight: 900;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .summaryTable tr.totalRow td, .summaryTable tr.totalRow th{ background: rgba(255,255,255,0.03); }
+    .summaryTable tr.metricRow td, .summaryTable tr.metricRow th{ background: rgba(255,255,255,0.02); }
+    .summaryTable td.zero{ color: rgba(255,255,255,0.35); }
+
 </style>
 </head>
 <body>
@@ -289,6 +318,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     </div>
 
     <div class="tabs">
+      <button class="tab" id="tabSummary">RESUMEN</button>
       <button class="tab active" id="tabBoard">TABLERO</button>
       <button class="tab" id="tabScreen">PANTALLA</button>
       <button class="tab" id="tabAdmin">ADMIN</button>
@@ -363,6 +393,38 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         Para terminar el día natural, usa <u>Cerrar día</u>: archiva concluidos (no se borran, solo salen del activo).
       </div>
     
+        <section id="summaryView" class="hidden">
+      <div class="screenHeader">
+        <div class="screenTitle">
+          <div class="screenH1">Arribos a Cedis</div>
+          <div class="screenSubtitle">RESUMEN</div>
+        </div>
+        <div class="screenMeta">
+          <div class="chip" id="summaryMetaCedis">CEDIS: Todos</div>
+          <div class="chip" id="summaryMetaEstatus">Estatus: Todos</div>
+          <div class="chip" id="summaryMetaFecha"></div>
+          <div class="muted" id="summaryInfo" style="font-size:12px"></div>
+        </div>
+      </div>
+
+      <div class="card compact" style="margin-bottom:12px">
+        <div style="font-weight:900;margin-bottom:6px">CONTENEDORES POR ESTATUS</div>
+        <div class="muted" style="font-size:12px;line-height:1.35">
+          Solo se muestran columnas con información según los filtros activos del <b>TABLERO</b>.
+        </div>
+      </div>
+
+      <div class="tableWrap" id="summaryWrap" style="overflow-x:auto; overflow-y:hidden;">
+        <table class="table summaryTable" id="summaryTable">
+          <thead id="summaryThead"></thead>
+          <tbody id="summaryTbody"></tbody>
+        </table>
+      </div>
+      <div style="height:10px"></div>
+      <div class="muted" style="font-size:12px">Ajusta filtros en <b>TABLERO</b> para cambiar el resumen.</div>
+
+    </section>
+
     </section>
 
     <section id="screenView" class="hidden">
@@ -1105,20 +1167,20 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       const work = getWorkDate();
       const now = Date.now();
       if(!force && (now - STATE.lastLoadAt) < 3000) {
-        renderBoard();
+        renderAllViews();
         renderAdmin();
         return;
       }
       STATE.rows = await fetchRows(work);
       await enrichEventDates(STATE.rows);
       STATE.lastLoadAt = now;
-      renderBoard();
+      renderAllViews();
       renderAdmin();
       if(!el('adminView').classList.contains('hidden')) renderAudit();
     }catch(e){
       console.error(e);
       // si no está configurado, solo muestra tablero vacío
-      renderBoard();
+      renderAllViews();
       renderAdmin();
     }
   }
@@ -2191,20 +2253,23 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
   }
 // ------------------- UI wiring -------------------
   
-  function setTab(which){
+    function setTab(which){
+    const isSummary = which==='summary';
     const isBoard = which==='board';
     const isAdmin = which==='admin';
     const isScreen = which==='screen';
 
+    if(el('summaryView')) el('summaryView').classList.toggle('hidden', !isSummary);
     el('boardView').classList.toggle('hidden', !isBoard);
     el('adminView').classList.toggle('hidden', !isAdmin);
     el('screenView').classList.toggle('hidden', !isScreen);
 
+    if(el('tabSummary')) el('tabSummary').classList.toggle('active', isSummary);
     el('tabBoard').classList.toggle('active', isBoard);
     el('tabAdmin').classList.toggle('active', isAdmin);
     if(el('tabScreen')) el('tabScreen').classList.toggle('active', isScreen);
 
-    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : 'Pantalla')}`;
+    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isSummary ? 'Resumen' : (isAdmin ? 'Admin' : 'Pantalla'))}`;
 
     if(isBoard) closeAuthDialog();
 
@@ -2213,10 +2278,9 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
     if(isAdmin){ renderAudit(); }
     if(isBoard){ renderBoard(); }
+    if(isSummary){ renderSummary(); }
   }
 
-
-  
 function renderFilters(){
     // CEDIS (multi-select)
     initCedisMulti();
@@ -2375,12 +2439,13 @@ function initStatusMulti(){
   setInterval(tick, 1000); tick();
 
   // Eventos
+  if(el('tabSummary')) el('tabSummary').addEventListener('click', ()=>setTab('summary'));
   el('tabBoard').addEventListener('click', ()=>setTab('board'));
   el('tabAdmin').addEventListener('click', ()=>setTab('admin'));
   if(el('tabScreen')) el('tabScreen').addEventListener('click', ()=>setTab('screen'));
   el('toScreen').addEventListener('click', ()=>setTab('screen'));
 
-  el('q').addEventListener('input', ()=>renderBoard());
+  el('q').addEventListener('input', ()=>renderAllViews());
   // CEDIS multi-select handled by initCedisMulti()
 
   // Estatus multi-select handled by initStatusMulti()
@@ -2593,11 +2658,144 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     return rows;
   }
 
-  function renderAllViews(){
-    // Re-render whichever view is active
+    function renderAllViews(){
+    const isBoard = !el('boardView').classList.contains('hidden');
+    const isSummary = !!el('summaryView') && !el('summaryView').classList.contains('hidden');
     const isScreen = !el('screenView').classList.contains('hidden');
-    renderBoard();
+
+    if(isBoard) renderBoard();
+    if(isSummary) renderSummary();
     if(isScreen) renderScreen();
+  }
+
+  // ------------------- RESUMEN -------------------
+  const SUMMARY_STATUS_ORDER = [
+    'REPORTADO_PATIO',
+    'ESPERA_CORTINA',
+    'HOLD_NO_DESCARGAR',
+    'ESPERA_CONFRONTA',
+    'FUMIG_PEND',
+    'FUMIG_CUARENTENA',
+    'RECHAZADO',
+    'TRASPALEO_CURSO',
+    'TRASPALEO_CONCLUIDO',
+    'CORTINA_ASIGNADA',
+    'ESPERA_DESCARGA',
+    'DESCARGA_PROCESO',
+    'DESCARGA_CONCLUIDA',
+    'LIBERADO',
+  ];
+
+  function numVal(v){
+    if(v===null || v===undefined) return 0;
+    const s = String(v).trim().replace(/,/g,'');
+    if(!s) return 0;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function fmtNum(n){
+    if(!Number.isFinite(n)) return '';
+    if(Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
+    return String(Math.round(n*10)/10);
+  }
+
+  function renderSummary(){
+    const rows = getFilteredRows();
+    const work = getWorkDate();
+
+    const cedisTxt = (cedisFilter.size===0) ? 'CEDIS: Todos' : `CEDIS: ${cedisFilter.size} seleccionados`;
+    const estTxt = (statusFilter.size===0) ? 'Estatus: Todos' : `Estatus: ${statusFilter.size} seleccionados`;
+
+    const smc = el('summaryMetaCedis'); if(smc) smc.textContent = cedisTxt;
+    const sme = el('summaryMetaEstatus'); if(sme) sme.textContent = estTxt;
+    const smf = el('summaryMetaFecha'); if(smf) smf.textContent = `Fecha: ${fmtYMD(work)}`;
+
+    const infoEl = el('summaryInfo');
+
+    if(!rows.length){
+      if(infoEl) infoEl.textContent = 'Sin registros con los filtros actuales';
+      el('summaryThead').innerHTML = '<tr><th class="rowHdr stickyLeft">CONTENEDORES POR ESTATUS</th></tr>';
+      el('summaryTbody').innerHTML = '<tr><td class="muted" style="padding:14px">Sin registros con los filtros actuales</td></tr>';
+      return;
+    }
+
+    // Agregación
+    const agg = {};
+    function ensure(code){
+      if(!agg[code]) agg[code] = { day:0, prev:0, total:0, cajas:0, tarimas:0 };
+      return agg[code];
+    }
+
+    for(const r of rows){
+      const code = String(r.status||'').trim();
+      if(!code) continue;
+      const a = ensure(code);
+      const isDay = (String(r.arribo_ymd||'') === String(work));
+      if(isDay) a.day += 1;
+      else a.prev += 1;
+      a.total += 1;
+      a.cajas += numVal(r.cajas);
+      a.tarimas += numVal(r.tarimas);
+    }
+
+    // Columnas: solo estatus con información (según filtros)
+    let statuses = SUMMARY_STATUS_ORDER.filter(code => agg[code] && agg[code].total > 0);
+
+    // agrega estatus "no previstos" si existieran
+    const extras = Object.keys(agg).filter(code => !SUMMARY_STATUS_ORDER.includes(code) && agg[code].total > 0);
+    statuses = statuses.concat(extras);
+
+    if(!statuses.length){
+      if(infoEl) infoEl.textContent = `Sin estatus con información (registros: ${rows.length})`;
+      el('summaryThead').innerHTML = '<tr><th class="rowHdr stickyLeft">CONTENEDORES POR ESTATUS</th></tr>';
+      el('summaryTbody').innerHTML = '<tr><td class="muted" style="padding:14px">Sin estatus con información</td></tr>';
+      return;
+    }
+
+    const sum = (field) => statuses.reduce((acc, code)=> acc + (agg[code]?.[field] || 0), 0);
+
+    // Header
+    const thead = `
+      <tr>
+        <th class="rowHdr stickyLeft">CONTENEDORES POR ESTATUS</th>
+        ${statuses.map(code => `<th>${esc(statusLabel(code))}</th>`).join('')}
+        <th class="grand">GRAN TOTAL</th>
+      </tr>
+    `;
+    el('summaryThead').innerHTML = thead;
+
+    function cell(v, isCount=true){
+      const show = (v && v!==0) ? (isCount ? String(v) : fmtNum(v)) : '';
+      const cls = 'num' + (!show ? ' zero' : '');
+      return `<td class="${cls}">${esc(show)}</td>`;
+    }
+
+    function row(label, field, opts={}){
+      const isMetric = !!opts.metric;
+      const isTotalRow = !!opts.totalRow;
+      const trClass = isTotalRow ? 'totalRow' : (isMetric ? 'metricRow' : '');
+      const vals = statuses.map(code => (agg[code]?.[field] || 0));
+      const rTotal = vals.reduce((a,b)=>a+b,0);
+      return `
+        <tr class="${trClass}">
+          <th class="rowHdr stickyLeft">${esc(label)}</th>
+          ${vals.map(v=>cell(v, !isMetric)).join('')}
+          <td class="grand">${esc(isMetric ? fmtNum(rTotal) : String(rTotal))}</td>
+        </tr>
+      `;
+    }
+
+    const tbody = [
+      row('DEL DIA', 'day'),
+      row('ANTERIORES', 'prev'),
+      row('TOTAL CONTENEDORES', 'total', { totalRow:true }),
+      row('TOTAL CAJAS', 'cajas', { metric:true }),
+      row('TOTAL TARIMAS', 'tarimas', { metric:true }),
+    ].join('');
+
+    el('summaryTbody').innerHTML = tbody;
+
+    if(infoEl) infoEl.textContent = `Basado en ${rows.length} contenedores visibles con los filtros actuales.`;
   }
 
   function renderScreen(){
@@ -2605,12 +2803,12 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     const total = rows.length;
     const pageSize = 10;
 
-    const dateStr = el('dateFilter')?.value || '';
+    const dateStr = el('workDate')?.value || getWorkDate();
     const cedisTxt = (cedisFilter.size===0) ? 'CEDIS: Todos' : `CEDIS: ${cedisFilter.size} seleccionados`;
     const estTxt = (statusFilter.size===0) ? 'Estatus: Todos' : `Estatus: ${statusFilter.size} seleccionados`;
     const smc = el('screenMetaCedis'); if(smc) smc.textContent = cedisTxt;
     const sme = el('screenMetaEstatus'); if(sme) sme.textContent = estTxt;
-    const smf = el('screenMetaFecha'); if(smf) smf.textContent = dateStr ? `Fecha: ${dateStr}` : '';
+    const smf = el('screenMetaFecha'); if(smf) smf.textContent = dateStr ? `Fecha: ${fmtYMD(dateStr)}` : '';
 
     if(total===0){
       el('tbodyScreen').innerHTML = '';
@@ -2637,11 +2835,11 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
         <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
         <td data-key="indicacion"><div class="clamp2">${esc(r.indicacion)}</div></td>
         <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
-        <td data-key="arribo_at" class="mono">${fmtHM(r.arribo_at)}</td>
-        <td data-key="asignacion_at" class="mono">${fmtHM(r.asignacion_at)}</td>
+        <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
+        <td data-key="asignacion_at" class="mono">${fmtTime(r.asignacion_at)}</td>
         <td data-key="responsable"><div class="clamp2">${esc(r.responsable||'')}</div></td>
-        <td data-key="inicio_at" class="mono">${fmtHM(r.inicio_at)}</td>
-        <td data-key="fin_at" class="mono">${fmtHM(r.fin_at)}</td>
+        <td data-key="inicio_at" class="mono">${fmtTime(r.inicio_at)}</td>
+        <td data-key="fin_at" class="mono">${fmtTime(r.fin_at)}</td>
         <td data-key="cajas" class="mono">${esc(r.cajas||'')}</td>
         <td data-key="tarimas" class="mono">${esc(r.tarimas||'')}</td>
       </tr>
