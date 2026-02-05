@@ -355,6 +355,9 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <div class="muted" style="font-size:12px">Para detener la rotación, presiona <b>TABLERO</b>.</div>
 
 
+
+    </section>
+
     <section id="adminView" class="hidden">
 
       <div class="card compact admin-session" style="margin-bottom:12px">
@@ -1034,19 +1037,19 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       const work = getWorkDate();
       const now = Date.now();
       if(!force && (now - STATE.lastLoadAt) < 3000) {
-        renderBoard();
+        renderAllViews();
         renderAdmin();
         return;
       }
       STATE.rows = await fetchRows(work);
       STATE.lastLoadAt = now;
-      renderBoard();
+      renderAllViews();
       renderAdmin();
       if(!el('adminView').classList.contains('hidden')) renderAudit();
     }catch(e){
       console.error(e);
       // si no está configurado, solo muestra tablero vacío
-      renderBoard();
+      renderAllViews();
       renderAdmin();
     }
   }
