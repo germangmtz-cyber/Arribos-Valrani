@@ -2472,6 +2472,25 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     return rows;
   }
 
+
+  // ------------------- Filtrado para PANTALLA (FIDS) -------------------
+  // En PANTALLA NO aplicamos la regla de visibilidad por "Fecha de trabajo" (isVisible),
+  // porque el FIDS normalmente debe poder rotar TODO lo que coincida con CEDIS/Estatus.
+  // Si después quieres que la PANTALLA respete la fecha, se puede agregar un toggle.
+  function getScreenRows(){
+    const q = (el('q')?.value || '').trim();
+    const cSet = cedisFilter;
+    const stSet = statusFilter;
+
+    let rows = (STATE.rows || []).slice();
+    rows = rows.filter(r => !r.is_deleted);
+    if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
+    if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
+    if(q) rows = rows.filter(r=>matches(r, q));
+    rows.sort(cmp);
+    return rows;
+  }
+
   function renderAllViews(){
     // Re-render whichever view is active
     const isScreen = !el('screenView').classList.contains('hidden');
@@ -2480,16 +2499,16 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
   }
 
   function renderScreen(){
-    const rows = getFilteredRows();
+    const rows = getScreenRows();
     const total = rows.length;
     const pageSize = 10;
 
-    const dateStr = el('dateFilter')?.value || '';
+    const dateStr = ''; // PANTALLA rota por filtro (CEDIS/Estatus).
     const cedisTxt = (cedisFilter.size===0) ? 'CEDIS: Todos' : `CEDIS: ${cedisFilter.size} seleccionados`;
     const estTxt = (statusFilter.size===0) ? 'Estatus: Todos' : `Estatus: ${statusFilter.size} seleccionados`;
     const smc = el('screenMetaCedis'); if(smc) smc.textContent = cedisTxt;
     const sme = el('screenMetaEstatus'); if(sme) sme.textContent = estTxt;
-    const smf = el('screenMetaFecha'); if(smf) smf.textContent = dateStr ? `Fecha: ${dateStr}` : '';
+    const smf = el('screenMetaFecha'); if(smf) smf.textContent = 'Fecha: Todas';
 
     if(total===0){
       el('tbodyScreen').innerHTML = '';
@@ -2534,7 +2553,7 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     screenOffset = 0;
     renderScreen();
     screenTimer = setInterval(()=>{
-      const total = getFilteredRows().length;
+      const total = getScreenRows().length;
       if(total<=10){ renderScreen(); return; }
       screenOffset += 10;
       if(screenOffset >= total) screenOffset = 0;
