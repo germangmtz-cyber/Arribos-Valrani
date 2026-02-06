@@ -355,6 +355,8 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <div class="muted" style="font-size:12px">Para detener la rotación, presiona <b>TABLERO</b>.</div>
 
 
+    </section>
+
     <section id="adminView" class="hidden">
 
       <div class="card compact admin-session" style="margin-bottom:12px">
@@ -618,11 +620,6 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     if(!iso) return '';
     const d = new Date(iso);
     return d.toLocaleTimeString('es-MX',{hour12:false,hour:'2-digit',minute:'2-digit'});
-  }
-
-  // Alias para compatibilidad (PANTALLA usa fmtHM)
-  function fmtHM(iso){
-    return fmtTime(iso);
   }
 
   function statusLabel(code){
@@ -2484,7 +2481,7 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
   function renderScreen(){
     const rows = getFilteredRows();
     const total = rows.length;
-    const pageSize = 9;
+    const pageSize = 10;
 
     const dateStr = el('dateFilter')?.value || '';
     const cedisTxt = (cedisFilter.size===0) ? 'CEDIS: Todos' : `CEDIS: ${cedisFilter.size} seleccionados`;
@@ -2537,11 +2534,11 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     renderScreen();
     screenTimer = setInterval(()=>{
       const total = getFilteredRows().length;
-      if(total<=9){ renderScreen(); return; }
-      screenOffset += 9;
+      if(total<=10){ renderScreen(); return; }
+      screenOffset += 10;
       if(screenOffset >= total) screenOffset = 0;
       renderScreen();
-    }, 10000);
+    }, 15000);
   }
 
   function stopScreen(){
