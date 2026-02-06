@@ -225,6 +225,26 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .screenSubtitle{font-size:12px;opacity:0.8;letter-spacing:0.18em}
     .screenMeta{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:center}
 
+
+/* --- RESUMEN: estilos aislados --- */
+#summaryView .table thead th, #summaryView .table tbody td{
+  font-size:12px !important;
+  white-space:nowrap;
+}
+#summaryView .table thead th{
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+}
+#summaryView .table tbody td{
+  text-align:center;
+}
+#summaryView .rowLabel{
+  text-align:left !important;
+  font-weight:800;
+}
+#summaryView .grand{
+  font-weight:900;
+}
 </style>
 </head>
 <body>
@@ -237,7 +257,8 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     </div>
 
     <div class="tabs">
-      <button class="tab active" id="tabBoard">TABLERO</button>
+            <button class="tab" id="tabSummary">RESUMEN</button>
+<button class="tab active" id="tabBoard">TABLERO</button>
       <button class="tab" id="tabScreen">PANTALLA</button>
       <button class="tab" id="tabAdmin">ADMIN</button>
     </div>
@@ -311,7 +332,26 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         Para terminar el día natural, usa <u>Cerrar día</u>: archiva concluidos (no se borran, solo salen del activo).
       </div>
     
+    
+    <section id="summaryView" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
+          <div>
+            <div style="font-size:18px;font-weight:800;letter-spacing:0.06em">CONTENEDORES POR ESTATUS</div>
+            <div class="muted" id="summaryMeta" style="font-size:12px;margin-top:4px"></div>
+          </div>
+        </div>
+
+        <div class="tableWrap" style="margin-top:10px;overflow:auto">
+          <table class="table" id="summaryTable">
+            <thead id="summaryHead"></thead>
+            <tbody id="summaryBody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
+
+</section>
 
     <section id="screenView" class="hidden">
       <div class="screenHeader">
@@ -1044,6 +1084,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       STATE.lastLoadAt = now;
       renderBoard();
       renderAdmin();
+      if(el('summaryView') && !el('summaryView').classList.contains('hidden')) renderSummary();
       if(!el('adminView').classList.contains('hidden')) renderAudit();
     }catch(e){
       console.error(e);
@@ -2074,16 +2115,19 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const isBoard = which==='board';
     const isAdmin = which==='admin';
     const isScreen = which==='screen';
+    const isSummary = which==='summary';
 
     el('boardView').classList.toggle('hidden', !isBoard);
     el('adminView').classList.toggle('hidden', !isAdmin);
     el('screenView').classList.toggle('hidden', !isScreen);
+    if(el('summaryView')) el('summaryView').classList.toggle('hidden', !isSummary);
 
     el('tabBoard').classList.toggle('active', isBoard);
     el('tabAdmin').classList.toggle('active', isAdmin);
     if(el('tabScreen')) el('tabScreen').classList.toggle('active', isScreen);
+    if(el('tabSummary')) el('tabSummary').classList.toggle('active', isSummary);
 
-    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : 'Pantalla')}`;
+    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : (isSummary ? 'Resumen' : 'Pantalla'))}`;
 
     if(isBoard) closeAuthDialog();
 
@@ -2092,6 +2136,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
     if(isAdmin){ renderAudit(); }
     if(isBoard){ renderBoard(); }
+    if(isSummary){ renderSummary(); }
   }
 
 
@@ -2254,6 +2299,7 @@ function initStatusMulti(){
 
   // Eventos
   el('tabBoard').addEventListener('click', ()=>setTab('board'));
+  if(el('tabSummary')) el('tabSummary').addEventListener('click', ()=>setTab('summary'));
   el('tabAdmin').addEventListener('click', ()=>setTab('admin'));
   if(el('tabScreen')) el('tabScreen').addEventListener('click', ()=>setTab('screen'));
   el('toScreen').addEventListener('click', ()=>setTab('screen'));
@@ -2471,11 +2517,82 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     return rows;
   }
 
+  function toNum(v){
+    const n = (v===null || v===undefined || v==='') ? 0 : Number(String(v).replace(/,/g,'').trim());
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function renderSummary(){
+    const rows = getFilteredRows(); // mismos filtros del TABLERO
+    const work = getWorkDate();     // YYYY-MM-DD
+    const totals = {}; // code -> {delDia, anteriores, total, cajas, tarimas}
+
+    for(const s of STATUS){
+      totals[s.code] = {delDia:0, anteriores:0, total:0, cajas:0, tarimas:0};
+    }
+
+    for(const r of rows){
+      const t = totals[r.status] || (totals[r.status] = {delDia:0, anteriores:0, total:0, cajas:0, tarimas:0});
+      const isDelDia = (r.arribo_ymd === work);
+      if(isDelDia) t.delDia++; else t.anteriores++;
+      t.total++;
+      t.cajas += toNum(r.cajas);
+      t.tarimas += toNum(r.tarimas);
+    }
+
+    // mostrar solo estatus con información
+    const active = STATUS
+      .map(s=>s.code)
+      .filter(code=>{
+        const t = totals[code] || {total:0,cajas:0,tarimas:0};
+        return (t.total||0) > 0 || (t.cajas||0) > 0 || (t.tarimas||0) > 0;
+      });
+
+    // header
+    const headCells = ['<th class="rowLabel">CONTENEDORES POR ESTATUS</th>']
+      .concat(active.map(code=>`<th>${esc(statusLabel(code))}</th>`))
+      .concat(['<th class="grand">GRAN TOTAL</th>']);
+
+    el('summaryHead').innerHTML = `<tr>${headCells.join('')}</tr>`;
+
+    // row builder helper
+    function rowHTML(label, getter){
+      let rowTotal = 0;
+      const tds = ['<td class="rowLabel">'+label+'</td>'];
+      for(const code of active){
+        const v = getter(totals[code] || {delDia:0, anteriores:0, total:0, cajas:0, tarimas:0});
+        rowTotal += v;
+        tds.push('<td class="mono">'+(v||0)+'</td>');
+      }
+      tds.push('<td class="mono grand">'+(rowTotal||0)+'</td>');
+      return `<tr>${tds.join('')}</tr>`;
+    }
+
+    const body = [];
+    body.push(rowHTML('DEL DÍA', t=>t.delDia));
+    body.push(rowHTML('ANTERIORES', t=>t.anteriores));
+    body.push(rowHTML('TOTAL CONTENEDORES', t=>t.total));
+    body.push(rowHTML('TOTAL CAJAS', t=>Math.round(t.cajas)));
+    body.push(rowHTML('TOTAL TARIMAS', t=>Math.round(t.tarimas)));
+
+    el('summaryBody').innerHTML = body.join('');
+
+    // meta
+    try{
+      const cTxt = el('cedisBtn') ? el('cedisBtn').textContent.replace('▾','').trim() : '';
+      const sTxt = el('estatusBtn') ? el('estatusBtn').textContent.replace('▾','').trim() : '';
+      el('summaryMeta').textContent = `${cTxt} · ${sTxt} · Fecha: ${fmtYMD(work)}`;
+    }catch(_e){}
+  }
+
+
   function renderAllViews(){
     // Re-render whichever view is active
     const isScreen = !el('screenView').classList.contains('hidden');
+    const isSummary = el('summaryView') && !el('summaryView').classList.contains('hidden');
     renderBoard();
     if(isScreen) renderScreen();
+    if(isSummary) renderSummary();
   }
 
   function renderScreen(){
