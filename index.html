@@ -243,7 +243,10 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
     <div class="tabs">
       <button class="tab" id="tabSummary">RESUMEN</button>
+      <div class="tabCol">
       <button class="tab active" id="tabBoard">TABLERO</button>
+      <button class="btn secondary tiny" id="btnExport" title="Exportar tabla a Excel">EXPORTAR</button>
+      </div>
       <button class="tab" id="tabScreen">PANTALLA</button>
       <button class="tab" id="tabAdmin">ADMIN</button>
     </div>
@@ -266,7 +269,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
         <div class="ms" id="estatusMs"><button id="estatusBtn" class="input msBtn" type="button">Estatus: Todos ▾</button><div id="estatusMenu" class="msMenu hidden" role="menu" aria-label="Filtro Estatus"></div></div>
 
-        <input class="input" id="workDate" type="date" style="min-width:160px" />
+        <div class="dateRange"><span class="muted">Inicio</span><input class="input" id="dateStart" type="date" style="min-width:160px" /><span class="muted">Fin</span><input class="input" id="dateEnd" type="date" style="min-width:160px" /></div>
         <button class="btn secondary" id="btnToday">Hoy</button>
 
         <button class="btn secondary" id="toggleCols">Columnas</button>
@@ -640,6 +643,25 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     const day=String(d.getDate()).padStart(2,'0');
     return `${y}-${m}-${day}`;
   }
+
+  // ISO local con offset (para guardar movimientos con hora local real)
+  function nowLocalIso(){
+    const d = new Date();
+    const pad = (n)=>String(n).padStart(2,'0');
+    const y = d.getFullYear();
+    const m = pad(d.getMonth()+1);
+    const day = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const mm = pad(d.getMinutes());
+    const ss = pad(d.getSeconds());
+    const ms = String(d.getMilliseconds()).padStart(3,'0');
+    const off = -d.getTimezoneOffset();
+    const sign = off>=0 ? '+' : '-';
+    const oh = pad(Math.floor(Math.abs(off)/60));
+    const om = pad(Math.abs(off)%60);
+    return `${y}-${m}-${day}T${hh}:${mm}:${ss}.${ms}${sign}${oh}:${om}`;
+  }
+
   function fmtYMD(ymdStr){
     if(!ymdStr) return '';
     // acepta 'YYYY-MM-DD' o ISO
@@ -846,21 +868,48 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     openCfg();
   }
 
-  // ------------------- Work date -------------------
-  function getWorkDate(){
-    const w = localStorage.getItem(LS_WORK);
-    if(w) return w;
-    const t = ymd();
-    localStorage.setItem(LS_WORK, t);
-    return t;
+  
+  // ------------------- Work date (Inicio/Fin) -------------------
+  const LS_WORK_FROM = 'arribos_work_from_v1';
+  const LS_WORK_TO   = 'arribos_work_to_v1';
+
+  function getWorkRange(){
+    const today = ymd();
+    const start = localStorage.getItem(LS_WORK_FROM) || localStorage.getItem(LS_WORK) || today;
+    const endRaw = localStorage.getItem(LS_WORK_TO) || '';
+    const end = endRaw || start;
+
+    // Sync inputs (Fin puede quedar vacío)
+    if(el('dateStart')) el('dateStart').value = start;
+    if(el('dateEnd')) el('dateEnd').value = endRaw;
+
+    return { start, end, endRaw };
   }
-  function setWorkDate(v){
-    localStorage.setItem(LS_WORK, v);
-    el('workDate').value = v;
+
+  function setWorkRange(start, endRaw){
+    const today = ymd();
+    const s = start || today;
+
+    localStorage.setItem(LS_WORK_FROM, s);
+    localStorage.setItem(LS_WORK, s); // compat
+
+    if(endRaw){
+      localStorage.setItem(LS_WORK_TO, endRaw);
+    }else{
+      localStorage.removeItem(LS_WORK_TO);
+    }
+
+    if(el('dateStart')) el('dateStart').value = s;
+    if(el('dateEnd')) el('dateEnd').value = endRaw || '';
+
     reloadData(true);
   }
 
-  // ------------------- Column visibility -------------------
+  // Back-compat (mantenemos API interna existente)
+  function getWorkDate(){ return getWorkRange().start; }
+  function setWorkDate(v){ setWorkRange(v, ''); }
+
+// ------------------- Column visibility -------------------
   const COLS = [
     {key:'folio', label:'No'},
     {key:'contenedor', label:'Contenedor'},
@@ -996,6 +1045,17 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     return { startIso: start.toISOString(), endIso: end.toISOString() };
   }
 
+  // Rango Inicio/Fin (incluyente)
+  function rangeISO2(startYMD, endYMD){
+    let s = startYMD;
+    let e = endYMD || startYMD;
+    if(e < s){ const tmp=s; s=e; e=tmp; }
+    const start = new Date(s + 'T00:00:00');
+    const end = new Date(e + 'T23:59:59.999');
+    return { startIso: start.toISOString(), endIso: end.toISOString() };
+  }
+
+
   function dbToRow(d){
     const arr = d.arribo_at;
     const arrDate = arr ? ymd(new Date(arr)) : '';
@@ -1023,15 +1083,40 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     };
   }
 
-  function isVisible(row, work){
+  
+  function isVisible(row, range){
     if(row.is_deleted) return false;
-    const today = ymd();
-    if(work === today){
-      // Regla HOY: ocultar LIBERADO de días previos (mantener pendientes previos)
-      if(row.arribo_ymd !== work && String(row.status||'').toUpperCase()==='LIBERADO') return false;
-      return row.arribo_ymd === work || !!row.is_active;
+
+    // Soporta compat: si llega string, se trata como una sola fecha
+    let start, end;
+    if(typeof range === 'string'){
+      start = range; end = range;
+    }else{
+      start = range?.start || ymd();
+      end = range?.end || start;
     }
-    return row.arribo_ymd === work;
+    if(end < start){ const tmp=start; start=end; end=tmp; }
+
+    const today = ymd();
+
+    // Modo HOY (una sola fecha = hoy): mezcla pendientes previos + regla especial LIBERADO/RECHAZADO
+    if(start === today && end === today){
+      const st = String(row.status||'').toUpperCase();
+      if(st === 'LIBERADO'){
+        const d = row.liberado_ymd || (row.updated_at ? ymd(new Date(row.updated_at)) : '');
+        return d === today;
+      }
+      if(st === 'RECHAZADO'){
+        const d = row.rechazado_ymd || (row.updated_at ? ymd(new Date(row.updated_at)) : '');
+        return d === today;
+      }
+      return (row.arribo_ymd === today) || !!row.is_active;
+    }
+
+    // Rango histórico / multi-día: solo por FECHA DE ARRIBO
+    const a = row.arribo_ymd || '';
+    if(!a) return false;
+    return (a >= start && a <= end);
   }
 
 
@@ -1042,25 +1127,59 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   }
 
   // ------------------- Fetch principal -------------------
-  async function fetchRows(work){
+  
+async function fetchRows(range){
     const s = await ensureSupabase();
-    const { startIso, endIso } = rangeISO(work);
     const today = ymd();
 
-    // Si consultas HOY: trae todo lo del día + pendientes activos de días previos
-    if(work === today){
+    // Normaliza rango
+    let start, end;
+    if(typeof range === 'string'){
+      start = range; end = range;
+    }else{
+      start = range?.start || today;
+      end = range?.end || start;
+    }
+    if(end < start){ const tmp=start; start=end; end=tmp; }
+
+    const { startIso, endIso } = rangeISO2(start, end);
+
+    // HOY (una sola fecha = hoy): trae lo del día + pendientes activos de días previos + (LIBERADO/RECHAZADO) que cambiaron hoy
+    if(start === today && end === today){
       const qDay = s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
       const qPend = s.from('shipments').select('*').eq('is_deleted', false).eq('is_active', true);
-      const [r1, r2] = await Promise.all([qDay, qPend]);
+
+      const qIds = s.from('shipment_events')
+        .select('shipment_id,to_status,event_at')
+        .gte('event_at', startIso).lte('event_at', endIso)
+        .in('to_status', ['LIBERADO','RECHAZADO'])
+        .order('event_at', {ascending:false})
+        .limit(5000);
+
+      const [r1, r2, r3] = await Promise.all([qDay, qPend, qIds]);
       if(r1.error) throw r1.error;
       if(r2.error) throw r2.error;
+      if(r3.error) throw r3.error;
+
       const map = new Map();
       for(const d of (r1.data||[])) map.set(d.id, dbToRow(d));
       for(const d of (r2.data||[])) map.set(d.id, dbToRow(d));
+
+      const extraIds = Array.from(new Set((r3.data||[]).map(x=>x.shipment_id).filter(Boolean)));
+      if(extraIds.length){
+        const chunk = 200;
+        for(let i=0;i<extraIds.length;i+=chunk){
+          const part = extraIds.slice(i,i+chunk);
+          const q = await s.from('shipments').select('*').eq('is_deleted', false).in('id', part);
+          if(q.error) throw q.error;
+          for(const d of (q.data||[])) map.set(d.id, dbToRow(d));
+        }
+      }
+
       return Array.from(map.values());
     }
 
-    // Si consultas una fecha histórica: solo ese día (sin mezclar pendientes de otros días)
+    // Histórico / rango: solo por fecha de arribo (sin mezclar pendientes fuera del rango)
     const r = await s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
     if(r.error) throw r.error;
     return (r.data||[]).map(dbToRow);
@@ -1068,22 +1187,37 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
   async function reloadData(force){
     try{
-      const work = getWorkDate();
+      const range = getWorkRange();
       const now = Date.now();
       if(!force && (now - STATE.lastLoadAt) < 3000) {
-        renderBoard();
+        renderAllViews();
         renderAdmin();
         return;
       }
-      STATE.rows = await fetchRows(work);
+
+      const rows = await fetchRows(range);
+
+      // Enriquecer: fechas de estatus (LIBERADO / RECHAZADO) desde shipment_events (para visibilidad y columna F. liberación)
+      const ids = rows.map(r=>r.id).filter(Boolean);
+      const [libMap, rejMap] = await Promise.all([
+        fetchStatusEventMap(ids, 'LIBERADO'),
+        fetchStatusEventMap(ids, 'RECHAZADO'),
+      ]);
+      for(const r of rows){
+        r.liberado_ymd = libMap[r.id] || '';
+        r.rechazado_ymd = rejMap[r.id] || '';
+      }
+
+      STATE.rows = rows;
       STATE.lastLoadAt = now;
-      renderBoard();
+
+      renderAllViews();
       renderAdmin();
       if(!el('adminView').classList.contains('hidden')) renderAudit();
     }catch(e){
       console.error(e);
       // si no está configurado, solo muestra tablero vacío
-      renderBoard();
+      renderAllViews();
       renderAdmin();
     }
   }
@@ -1091,8 +1225,8 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   // ------------------- KPIs + Render -------------------
   function renderKPIs(visible){
     const by = (code)=>visible.filter(r=>r.status===code).length;
-    const work = getWorkDate();
-    const conclWork = visible.filter(r=>CONCLUIDOS.has(r.status) && r.arribo_ymd===work).length;
+    const range = getWorkRange();
+    const conclWork = visible.filter(r=>CONCLUIDOS.has(r.status) && ((range.start===range.end)?(r.arribo_ymd===range.start):(r.arribo_ymd>=range.start && r.arribo_ymd<=range.end))).length;
 
     const chips = [
       ['Total visible', visible.length],
@@ -1160,14 +1294,14 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
 
   function renderBoard(){
-    const work = getWorkDate();
+    const range = getWorkRange();
     const q = (el('q').value || '').trim();
     const cSet = cedisFilter;
     const stSet = statusFilter;
 
     let rows = (STATE.rows || []).slice();
 
-    rows = rows.filter(r=>isVisible(r, work));
+    rows = rows.filter(r=>isVisible(r, range));
     if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
     if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
     if(q) rows = rows.filter(r=>matches(r, q));
@@ -1184,6 +1318,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
+        <td data-key="liberado_fecha" class="mono">${fmtYMD(r.liberado_ymd||"")}</td>
         <td data-key="indicacion">${esc(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
@@ -1283,7 +1418,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   async function addRowCloud(payload){
     if(!authUser){ alert('Necesitas iniciar sesión para capturar.'); return; }
     const s = await ensureSupabase();
-    const work = getWorkDate();
+    const range = getWorkRange();
     const { startIso, endIso } = rangeISO(work);
 
     // folio siguiente (por día)
@@ -1312,6 +1447,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     // evento
     await s.from('shipment_events').insert([{
       shipment_id: ins.data.id,
+      event_at: ins.data.arribo_at || nowLocalIso(),
       actor: authUser.email || authUser.id,
       from_status: null,
       to_status: 'REPORTADO_PATIO',
@@ -1421,6 +1557,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     // 2) Inserta eventos (huella) - opcional
     const events = (ins.data||[]).map(r=>({
       shipment_id: r.id,
+      event_at: nowLocalIso(),
       actor: authUser.email || authUser.id,
       from_status: null,
       to_status: r.estatus,
@@ -1529,7 +1666,7 @@ No se borran: quedan disponibles en Histórico por fecha.
       responsable: newResp || null,
     };
 
-    const t = new Date().toISOString();
+    const t = nowLocalIso();
     // timestamps
     if(to==='CORTINA_ASIGNADA' && !row.asignacion_at) patch.asig_cortina_at = t;
     if(to==='DESCARGA_PROCESO' && !row.inicio_at) patch.inicio_descarga_at = t;
@@ -1541,6 +1678,7 @@ No se borran: quedan disponibles en Histórico por fecha.
 
     const ev = await s.from('shipment_events').insert([{
       shipment_id: id,
+      event_at: t,
       actor: authUser.email || authUser.id,
       from_status: from,
       to_status: to,
@@ -1554,8 +1692,8 @@ No se borran: quedan disponibles en Histórico por fecha.
 
   
 
-  // --------- Extra: fechas de liberación (desde shipment_events) ----------
-  async function fetchLiberadoEventMap(ids){
+  // --------- Extra: mapa de fecha (YYYY-MM-DD, local) por estatus desde shipment_events ----------
+  async function fetchStatusEventMap(ids, statusCode){
     if(!ids || !ids.length) return {};
     const s = await ensureSupabase();
     const out = {};
@@ -1565,13 +1703,14 @@ No se borran: quedan disponibles en Histórico por fecha.
       const q = await s.from('shipment_events')
         .select('shipment_id,event_at,to_status')
         .in('shipment_id', part)
-        .eq('to_status','LIBERADO')
+        .eq('to_status', statusCode)
         .order('event_at', {ascending:false})
         .limit(5000);
       if(q.error) throw q.error;
       for(const r of (q.data||[])){
         if(!out[r.shipment_id] && r.event_at){
-          out[r.shipment_id] = String(r.event_at).slice(0,10);
+          // Usa fecha LOCAL, evita desfase por UTC
+          out[r.shipment_id] = ymd(new Date(r.event_at));
         }
       }
     }
@@ -1631,6 +1770,7 @@ No se borran: quedan disponibles en Histórico por fecha.
 
     const ev = await s.from('shipment_events').insert([{
       shipment_id: id,
+      event_at: nowLocalIso(),
       actor: authUser.email || authUser.id,
       from_status: cur,
       to_status: targetStatus,
@@ -1691,6 +1831,7 @@ async function rollbackOneStepCloud(id){
 
     const ins = await s.from('shipment_events').insert([{
       shipment_id: id,
+      event_at: nowLocalIso(),
       actor: authUser.email || authUser.id,
       from_status: cur,
       to_status: prev,
@@ -1706,8 +1847,8 @@ async function rollbackOneStepCloud(id){
   function renderAdmin(){
     const canEdit = !!authUser;
 
-    const work = getWorkDate();
-    let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, work));
+    const range = getWorkRange();
+    let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, range));
 
     
     // Orden cronológico admin: más reciente arriba (fecha+hora, robusto)
@@ -1887,6 +2028,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
     const ev = await s.from('shipment_events').insert([{
       shipment_id: id,
+      event_at: nowLocalIso(),
       actor: authUser.email || authUser.id,
       from_status: from,
       to_status: from,   // no cambia estatus; solo campos
@@ -1903,7 +2045,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const row = (STATE.rows || []).find(r=>r.id===id);
     const from = row ? row.status : null;
 
-    const now = new Date().toISOString();
+    const now = nowLocalIso();
     const patch = {
       is_deleted: true,
       is_active: false,
@@ -1918,6 +2060,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
     const ev = await s.from('shipment_events').insert([{
       shipment_id: id,
+      event_at: now,
       actor: authUser.email || authUser.id,
       from_status: from,
       to_status: 'ELIMINADO',
@@ -2293,6 +2436,7 @@ function initStatusMulti(){
 
   // Eventos
   el('tabBoard').addEventListener('click', ()=>setTab('board'));
+  if(el('btnExport')) el('btnExport').addEventListener('click', exportBoardToExcel);
   el('tabAdmin').addEventListener('click', ()=>setTab('admin'));
   if(el('tabScreen')) el('tabScreen').addEventListener('click', ()=>setTab('screen'));
   if(el('tabSummary')) el('tabSummary').addEventListener('click', ()=>setTab('summary'));
@@ -2302,8 +2446,9 @@ function initStatusMulti(){
   // CEDIS multi-select handled by initCedisMulti()
 
   // Estatus multi-select handled by initStatusMulti()
-el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value));
-  el('btnToday').addEventListener('click', ()=>setWorkDate(ymd()));
+el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').value, el('dateEnd').value));
+  el('dateEnd').addEventListener('change', ()=>setWorkRange(el('dateStart').value, el('dateEnd').value));
+  el('btnToday').addEventListener('click', ()=>setWorkRange(ymd(), ''));
 
   el('toggleCols').addEventListener('click', ()=>{ el('colsCard').classList.toggle('hidden'); resizeTableWrap(); });
 
@@ -2477,8 +2622,9 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     setCloudChip();
     setAuthUI();
 
-    const w = getWorkDate();
-    el('workDate').value = w;
+    const wr = getWorkRange();
+    if(el('dateStart')) el('dateStart').value = wr.start;
+    if(el('dateEnd')) el('dateEnd').value = wr.endRaw || '';
 
     resizeTableWrap();
     window.addEventListener('resize', resizeTableWrap);
@@ -2507,14 +2653,15 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
   function renderSummary(){
     if(!el('summaryView')) return;
 
-    const work = getWorkDate();
+    const range = getWorkRange();
     const rows = getFilteredRows(); // respeta filtros (CEDIS/Estatus/Fecha/Buscar) + regla de visibles
 
     const cedisTxt = (cedisFilter.size===0) ? 'CEDIS: Todos' : `CEDIS: ${cedisFilter.size} seleccionados`;
     const estTxt = (statusFilter.size===0) ? 'Estatus: Todos' : `Estatus: ${statusFilter.size} seleccionados`;
     if(el('sumMetaCedis')) el('sumMetaCedis').textContent = cedisTxt;
     if(el('sumMetaEstatus')) el('sumMetaEstatus').textContent = estTxt;
-    if(el('sumMetaFecha')) el('sumMetaFecha').textContent = `Fecha: ${(work||'').replaceAll('-','/')}`;
+    const fTxt = (range.start===range.end) ? range.start : `${range.start} - ${range.end}`;
+    if(el('sumMetaFecha')) el('sumMetaFecha').textContent = `Fecha: ${fTxt.replaceAll('-','/')}`;
 
     const statusOrder = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
 
@@ -2526,7 +2673,7 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
 
     for(const r of rows){
       const a = acc[r.status] || (acc[r.status] = {day:0, prev:0, cajas:0, tarimas:0});
-      const isDay = (r.arribo_ymd === work);
+      const isDay = (range.start===range.end) ? (r.arribo_ymd === range.start) : (r.arribo_ymd >= range.start && r.arribo_ymd <= range.end);
       if(isDay) a.day += 1; else a.prev += 1;
       a.cajas += num0(r.cajas);
       a.tarimas += num0(r.tarimas);
@@ -2614,13 +2761,13 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
   let screenOffset = 0;
 
   function getFilteredRows(){
-    const work = getWorkDate();
-    const q = (el('q')?.value || '').trim();
+    const range = getWorkRange();
+const q = (el('q')?.value || '').trim();
     const cSet = cedisFilter;
     const stSet = statusFilter;
 
     let rows = (STATE.rows || []).slice();
-    rows = rows.filter(r=>isVisible(r, work));
+    rows = rows.filter(r=>isVisible(r, range));
     if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
     if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
     if(q) rows = rows.filter(r=>matches(r, q));
@@ -2637,12 +2784,83 @@ el('workDate').addEventListener('change', ()=>setWorkDate(el('workDate').value))
     if(isSummary) renderSummary();
   }
 
+  // ------------------- Exportar a Excel (tabla visible en TABLERO) -------------------
+  async function exportBoardToExcel(){
+    const table = el('table');
+    if(!table){
+      alert('No hay tabla para exportar.');
+      return;
+    }
+
+    // Solo columnas visibles
+    const ths = Array.from(table.querySelectorAll('thead th')).filter(th=>!th.classList.contains('hidden-col'));
+    const keys = ths.map(th=>th.getAttribute('data-key') || '');
+    const headers = ths.map(th=>th.innerText.trim());
+
+    const rows = Array.from(table.querySelectorAll('tbody tr'));
+    const data = rows.map(tr=>{
+      const tds = Array.from(tr.querySelectorAll('td')).filter(td=>!td.classList.contains('hidden-col'));
+      return tds.map(td=>td.innerText.trim());
+    });
+
+    if(!headers.length){
+      alert('No hay columnas visibles para exportar.');
+      return;
+    }
+
+    const escXml = (s)=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    const html = `<!doctype html>
+<html><head><meta charset="utf-8"></head><body>
+<table border="1">
+  <thead><tr>${headers.map(h=>`<th>${escXml(h)}</th>`).join('')}</tr></thead>
+  <tbody>
+    ${data.map(r=>`<tr>${r.map(c=>`<td>${escXml(c)}</td>`).join('')}</tr>`).join('')}
+  </tbody>
+</table>
+</body></html>`;
+
+    const blob = new Blob([html], {type:'application/vnd.ms-excel;charset=utf-8'});
+    const wr = getWorkRange();
+    const dPart = (wr.start===wr.end) ? wr.start : `${wr.start}_a_${wr.end}`;
+    const stamp = nowLocalIso().replace(/[:T]/g,'-').slice(0,19);
+    const filename = `Arribos_Cedis_${dPart}_${stamp}.xls`.replaceAll('/','-');
+
+    try{
+      if(window.showSaveFilePicker){
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'Excel', accept: { 'application/vnd.ms-excel': ['.xls'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      }else{
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url), 2000);
+      }
+    }catch(err){
+      // cancelado por el usuario o no soportado
+      if(err && (err.name === 'AbortError')) return;
+      console.error(err);
+      alert('No se pudo exportar el archivo.');
+    }
+  }
+
+
   function renderScreen(){
     const rows = getFilteredRows();
     const total = rows.length;
     const pageSize = 9;
 
-    const dateStr = (getWorkDate()||'').replaceAll('-', '/');
+    const wr = getWorkRange();
+    const dateStr = ((wr.start===wr.end) ? wr.start : `${wr.start} - ${wr.end}`).replaceAll('-', '/');
     const cedisTxt = (cedisFilter.size===0) ? 'CEDIS: Todos' : `CEDIS: ${cedisFilter.size} seleccionados`;
     const estTxt = (statusFilter.size===0) ? 'Estatus: Todos' : `Estatus: ${statusFilter.size} seleccionados`;
     const smc = el('screenMetaCedis'); if(smc) smc.textContent = cedisTxt;
