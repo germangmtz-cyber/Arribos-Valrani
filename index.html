@@ -1463,7 +1463,7 @@ async function fetchRows(range){
     if(!authUser){ alert('Necesitas iniciar sesión para capturar.'); return; }
     const s = await ensureSupabase();
     const range = getWorkRange();
-    const { startIso, endIso } = rangeISO(work);
+    const { startIso, endIso } = rangeISO(range.start);
 
     // folio siguiente (por día)
     const maxq = await s.from('shipments').select('folio').gte('arribo_at', startIso).lte('arribo_at', endIso).order('folio', {ascending:false}).limit(1);
@@ -2202,6 +2202,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       const note = (el('e_note').value || '').trim() || 'Edición';
       const cajasRaw = (el('e_cajas').value || '').trim();
       const cajas = cajasRaw ? Number(cajasRaw) : null;
+      const palletsRaw = (el('e_pallets').value || '').trim();
+      const palletsN = palletsRaw ? Number(palletsRaw) : null;
       const patch = {
         cedis: (el('e_cedis').value || '').trim(),
         cuenta: (el('e_cuenta').value || '').trim(),
@@ -2564,7 +2566,8 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
   });
 
   // Histórico 2026/01/07 (opcional)
-  el('btnSeed').addEventListener('click', async ()=>{
+  const btnSeed = el('btnSeed');
+  if(btnSeed) btnSeed.addEventListener('click', async ()=>{
     try{
       await ensureSupabase();
       await seedExampleCloud();
