@@ -2078,7 +2078,35 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     }
 
     const s = await ensureSupabase();
-    const up = await s.from('shipments').update(clean).eq('id', id);
+
+    // Intento 1: con todos los campos (incluyendo pallets)
+    let clean2 = {...clean};
+    let skippedPallets = false;
+
+    // Si no hay nada que actualizar, corta
+    if(Object.keys(clean2).length === 0){
+      throw new Error('No hay cambios para guardar.');
+    }
+
+    let up = await s.from('shipments').update(clean2).eq('id', id);
+
+    // Compatibilidad: si la BD aún NO tiene la columna pallets (o el schema cache no está actualizado),
+    // reintenta sin pallets para que el resto de campos sí guarden.
+    if(up.error){
+      const msg = String(up.error.message || up.error);
+      if(msg.toLowerCase().includes('pallets') && msg.toLowerCase().includes('could not find')){
+        skippedPallets = true;
+        delete clean2.pallets;
+
+        // Si lo único que se quería guardar era pallets, avisa y no cierres el modal
+        if(Object.keys(clean2).length === 0){
+          throw new Error('Tu base (Supabase) aún no tiene la columna PALLETS. Agrega la columna pallets en la tabla shipments y vuelve a intentar.');
+        }
+
+        up = await s.from('shipments').update(clean2).eq('id', id);
+      }
+    }
+
     if(up.error) throw up.error;
 
     const ev = await s.from('shipment_events').insert([{
@@ -2087,13 +2115,14 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       actor: authUser.email || authUser.id,
       from_status: from,
       to_status: from,   // no cambia estatus; solo campos
-      note: note || 'Edición',
-      patch: clean,
+      note: skippedPallets ? ((note || 'Edición') + ' (PALLETS no guardado: BD sin columna)') : (note || 'Edición'),
+      patch: clean2,
     }]);
     if(ev.error) throw ev.error;
 
     await reloadData(true);
   }
+
 
   async function softDeleteCloud(id, reason){
     if(!authUser){ alert('Necesitas iniciar sesión para eliminar.'); return; }
