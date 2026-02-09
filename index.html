@@ -2202,6 +2202,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       const note = (el('e_note').value || '').trim() || 'Edición';
       const cajasRaw = (el('e_cajas').value || '').trim();
       const cajas = cajasRaw ? Number(cajasRaw) : null;
+      const palletsRaw = (el('e_pallets').value || '').trim();
+      const palletsN = palletsRaw ? Number(palletsRaw) : null;
       const patch = {
         cedis: (el('e_cedis').value || '').trim(),
         cuenta: (el('e_cuenta').value || '').trim(),
