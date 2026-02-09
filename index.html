@@ -77,6 +77,26 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .table td[data-key="contenedor"]{white-space:normal;}
     .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;}
     .clamp3{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;white-space:normal;}
+    /* INDICACIÓN: 2 renglones (forzados) y ancho proporcional */
+    #boardView th[data-key="indicacion"], #boardView td[data-key="indicacion"]{
+      white-space: normal !important;
+      width: var(--indW, 28ch);
+      max-width: var(--indW, 28ch);
+    }
+    #boardView td[data-key="indicacion"] .ind2{
+      display:block;
+      line-height:1.15;
+    }
+    #boardView td[data-key="indicacion"] .ind2 > span{
+      display:block;                 /* 2 renglones exactos */
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    /* FECHA siempre activa (no desmarcable) */
+    #cols input[data-locked="1"]{ cursor:not-allowed; opacity:.75; }
+
 
 
     .mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;}
@@ -669,7 +689,54 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     }[c]));
   }
 
-  function ymd(d=new Date()){
+  
+  // -------- INDICACIÓN en 2 renglones + ancho proporcional --------
+  function splitIndicacion2(s){
+    s = String(s ?? '').trim();
+    if(!s) return ['', ''];
+    const mid = Math.floor(s.length/2);
+    const delims = [',',';','|',' - ','-','/'];
+    let cut = -1;
+
+    // busca un delimitador cerca de la mitad
+    for(const d of delims){
+      const i = s.lastIndexOf(d, mid);
+      if(i >= 8){
+        cut = i + d.length;
+        break;
+      }
+    }
+    if(cut < 0){
+      const i = s.lastIndexOf(' ', mid);
+      if(i >= 8) cut = i + 1;
+    }
+    if(cut < 0) cut = mid;
+
+    const a = s.slice(0, cut).trim();
+    const b = s.slice(cut).trim();
+    return [a, b];
+  }
+
+  function indicacionHTML(s){
+    const [a,b] = splitIndicacion2(s);
+    if(!b) return `<div class="ind2"><span>${esc(a)}</span></div>`;
+    return `<div class="ind2"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
+  }
+
+  function updateIndicacionWidth(rows){
+    try{
+      let maxLen = 0;
+      for(const r of (rows||[])){
+        const [a,b] = splitIndicacion2(r.indicacion || '');
+        maxLen = Math.max(maxLen, a.length, b.length);
+      }
+      // límites razonables para no romper layout
+      maxLen = Math.min(70, Math.max(18, maxLen || 18));
+      document.documentElement.style.setProperty('--indW', maxLen + 'ch');
+    }catch(e){}
+  }
+
+function ymd(d=new Date()){
     const y=d.getFullYear();
     const m=String(d.getMonth()+1).padStart(2,'0');
     const day=String(d.getDate()).padStart(2,'0');
@@ -985,15 +1052,20 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     const selected = new Set(loadCols());
     el('cols').innerHTML = COLS.map(c=>{
       const checked = selected.has(c.key) ? 'checked' : '';
-      return `<label style="display:inline-flex;align-items:center;gap:8px;margin-right:14px;margin-bottom:8px;color:var(--muted);font-size:12px;"><input type="checkbox" data-colpick="${c.key}" ${checked}/> ${c.label}</label>`;
+      const locked = (c.key==='fecha');
+      const disabled = locked ? 'disabled' : '';
+      return `<label style="display:inline-flex;align-items:center;gap:8px;margin-right:14px;margin-bottom:8px;color:var(--muted);font-size:12px;"><input type="checkbox" data-colpick="${c.key}" ${checked} ${disabled} ${locked ? "data-locked=\"1\"" : ""}/> ${c.label}</label>`;
     }).join('');
 
     el('cols').querySelectorAll('input[data-colpick]').forEach(chk=>{
       chk.addEventListener('change', ()=>{
         const sel = new Set(loadCols());
         const key = chk.dataset.colpick;
+        if(key==='fecha'){ chk.checked = true; return; }
         if(chk.checked) sel.add(key);
         else sel.delete(key);
+        // fuerza FECHA siempre visible
+        sel.add('fecha');
         if(sel.size===0){ chk.checked=true; return; }
         localStorage.setItem(LS_COLS, JSON.stringify(Array.from(sel)));
         renderBoard();
@@ -1351,6 +1423,7 @@ async function fetchRows(range){
     rows.sort(cmp);
 
     renderKPIs(rows);
+    updateIndicacionWidth(rows);
 
     el('tbody').innerHTML = rows.map((r,i)=>`
       <tr data-id="${r.id}">
@@ -1360,7 +1433,7 @@ async function fetchRows(range){
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
-        <td data-key="indicacion"><div class="clamp2">${esc(r.indicacion)}</div></td>
+        <td data-key="indicacion">${indicacionHTML(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
         <td data-key="asignacion_at" class="mono">${fmtTime(r.asignacion_at)}</td>
@@ -3015,7 +3088,7 @@ const q = (el('q')?.value || '').trim();
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
-        <td data-key="indicacion"><div class="clamp2">${esc(r.indicacion)}</div></td>
+        <td data-key="indicacion">${indicacionHTML(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
         <td data-key="arribo_at" class="mono">${fmtHM(r.arribo_at)}</td>
         <td data-key="asignacion_at" class="mono">${fmtHM(r.asignacion_at)}</td>
