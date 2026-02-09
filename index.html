@@ -1111,7 +1111,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       indicacion: d.indicacion ?? '',
       cajas: d.cajas ?? '',
       tarimas: d.tarimas ?? '',
-      pallets: d.pallets ?? '',
+      pallets: (d.pallets ?? d.PALLETS ?? ''),
       arribo_at: d.arribo_at ?? '',
       asignacion_at: d.asig_cortina_at ?? '',
       inicio_at: d.inicio_descarga_at ?? '',
@@ -1360,7 +1360,7 @@ async function fetchRows(range){
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
-        <td data-key="indicacion"><div class="clamp3">${esc(r.indicacion)}</div></td>
+        <td data-key="indicacion"><div class="clamp2">${esc(r.indicacion)}</div></td>
         <td data-key="anden" class="mono">${esc(r.anden)}</td>
         <td data-key="arribo_at" class="mono">${fmtTime(r.arribo_at)}</td>
         <td data-key="asignacion_at" class="mono">${fmtTime(r.asignacion_at)}</td>
@@ -1488,12 +1488,24 @@ async function fetchRows(range){
 
     let ins = await s.from('shipments').insert([row]).select('*').single();
     if(ins.error){
-      const msg = (ins.error.message||'');
-      // compat: si la columna pallets aún no existe en tu tabla, reintenta sin ella
-      if(msg.includes('pallets')){
+      const msg = String(ins.error.message||'').toLowerCase();
+      // compat: si la columna pallets aún no existe (o el schema cache no está actualizado),
+      // intenta guardar en una columna alternativa "PALLETS" (si existe) y si no, reintenta sin pallets.
+      if(msg.includes('pallets') && msg.includes('could not find')){
+        const v = row.pallets;
+        // intento 2: columna alternativa PALLETS
         const row2 = {...row};
         delete row2.pallets;
+        if(v !== null && v !== undefined) row2.PALLETS = v;
         ins = await s.from('shipments').insert([row2]).select('*').single();
+
+        // intento 3: sin pallets
+        if(ins.error){
+          const row3 = {...row};
+          delete row3.pallets;
+          delete row3.PALLETS;
+          ins = await s.from('shipments').insert([row3]).select('*').single();
+        }
       }
     }
     if(ins.error) throw ins.error;
@@ -2091,19 +2103,35 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     let up = await s.from('shipments').update(clean2).eq('id', id);
 
     // Compatibilidad: si la BD aún NO tiene la columna pallets (o el schema cache no está actualizado),
-    // reintenta sin pallets para que el resto de campos sí guarden.
+    // intenta guardar en una columna alternativa "PALLETS" (si existe) y si no, reintenta sin pallets.
     if(up.error){
-      const msg = String(up.error.message || up.error);
-      if(msg.toLowerCase().includes('pallets') && msg.toLowerCase().includes('could not find')){
-        skippedPallets = true;
-        delete clean2.pallets;
+      const msg = String(up.error.message || up.error).toLowerCase();
+      if(msg.includes('pallets') && msg.includes('could not find')){
+        const v = clean2.pallets;
+        // intento 2: columna alternativa PALLETS
+        if(v !== undefined){
+          const alt = {...clean2};
+          delete alt.pallets;
+          alt.PALLETS = v;
 
-        // Si lo único que se quería guardar era pallets, avisa y no cierres el modal
-        if(Object.keys(clean2).length === 0){
-          throw new Error('Tu base (Supabase) aún no tiene la columna PALLETS. Agrega la columna pallets en la tabla shipments y vuelve a intentar.');
+          const up2 = await s.from('shipments').update(alt).eq('id', id);
+          if(!up2.error){
+            up = up2;
+            clean2 = alt;          // para que la huella registre lo que sí se guardó
+            skippedPallets = false;
+          } else {
+            // intento 3: sin pallets
+            skippedPallets = true;
+            delete clean2.pallets;
+
+            // Si lo único que se quería guardar era pallets, avisa y no cierres el modal
+            if(Object.keys(clean2).length === 0){
+              throw new Error('Tu base (Supabase) aún no tiene la columna para PALLETS (pallets o PALLETS) en la tabla shipments. Agrégala y vuelve a intentar.');
+            }
+
+            up = await s.from('shipments').update(clean2).eq('id', id);
+          }
         }
-
-        up = await s.from('shipments').update(clean2).eq('id', id);
       }
     }
 
@@ -2987,7 +3015,7 @@ const q = (el('q')?.value || '').trim();
         <td data-key="cedis">${esc(r.cedis)}</td>
         <td data-key="status">${statusPill(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
-        <td data-key="indicacion"><div class="clamp3">${esc(r.indicacion)}</div></td>
+        <td data-key="indicacion"><div class="clamp2">${esc(r.indicacion)}</div></td>
         <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
         <td data-key="arribo_at" class="mono">${fmtHM(r.arribo_at)}</td>
         <td data-key="asignacion_at" class="mono">${fmtHM(r.asignacion_at)}</td>
