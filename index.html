@@ -692,28 +692,36 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   
   // -------- INDICACIÓN en 2 renglones + ancho proporcional --------
   function splitIndicacion2(s){
-    s = String(s ?? '').trim();
+    s = String(s ?? '').trim().replace(/\s+/g,' ');
     if(!s) return ['', ''];
-    const mid = Math.floor(s.length/2);
-    const delims = [',',';','|',' - ','-','/'];
-    let cut = -1;
 
-    // busca un delimitador cerca de la mitad
-    for(const d of delims){
-      const i = s.lastIndexOf(d, mid);
-      if(i >= 8){
-        cut = i + d.length;
-        break;
+    // Corto o sin espacios: 1 renglón
+    if(s.length <= 18 || !/\s/.test(s)) return [s, ''];
+
+    const words = s.split(' ');
+    if(words.length < 2) return [s, ''];
+
+    let bestI = 1;
+    let bestScore = Infinity;
+
+    for(let i=1;i<words.length;i++){
+      const a = words.slice(0,i).join(' ');
+      const b = words.slice(i).join(' ');
+      if(!a || !b) continue;
+      const la = a.length, lb = b.length;
+      const diff = Math.abs(la - lb);
+      const mx = Math.max(la, lb);
+      // prioriza partes iguales; desempata por línea más corta
+      const score = diff * 1000 + mx;
+      if(score < bestScore){
+        bestScore = score;
+        bestI = i;
       }
     }
-    if(cut < 0){
-      const i = s.lastIndexOf(' ', mid);
-      if(i >= 8) cut = i + 1;
-    }
-    if(cut < 0) cut = mid;
 
-    const a = s.slice(0, cut).trim();
-    const b = s.slice(cut).trim();
+    const a = words.slice(0,bestI).join(' ').trim();
+    const b = words.slice(bestI).join(' ').trim();
+    if(!a || !b) return [s, ''];
     return [a, b];
   }
 
@@ -731,7 +739,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         maxLen = Math.max(maxLen, a.length, b.length);
       }
       // límites razonables para no romper layout
-      maxLen = Math.min(70, Math.max(18, maxLen || 18));
+      maxLen = Math.min(80, Math.max(10, maxLen || 10));
       document.documentElement.style.setProperty('--indW', maxLen + 'ch');
     }catch(e){}
   }
@@ -1034,12 +1042,8 @@ function ymd(d=new Date()){
     try{
       const v = JSON.parse(localStorage.getItem(LS_COLS) || 'null');
       if(Array.isArray(v) && v.length){
-        // migración: agrega 'fecha' por defecto si no existe
+        // FECHA siempre visible (columna bloqueada)
         if(!v.includes('fecha')) v.push('fecha');
-                // migración: agrega columnas nuevas
-        if(!v.includes('descarga_concl_fecha')) v.push('descarga_concl_fecha');
-        if(!v.includes('liberado_fecha')) v.push('liberado_fecha');
-        if(!v.includes('pallets')) v.push('pallets');
         return v;
       }
     }catch{}
