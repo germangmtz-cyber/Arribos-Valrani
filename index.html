@@ -3975,13 +3975,11 @@ const q = (el('q')?.value || '').trim();
       const ta = el('att_roster_text');
       if(_attRosterForceOpen){
         editor.classList.remove('hidden');
-        if(ta) ta.value = (roster||[]).join('
-');
+        if(ta) ta.value = (roster||[]).join('\n');
       }else{
         if(roster.length){
           editor.classList.add('hidden');
-          if(ta) ta.value = (roster||[]).join('
-');
+          if(ta) ta.value = (roster||[]).join('\n');
         }else{
           editor.classList.remove('hidden');
           if(ta) ta.value = '';
