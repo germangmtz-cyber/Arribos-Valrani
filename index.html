@@ -274,6 +274,15 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 #tableSummary thead th.sumHdr.st-cuar{ background: var(--st-cuar); }
 #tableSummary thead th.sumHdr.st-rech{ background: var(--st-rech); color:#fff; }
 
+    /* ---- ASISTENCIA (ADMIN) ---- */
+    #attendanceCard .table thead th{font-size:12px;letter-spacing:0.02em;}
+    #attendanceCard .table tbody td{padding-top:10px;padding-bottom:10px;vertical-align:middle;}
+    #attendanceCard .att-name{font-weight:800;}
+    #attendanceCard .att-time{width:140px;}
+    #attendanceCard .att-present{display:flex;align-items:center;gap:10px;}
+    #attendanceCard .att-audit-item{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(17,24,38,0.35);margin-bottom:8px;}
+    #attendanceCard .att-audit-item .when{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-size:12px;opacity:.9;min-width:132px}
+    #attendanceCard .att-audit-item .msg{font-size:12px;line-height:1.35}
 </style>
 </head>
 <body>
@@ -516,7 +525,75 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       </div>
 
       <div style="height:12px"></div>
-      <div class="card compact">
+            <div class="card compact" id="attendanceCard">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:900;margin-bottom:4px">Lista de asistencia</div>
+            <div class="muted" style="font-size:12px;line-height:1.35">Por día y CEDIS. Marca presentes: se registra la hora de llegada y la huella de cambios.</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+            <div>
+              <div class="muted" style="font-size:12px">CEDIS</div>
+              <select id="att_cedis" class="input" style="min-width:220px"></select>
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">Fecha</div>
+              <input id="att_date" class="input" style="width:150px" readonly />
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">Presentes</div>
+              <div class="pill" id="att_count" style="font-weight:900;min-width:56px;text-align:center;">0</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:10px"></div>
+
+        <div id="att_roster_editor" class="hidden" style="border:1px dashed var(--line);border-radius:14px;padding:12px;background:rgba(17,24,38,0.35)">
+          <div style="font-weight:800;margin-bottom:6px">Plantilla de personal (este CEDIS)</div>
+          <div class="muted" style="font-size:12px;line-height:1.35;margin-bottom:8px">Pega la lista de nombres (uno por línea) y guarda. Se guarda en nube (si está conectada) y se conserva como respaldo en este navegador.</div>
+          <textarea id="att_roster_text" class="input" rows="6" style="width:100%;resize:vertical" placeholder="Ej:
+JUAN PEREZ
+MARIA LOPEZ
+..."></textarea>
+          <div style="height:10px"></div>
+          <button class="btn secondary" id="att_roster_save">Guardar plantilla</button>
+        </div>
+
+        <div class="tableWrap" style="overflow:auto;border:1px solid var(--line);border-radius:14px">
+          <table class="table" style="min-width:640px">
+            <thead>
+              <tr>
+                <th style="width:92px">Presente</th>
+                <th>Nombre</th>
+                <th style="width:150px">Hora llegada</th>
+              </tr>
+            </thead>
+            <tbody id="att_body"></tbody>
+          </table>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <div class="grid" style="grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px">
+          <div>
+            <div class="muted" style="font-size:12px">MANIOBRA RODRIGUEZ</div>
+            <input class="input" id="att_man_rodriguez" inputmode="numeric" placeholder="0" style="width:100%" />
+          </div>
+          <div>
+            <div class="muted" style="font-size:12px">MANIOBRA HERNANDEZ</div>
+            <input class="input" id="att_man_hernandez" inputmode="numeric" placeholder="0" style="width:100%" />
+          </div>
+        </div>
+
+        <details style="margin-top:12px">
+          <summary class="muted" style="cursor:pointer;font-size:12px">Bitácora (cambios de hoy)</summary>
+          <div id="att_audit" style="margin-top:10px"></div>
+        </details>
+      </div>
+
+      <div style="height:12px"></div>
+<div class="card compact">
         <div style="font-weight:900;margin-bottom:8px">Unidades (acciones permitidas)</div>
         <div class="muted" style="font-size:12px;margin-bottom:10px">Los botones se ajustan al estatus actual (solo transiciones válidas).</div>
         <div id="adminList" class="unitsCard"></div>
@@ -3139,6 +3216,570 @@ const q = (el('q')?.value || '').trim();
     });
   }
   // -----------------------------------------------------------
+
+
+  // ------------------- ASISTENCIA (ADMIN) -------------------
+  const LS_ATT_ROSTER = 'fids_att_roster_v1';
+  const LS_ATT_DAY_PREFIX = 'fids_att_day_v1';
+
+  function _attSafeParse(s, def){
+    try{ return JSON.parse(s); }catch(_e){ return def; }
+  }
+  function _attKey(cedis, date){ return `${LS_ATT_DAY_PREFIX}:${cedis}:${date}`; }
+
+  function _attTodayYMD(){ return ymd(); } // usa fecha local
+  function _attDispDate(ymdStr){ return String(ymdStr||'').replaceAll('-','/'); }
+  function _attNowHHMM(){
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    return `${hh}:${mm}`;
+  }
+  function _attHHMMFromTS(ts){
+    try{
+      const d = new Date(ts);
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      return `${hh}:${mm}`;
+    }catch(_e){ return ''; }
+  }
+  function _attLocalDateTimeISO(dateYMD, hhmm){
+    // dateYMD: YYYY-MM-DD, hhmm: HH:MM (local)
+    try{
+      const [y,m,d] = dateYMD.split('-').map(n=>parseInt(n,10));
+      const [hh,mm] = hhmm.split(':').map(n=>parseInt(n,10));
+      const dt = new Date(y, (m||1)-1, d||1, hh||0, mm||0, 0, 0);
+      return dt.toISOString();
+    }catch(_e){ return nowLocalIso ? nowLocalIso() : (new Date()).toISOString(); }
+  }
+
+  function _attLoadRosterMap(){
+    return _attSafeParse(localStorage.getItem(LS_ATT_ROSTER) || "{}", {});
+  }
+  function _attSaveRosterMap(map){
+    localStorage.setItem(LS_ATT_ROSTER, JSON.stringify(map||{}));
+  }
+  function _attGetRosterLocal(cedis){
+    const map = _attLoadRosterMap();
+    const arr = Array.isArray(map[cedis]) ? map[cedis] : [];
+    return arr.map(x=>String(x).trim()).filter(Boolean);
+  }
+  function _attSetRosterLocal(cedis, names){
+    const map = _attLoadRosterMap();
+    map[cedis] = names;
+    _attSaveRosterMap(map);
+  }
+
+
+      async function _attGetRoster(cedis){
+        const local = _attGetRosterLocal(cedis);
+        try{
+          const sb = await _attGetSupabaseSilent();
+          if(!sb) return local;
+          const r = await sb.from('attendance_roster')
+            .select('person')
+            .eq('cedis', cedis)
+            .eq('active', true)
+            .order('person', {ascending:true});
+          if(r.error){
+            if(!_attSchemaMissing(r.error)) console.warn(r.error);
+            return local;
+          }
+          const arr = (r.data||[]).map(x=>String(x.person||'').trim()).filter(Boolean);
+          if(arr.length){
+            _attSetRosterLocal(cedis, arr);
+            return arr;
+          }
+          return local;
+        }catch(e){
+          if(!_attSchemaMissing(e)) console.warn(e);
+          return local;
+        }
+      }
+
+      async function _attSaveRosterCloud(cedis, names){
+        try{
+          const sb = await _attGetSupabaseSilent();
+          if(!sb) return false;
+          if(!(authUser && authUser.email)){
+            toast('Para guardar plantilla en nube, inicia sesión (modo Admin).');
+            return false;
+          }
+          const nowIso = nowLocalIso ? nowLocalIso() : (new Date()).toISOString();
+
+          const cur = await sb.from('attendance_roster')
+            .select('person,active')
+            .eq('cedis', cedis);
+
+          if(cur.error){
+            if(!_attSchemaMissing(cur.error)) toast(`No se pudo leer plantilla en nube: ${cur.error.message||cur.error}`);
+            return false;
+          }
+
+          const existing = new Map((cur.data||[]).map(r=>[String(r.person||'').trim(), !!r.active]));
+          const setNew = new Set(names.map(n=>String(n).trim()).filter(Boolean));
+          const toDeactivate = [];
+          for(const [p, active] of existing.entries()){
+            if(active && !setNew.has(p)) toDeactivate.push(p);
+          }
+
+          const up = names.map(p=>({cedis, person:p, active:true, updated_at: nowIso, updated_by: authUser.email}));
+          const u = await sb.from('attendance_roster').upsert(up, {onConflict:'cedis,person'});
+          if(u.error){
+            if(!_attSchemaMissing(u.error)) toast(`No se pudo guardar plantilla en nube: ${u.error.message||u.error}`);
+            return false;
+          }
+
+          if(toDeactivate.length){
+            const d = await sb.from('attendance_roster')
+              .update({active:false, updated_at: nowIso, updated_by: authUser.email})
+              .eq('cedis', cedis)
+              .in('person', toDeactivate);
+            if(d.error && !_attSchemaMissing(d.error)) console.warn(d.error);
+          }
+
+          const added = names.filter(p=>!existing.has(p));
+          const removed = toDeactivate;
+          for(const p of added) _attPersistEventCloud('roster_add', p, '', 'activo');
+          for(const p of removed) _attPersistEventCloud('roster_remove', p, 'activo', 'inactivo');
+
+          return true;
+        }catch(e){
+          if(!_attSchemaMissing(e)) console.warn(e);
+          return false;
+        }
+      }
+
+  function _attLoadLocalDay(cedis, date){
+    const raw = localStorage.getItem(_attKey(cedis,date));
+    const def = {people:{}, maneuvers:{rodriguez:'', hernandez:''}, events:[]};
+    const obj = _attSafeParse(raw||"", def) || def;
+    if(!obj.people) obj.people = {};
+    if(!obj.maneuvers) obj.maneuvers = {rodriguez:'', hernandez:''};
+    if(!Array.isArray(obj.events)) obj.events = [];
+    return obj;
+  }
+  function _attSaveLocalDay(cedis, date, obj){
+    localStorage.setItem(_attKey(cedis,date), JSON.stringify(obj||{}));
+  }
+
+  function _attEscape(s){
+    return String(s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+  function _attSchemaMissing(err){
+    const msg = (err && (err.message || err.error_description || err.toString())) || "";
+    return /schema cache|does not exist|relation .* does not exist|Could not find/i.test(msg);
+  }
+
+  async function _attGetSupabaseSilent(){
+    try{
+      if(typeof loadCfg !== 'function') return null;
+      const cfg = loadCfg();
+      if(!cfg || !cfg.url || !cfg.anon) return null;
+      if(!window.supabase || typeof ensureSupabase !== 'function') return null;
+      return await ensureSupabase();
+    }catch(_e){
+      return null;
+    }
+  }
+
+  async function _attLoadCloudDay(sb, cedis, date){
+    const out = {people:{}, maneuvers:{rodriguez:'', hernandez:''}, events:[]};
+
+    // entries
+    const r1 = await sb.from('attendance_entries').select('person,present,arrival_at').eq('cedis', cedis).eq('work_date', date);
+    if(r1.error) throw r1.error;
+    (r1.data||[]).forEach(row=>{
+      out.people[row.person] = {
+        present: !!row.present,
+        arrival: row.arrival_at ? _attHHMMFromTS(row.arrival_at) : ''
+      };
+    });
+
+    // maneuvers (opcional)
+    try{
+      const r2 = await sb.from('attendance_maneuvers').select('manobra_rodriguez,manobra_hernandez').eq('cedis', cedis).eq('work_date', date).maybeSingle();
+      if(!r2.error && r2.data){
+        out.maneuvers.rodriguez = (r2.data.manobra_rodriguez ?? '').toString();
+        out.maneuvers.hernandez = (r2.data.manobra_hernandez ?? '').toString();
+      }
+    }catch(_e){}
+
+    // bitácora (opcional)
+    try{
+      const r3 = await sb.from('attendance_events')
+        .select('event_at,field,person,old_value,new_value,event_by')
+        .eq('cedis', cedis).eq('work_date', date)
+        .order('event_at',{ascending:false}).limit(30);
+      if(!r3.error){
+        out.events = (r3.data||[]).map(ev=>{
+          const who = ev.person ? `${ev.person}: ` : '';
+          const by = ev.event_by ? ` (${ev.event_by})` : '';
+          const msg = `${who}${ev.field}: ${(ev.old_value??'')} → ${(ev.new_value??'')}${by}`;
+          return {t: ev.event_at, msg};
+        });
+      }
+    }catch(_e){}
+
+    return out;
+  }
+
+  let _attUIReady = false;
+  let _attCurrent = {cedis:null, date:null, roster:[], day:null};
+
+  function _attRenderAudit(events){
+    const host = el('att_audit');
+    if(!host) return;
+    if(!events || !events.length){
+      host.innerHTML = `<div class="muted" style="font-size:12px">Sin movimientos registrados.</div>`;
+      return;
+    }
+    host.innerHTML = events.slice(0,30).map(ev=>{
+      const when = ev.t ? _attEscape(_attHHMMFromTS(ev.t)) : '';
+      const d = ev.t ? _attEscape(String(ev.t).split('T')[0]||'') : '';
+      return `<div class="att-audit-item"><div class="when">${d} ${when}</div><div class="msg">${_attEscape(ev.msg)}</div></div>`;
+    }).join('');
+  }
+
+  function _attUpdateCount(){
+    const pill = el('att_count');
+    if(!pill) return;
+    const day = _attCurrent.day || {people:{}};
+    const n = Object.values(day.people||{}).filter(v=>v && v.present).length;
+    pill.textContent = String(n);
+  }
+
+  function _attRenderTable(){
+    const tbody = el('att_body');
+    if(!tbody) return;
+
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    const roster = _attCurrent.roster || [];
+    const day = _attCurrent.day || {people:{}};
+
+    tbody.innerHTML = '';
+
+    if(!cedis || !date){
+      tbody.innerHTML = `<tr><td colspan="3" class="muted" style="font-size:12px;padding:12px">Selecciona CEDIS.</td></tr>`;
+      return;
+    }
+
+    if(!roster.length){
+      tbody.innerHTML = `<tr><td colspan="3" class="muted" style="font-size:12px;padding:12px">Sin plantilla de personal para este CEDIS.</td></tr>`;
+      return;
+    }
+
+    roster.forEach(name=>{
+      const st = day.people[name] || {present:false, arrival:''};
+
+      const tr = document.createElement('tr');
+
+      const td0 = document.createElement('td');
+      const wrap = document.createElement('div');
+      wrap.className = 'att-present';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!st.present;
+
+      const lbl = document.createElement('span');
+      lbl.className = 'muted';
+      lbl.style.fontSize = '12px';
+      lbl.textContent = cb.checked ? 'Sí' : 'No';
+
+      wrap.appendChild(cb);
+      wrap.appendChild(lbl);
+      td0.appendChild(wrap);
+
+      const td1 = document.createElement('td');
+      const nm = document.createElement('div');
+      nm.className = 'att-name';
+      nm.textContent = name;
+      td1.appendChild(nm);
+
+      const td2 = document.createElement('td');
+      const ti = document.createElement('input');
+      ti.type = 'time';
+      ti.className = 'input att-time';
+      ti.value = st.arrival || '';
+      ti.disabled = !cb.checked;
+      td2.appendChild(ti);
+
+      cb.addEventListener('change', async ()=>{
+        const old = {...st};
+        const present = cb.checked;
+        lbl.textContent = present ? 'Sí' : 'No';
+
+        if(present && !ti.value){
+          ti.value = _attNowHHMM();
+        }
+        ti.disabled = !present;
+
+        const next = {present, arrival: present ? (ti.value||'') : ''};
+        await _attPersistPerson(name, old, next);
+      });
+
+      ti.addEventListener('change', async ()=>{
+        const old = {...st};
+        const present = cb.checked;
+        const next = {present, arrival: present ? (ti.value||'') : ''};
+        await _attPersistPerson(name, old, next);
+      });
+
+      tr.appendChild(td0);
+      tr.appendChild(td1);
+      tr.appendChild(td2);
+      tbody.appendChild(tr);
+    });
+
+    _attUpdateCount();
+    _attRenderAudit(day.events||[]);
+  }
+
+  function _attPushLocalEvent(day, msg){
+    day.events = day.events || [];
+    day.events.unshift({t: nowLocalIso ? nowLocalIso() : (new Date()).toISOString(), msg});
+    if(day.events.length > 120) day.events = day.events.slice(0,120);
+  }
+
+  async function _attPersistEventCloud(field, person, oldValue, newValue){
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(!sb) return;
+      const payload = {
+        cedis: _attCurrent.cedis,
+        work_date: _attCurrent.date,
+        person: person || null,
+        field,
+        old_value: (oldValue===undefined || oldValue===null) ? null : String(oldValue),
+        new_value: (newValue===undefined || newValue===null) ? null : String(newValue),
+        event_at: (nowLocalIso ? nowLocalIso() : (new Date()).toISOString()),
+        event_by: (authUser && authUser.email) ? authUser.email : null
+      };
+      const r = await sb.from('attendance_events').insert(payload);
+      if(r.error && !_attSchemaMissing(r.error)) console.warn(r.error);
+    }catch(_e){}
+  }
+
+  async function _attPersistPerson(name, oldRec, nextRec){
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    if(!cedis || !date) return;
+
+    const day = _attLoadLocalDay(cedis, date);
+    const prev = day.people[name] || {present:false, arrival:''};
+
+    day.people[name] = {present: !!nextRec.present, arrival: nextRec.arrival || ''};
+
+    // bitácora local + nube (si existe)
+    if(!!prev.present !== !!nextRec.present){
+      const msg = `${name}: presente ${prev.present?'Sí':'No'} → ${nextRec.present?'Sí':'No'}`;
+      _attPushLocalEvent(day, msg);
+      _attPersistEventCloud('present', name, prev.present?'Sí':'No', nextRec.present?'Sí':'No');
+    }
+    if((prev.arrival||'') !== (nextRec.arrival||'')){
+      const msg = `${name}: hora ${prev.arrival||'-'} → ${nextRec.arrival||'-'}`;
+      _attPushLocalEvent(day, msg);
+      _attPersistEventCloud('arrival', name, prev.arrival||'', nextRec.arrival||'');
+    }
+
+    _attSaveLocalDay(cedis, date, day);
+    _attCurrent.day = day;
+
+    _attUpdateCount();
+    _attRenderAudit(day.events||[]);
+
+    // nube: upsert principal
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(!sb) return;
+
+      const arrival_at = (nextRec.present && nextRec.arrival) ? _attLocalDateTimeISO(date, nextRec.arrival) : null;
+      const payload = {
+        cedis, work_date: date, person: name,
+        present: !!nextRec.present,
+        arrival_at,
+        updated_at: (nowLocalIso ? nowLocalIso() : (new Date()).toISOString()),
+        updated_by: (authUser && authUser.email) ? authUser.email : null
+      };
+
+      const r = await sb.from('attendance_entries').upsert(payload, {onConflict:'cedis,work_date,person'});
+      if(r.error){
+        if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar asistencia: ${r.error.message||r.error}`);
+      }
+    }catch(_e){}
+  }
+
+  async function _attPersistManeuvers(){
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    if(!cedis || !date) return;
+
+    const ro = el('att_man_rodriguez');
+    const he = el('att_man_hernandez');
+    if(!ro || !he) return;
+
+    const vro = (ro.value||'').toString().trim();
+    const vhe = (he.value||'').toString().trim();
+
+    const day = _attLoadLocalDay(cedis, date);
+    const prev = {...(day.maneuvers||{rodriguez:'',hernandez:''})};
+
+    day.maneuvers = {rodriguez: vro, hernandez: vhe};
+    if((prev.rodriguez||'') !== (vro||'')){
+      _attPushLocalEvent(day, `MANIOBRA RODRIGUEZ: ${prev.rodriguez||'0'} → ${vro||'0'}`);
+      _attPersistEventCloud('manobra_rodriguez', null, prev.rodriguez||'0', vro||'0');
+    }
+    if((prev.hernandez||'') !== (vhe||'')){
+      _attPushLocalEvent(day, `MANIOBRA HERNANDEZ: ${prev.hernandez||'0'} → ${vhe||'0'}`);
+      _attPersistEventCloud('manobra_hernandez', null, prev.hernandez||'0', vhe||'0');
+    }
+
+    _attSaveLocalDay(cedis, date, day);
+    _attCurrent.day = day;
+    _attRenderAudit(day.events||[]);
+
+    // nube
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(!sb) return;
+
+      const payload = {
+        cedis, work_date: date,
+        manobra_rodriguez: (vro===''? null : parseInt(vro,10)),
+        manobra_hernandez: (vhe===''? null : parseInt(vhe,10)),
+        updated_at: (nowLocalIso ? nowLocalIso() : (new Date()).toISOString()),
+        updated_by: (authUser && authUser.email) ? authUser.email : null
+      };
+      const r = await sb.from('attendance_maneuvers').upsert(payload, {onConflict:'cedis,work_date'});
+      if(r.error){
+        if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar maniobras: ${r.error.message||r.error}`);
+      }
+    }catch(_e){}
+  }
+
+  async function _attReload(){
+    if(!_attUIReady) return;
+
+    const sel = el('att_cedis');
+    if(!sel) return;
+
+    const cedis = sel.value || (CEDIS_LIST && CEDIS_LIST[0]) || '';
+    const date = _attTodayYMD();
+
+    _attCurrent.cedis = cedis;
+    _attCurrent.date = date;
+
+    if(el('att_date')) el('att_date').value = _attDispDate(date);
+
+    // roster
+    const roster = await _attGetRoster(cedis);
+    _attCurrent.roster = roster;
+
+    const editor = el('att_roster_editor');
+    if(editor){
+      if(roster.length){
+        editor.classList.add('hidden');
+      }else{
+        editor.classList.remove('hidden');
+        if(el('att_roster_text')) el('att_roster_text').value = '';
+      }
+    }
+
+    // load local first
+    let day = _attLoadLocalDay(cedis, date);
+
+    // try cloud merge (si existe tabla)
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(sb){
+        const cloud = await _attLoadCloudDay(sb, cedis, date);
+        // merge (cloud gana si trae datos)
+        const cloudHas = Object.keys(cloud.people||{}).length > 0 || (cloud.maneuvers && (cloud.maneuvers.rodriguez || cloud.maneuvers.hernandez)) || (cloud.events && cloud.events.length);
+        if(cloudHas){
+          day.people = {...(day.people||{}), ...(cloud.people||{})};
+          day.maneuvers = {...(day.maneuvers||{}), ...(cloud.maneuvers||{})};
+          // Si hay eventos de nube, muéstralos; si no, usa los locales
+          if(cloud.events && cloud.events.length){
+            day.events = cloud.events;
+          }
+          _attSaveLocalDay(cedis, date, day);
+        }
+      }
+    }catch(e){
+      if(!_attSchemaMissing(e)) console.warn(e);
+    }
+
+    _attCurrent.day = day;
+
+    // prefill maneuvers
+    if(el('att_man_rodriguez')) el('att_man_rodriguez').value = (day.maneuvers && day.maneuvers.rodriguez) ? day.maneuvers.rodriguez : '';
+    if(el('att_man_hernandez')) el('att_man_hernandez').value = (day.maneuvers && day.maneuvers.hernandez) ? day.maneuvers.hernandez : '';
+
+    _attRenderTable();
+  }
+
+  function initAttendanceUI(){
+    try{
+      const card = el('attendanceCard');
+      if(!card) return;
+
+      const date = _attTodayYMD();
+      if(el('att_date')) el('att_date').value = _attDispDate(date);
+
+      const sel = el('att_cedis');
+      if(sel){
+        sel.innerHTML = (CEDIS_LIST||[]).map(c=>`<option value="${_attEscape(c)}">${_attEscape(c)}</option>`).join('');
+        // default: toma CEDIS actual de captura rápida si existe
+        const aCedis = el('aCedis');
+        sel.value = (aCedis && aCedis.value) ? aCedis.value : ((CEDIS_LIST && CEDIS_LIST[0]) || '');
+        sel.addEventListener('change', _attReload);
+
+        if(aCedis){
+          aCedis.addEventListener('change', ()=>{
+            if(sel.value !== aCedis.value){
+              sel.value = aCedis.value;
+              _attReload();
+            }
+          });
+        }
+      }
+
+      const saveRosterBtn = el('att_roster_save');
+      if(saveRosterBtn){
+        saveRosterBtn.addEventListener('click', async ()=>{
+          const sel = el('att_cedis');
+          const cedis = sel ? sel.value : '';
+          const ta = el('att_roster_text');
+          const raw = ta ? ta.value : '';
+          const names = raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+          if(!names.length){
+            toast('Pega al menos un nombre para guardar la plantilla.');
+            return;
+          }
+          _attSetRosterLocal(cedis, names);
+          const okCloud = await _attSaveRosterCloud(cedis, names);
+          toast(okCloud ? 'Plantilla guardada en nube.' : 'Plantilla guardada (nube no disponible).');
+          _attReload();
+        });
+      }
+
+      const ro = el('att_man_rodriguez');
+      const he = el('att_man_hernandez');
+      if(ro) ro.addEventListener('change', _attPersistManeuvers);
+      if(he) he.addEventListener('change', _attPersistManeuvers);
+
+      _attUIReady = true;
+      _attReload();
+    }catch(e){
+      console.warn('initAttendanceUI error', e);
+    }
+  }
+
+
+  // Inicializa Asistencia (ADMIN)
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', initAttendanceUI); } else { initAttendanceUI(); }
 </script>
 </body>
 </html>
