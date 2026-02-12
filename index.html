@@ -300,6 +300,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <button class="tab active" id="tabBoard">TABLERO</button>
       <button class="btn secondary tiny" id="btnExport" title="Exportar tabla a Excel">EXPORTAR</button>
       </div>
+      <button class="tab" id="tabDashboard">DASHBOARD</button>
       <button class="tab" id="tabScreen">PANTALLA</button>
       <button class="tab" id="tabAdmin">ADMIN</button>
     </div>
@@ -374,9 +375,39 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         El <u>histórico</u> se consulta seleccionando una fecha.
         Para terminar el día natural, usa <u>Cerrar día</u>: archiva concluidos (no se borran, solo salen del activo).
       </div>
-    
-    </section>
+</section>
 
+
+        
+    
+    <section id="dashboardView" class="hidden">
+      <div class="screenCard">
+        <div class="screenTop">
+          <div>
+            <div class="screenTitle">DASHBOARD</div>
+            <div class="screenSub muted">Indicadores en tiempo real (según filtros del Tablero)</div>
+          </div>
+          <div class="screenMeta">
+            <span class="chip small" id="dashMetaCedis">CEDIS: Todos</span>
+            <span class="chip small" id="dashMetaEstatus">Estatus: Todos</span>
+            <span class="chip small" id="dashMetaFecha">Fecha: </span>
+          </div>
+        </div>
+
+        <div class="kpis" id="dashKpis" style="margin-top:10px"></div>
+
+        <div class="grid two" style="margin-top:12px">
+          <div class="card">
+            <div class="muted" style="font-size:12px;margin-bottom:8px">Estatus (Concluidos vs Pendientes)</div>
+            <div id="chartDonut" style="width:100%;height:320px"></div>
+          </div>
+          <div class="card">
+            <div class="muted" style="font-size:12px;margin-bottom:8px">Recepción en el tiempo</div>
+            <div id="chartTrend" style="width:100%;height:320px"></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section id="summaryView" class="hidden">
       <div class="screenCard">
@@ -687,6 +718,7 @@ MARIA LOPEZ
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 
   <script>
   // Seed local (para referencia)
@@ -2527,18 +2559,21 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const isAdmin = which==='admin';
     const isScreen = which==='screen';
     const isSummary = which==='summary';
+    const isDashboard = which==='dashboard';
 
     el('boardView').classList.toggle('hidden', !isBoard);
     el('adminView').classList.toggle('hidden', !isAdmin);
     el('screenView').classList.toggle('hidden', !isScreen);
     if(el('summaryView')) el('summaryView').classList.toggle('hidden', !isSummary);
+    if(el('dashboardView')) el('dashboardView').classList.toggle('hidden', !isDashboard);
 
     el('tabBoard').classList.toggle('active', isBoard);
     el('tabAdmin').classList.toggle('active', isAdmin);
     if(el('tabScreen')) el('tabScreen').classList.toggle('active', isScreen);
     if(el('tabSummary')) el('tabSummary').classList.toggle('active', isSummary);
+    if(el('tabDashboard')) el('tabDashboard').classList.toggle('active', isDashboard);
 
-    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : (isSummary ? 'Resumen' : 'Pantalla'))}`;
+    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : (isSummary ? 'Resumen' : (isDashboard ? 'Dashboard' : 'Pantalla')))}`;
 
     if(isBoard) closeAuthDialog();
 
@@ -2548,6 +2583,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(isAdmin){ renderAudit(); }
     if(isBoard){ renderBoard(); }
     if(isSummary){ renderSummary(); }
+    if(isDashboard){ renderDashboard(); setTimeout(dashResize, 60); }
   }
 
 
@@ -2714,6 +2750,7 @@ function initStatusMulti(){
   el('tabAdmin').addEventListener('click', ()=>setTab('admin'));
   if(el('tabScreen')) el('tabScreen').addEventListener('click', ()=>setTab('screen'));
   if(el('tabSummary')) el('tabSummary').addEventListener('click', ()=>setTab('summary'));
+  if(el('tabDashboard')) el('tabDashboard').addEventListener('click', ()=>setTab('dashboard'));
   el('toScreen').addEventListener('click', ()=>setTab('screen'));
 
   el('q').addEventListener('input', ()=>renderBoard());
@@ -3059,10 +3096,117 @@ const q = (el('q')?.value || '').trim();
     // Re-render whichever view is active
     const isScreen = !el('screenView').classList.contains('hidden');
     const isSummary = !!el('summaryView') && !el('summaryView').classList.contains('hidden');
+    const isDashboard = !!el('dashboardView') && !el('dashboardView').classList.contains('hidden');
+
     renderBoard();
     if(isScreen) renderScreen();
     if(isSummary) renderSummary();
+    if(isDashboard) renderDashboard();
   }
+
+  // ------------------- DASHBOARD -------------------
+  let dashDonut = null;
+  let dashTrend = null;
+
+  function dashEnsureCharts(){
+    if(!window.echarts) return false;
+    const d1 = el('chartDonut');
+    const d2 = el('chartTrend');
+    if(d1 && !dashDonut) dashDonut = echarts.init(d1);
+    if(d2 && !dashTrend) dashTrend = echarts.init(d2);
+    return true;
+  }
+
+  function dashResize(){
+    try{ dashDonut && dashDonut.resize(); }catch(_e){}
+    try{ dashTrend && dashTrend.resize(); }catch(_e){}
+  }
+
+  window.addEventListener('resize', ()=>{
+    try{
+      if(el('dashboardView') && !el('dashboardView').classList.contains('hidden')) dashResize();
+    }catch(_e){}
+  });
+
+  function renderDashboard(){
+    const view = el('dashboardView');
+    if(!view) return;
+
+    const range = getWorkRange();
+    const dateTxt = (range.start===range.end) ? range.start : `${range.start} a ${range.end}`;
+
+    const cTxt = (cedisFilter && cedisFilter.size) ? `CEDIS: ${cedisFilter.size} seleccionados` : 'CEDIS: Todos';
+    const sTxt = (statusFilter && statusFilter.size) ? `Estatus: ${statusFilter.size} seleccionados` : 'Estatus: Todos';
+
+    if(el('dashMetaCedis')) el('dashMetaCedis').textContent = cTxt;
+    if(el('dashMetaEstatus')) el('dashMetaEstatus').textContent = sTxt;
+    if(el('dashMetaFecha')) el('dashMetaFecha').textContent = 'Fecha: ' + dateTxt;
+
+    const rows = getFilteredRows();
+    const recibidos = rows.length;
+    const concluidos = rows.filter(r=>r.status==='DESCARGA_CONCL').length; // definición A
+    const pendientes = Math.max(0, recibidos - concluidos);
+
+    if(el('dashKpis')){
+      el('dashKpis').innerHTML = [
+        ['Contenedores recibidos', recibidos],
+        ['Concluidos', concluidos],
+        ['Pendientes', pendientes],
+      ].map(([k,v])=>`<span class="chip"><b>${esc(String(v))}</b> <span class="muted">${esc(k)}</span></span>`).join('');
+    }
+
+    if(!dashEnsureCharts()) return;
+
+    // Donut: concluidos vs pendientes
+    try{
+      dashDonut.setOption({
+        tooltip:{trigger:'item'},
+        legend:{top:0, textStyle:{color:'#9fb0c3'}},
+        series:[{
+          type:'pie',
+          radius:['55%','80%'],
+          avoidLabelOverlap:true,
+          itemStyle:{borderRadius:10,borderColor:'#0b0f14',borderWidth:2},
+          label:{show:true, color:'#e8eef6', formatter:'{b}: {c}'},
+          data:[
+            {value:concluidos, name:'Concluidos'},
+            {value:pendientes, name:'Pendientes'},
+          ]
+        }]
+      }, true);
+    }catch(e){ console.warn(e); }
+
+    // Trend: por hora si es un solo día; si no, por fecha
+    const sameDay = (range.start===range.end);
+    const map = new Map();
+    for(const r of rows){
+      const iso = r.arribo_at || r.created_at || '';
+      let key = '';
+      if(iso){
+        const d = new Date(iso);
+        if(!isNaN(d)){
+          key = sameDay ? (String(d.getHours()).padStart(2,'0') + ':00') : ymd(d);
+        }
+      }
+      if(!key) key = sameDay ? '—' : (r.arribo_ymd || '—');
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    const keys = Array.from(map.keys()).sort((a,b)=>a.localeCompare(b));
+    const vals = keys.map(k=>map.get(k)||0);
+
+    try{
+      dashTrend.setOption({
+        tooltip:{trigger:'axis'},
+        grid:{left:40,right:16,top:18,bottom:35},
+        xAxis:{type:'category',data:keys, axisLabel:{color:'#9fb0c3', rotate: sameDay ? 0 : 35}},
+        yAxis:{type:'value', axisLabel:{color:'#9fb0c3'}, splitLine:{lineStyle:{color:'rgba(34,48,68,0.45)'}}},
+        series:[{type:'bar', data:vals, barMaxWidth:28, emphasis:{focus:'series'}}]
+      }, true);
+    }catch(e){ console.warn(e); }
+
+    setTimeout(dashResize, 0);
+  }
+  // ------------------------------------------------
 
   // ------------------- Exportar a Excel (tabla visible en TABLERO) -------------------
   async function exportBoardToExcel(){
