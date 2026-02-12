@@ -420,8 +420,6 @@ html,body{overflow-y:auto;overflow-x:hidden;}
             <span class="chip small" id="sumMetaCedis">CEDIS: Todos</span>
             <span class="chip small" id="sumMetaEstatus">Estatus: Todos</span>
             <span class="chip small" id="sumMetaFecha">Fecha: </span>
-            <span class="chip small" id="sumMetaPlantilla">Plantilla: 0</span>
-            <span class="chip small" id="sumMetaManiobra">Maniobra: 0</span>
           </div>
         </div>
 
@@ -577,11 +575,6 @@ html,body{overflow-y:auto;overflow-x:hidden;}
               <div class="muted" style="font-size:12px">Presentes</div>
               <div class="pill" id="att_count" style="font-weight:900;min-width:56px;text-align:center;">0</div>
             </div>
-
-            <div>
-              <div class="muted" style="font-size:12px">&nbsp;</div>
-              <button class="btn secondary" id="att_roster_toggle">Editar plantilla</button>
-            </div>
           </div>
         </div>
 
@@ -613,7 +606,7 @@ MARIA LOPEZ
 
         <div style="height:12px"></div>
 
-        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px">
+        <div class="grid" style="grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px">
           <div>
             <div class="muted" style="font-size:12px">MANIOBRA RODRIGUEZ</div>
             <input class="input" id="att_man_rodriguez" inputmode="numeric" placeholder="0" style="width:100%" />
@@ -621,11 +614,6 @@ MARIA LOPEZ
           <div>
             <div class="muted" style="font-size:12px">MANIOBRA HERNANDEZ</div>
             <input class="input" id="att_man_hernandez" inputmode="numeric" placeholder="0" style="width:100%" />
-          </div>
-
-          <div>
-            <div class="muted" style="font-size:12px">MANIOBRA ZUÑIGA</div>
-            <input class="input" id="att_man_zuniga" inputmode="numeric" placeholder="0" style="width:100%" />
           </div>
         </div>
 
@@ -1461,130 +1449,6 @@ async function fetchRows(range){
   }
 
   // ------------------- KPIs + Render -------------------
-  // ---- Plantilla/Maniobra KPIs (según filtros) ----
-  let _staffKpiCache = { plantilla: 0, maniobra: 0 };
-  let _staffKpiKey = '';
-  let _staffKpiTimer = null;
-
-  function _staffSetText(id, val){
-    const n = (val===null||val===undefined) ? 0 : val;
-    const node = el(id);
-    if(node) node.textContent = String(n);
-  }
-
-  function _staffKey(range){
-    const c = (cedisFilter && cedisFilter.size) ? Array.from(cedisFilter).sort().join('|') : '*';
-    return `${range.start}..${range.end}__${c}`;
-  }
-
-  function _ymdToDate(ymd){
-    const [y,m,d] = (ymd||'').split('-').map(Number);
-    if(!y||!m||!d) return null;
-    return new Date(y, m-1, d);
-  }
-  function _dateToYMD(dt){
-    const y = dt.getFullYear();
-    const m = String(dt.getMonth()+1).padStart(2,'0');
-    const d = String(dt.getDate()).padStart(2,'0');
-    return `${y}-${m}-${d}`;
-  }
-
-  async function _computeStaffTotals(range){
-    const key = _staffKey(range);
-
-    // evita recomputar si ya está fresco para el mismo key
-    if(key === _staffKpiKey && _staffKpiCache) return _staffKpiCache;
-
-    const cedisList = (cedisFilter && cedisFilter.size) ? Array.from(cedisFilter) : null;
-
-    // 1) intenta nube (Supabase)
-    try{
-      const sb = await _attGetSupabaseSilent();
-      if(sb){
-        // Plantilla (presentes)
-        let q1 = sb.from('attendance_entries')
-          .select('person')
-          .eq('present', true)
-          .gte('work_date', range.start)
-          .lte('work_date', range.end);
-        if(cedisList && cedisList.length) q1 = q1.in('cedis', cedisList);
-        const r1 = await q1;
-        if(r1.error) throw r1.error;
-        const plantilla = (r1.data||[]).length;
-
-        // Maniobra (suma de 3)
-        let q2 = sb.from('attendance_maneuvers')
-          .select('manobra_rodriguez,manobra_hernandez,manobra_zuniga')
-          .gte('work_date', range.start)
-          .lte('work_date', range.end);
-        if(cedisList && cedisList.length) q2 = q2.in('cedis', cedisList);
-        const r2 = await q2;
-        if(r2.error) throw r2.error;
-
-        const maniobra = (r2.data||[]).reduce((acc,row)=>{
-          const a = (row.manobra_rodriguez==null?0:Number(row.manobra_rodriguez)) || 0;
-          const b = (row.manobra_hernandez==null?0:Number(row.manobra_hernandez)) || 0;
-          const c = (row.manobra_zuniga==null?0:Number(row.manobra_zuniga)) || 0;
-          return acc + a + b + c;
-        }, 0);
-
-        _staffKpiCache = { plantilla, maniobra };
-        _staffKpiKey = key;
-        return _staffKpiCache;
-      }
-    }catch(e){
-      // si hay error de esquema, no revientes la app
-      if(!_attSchemaMissing(e)) console.warn('Staff KPI nube error', e);
-    }
-
-    // 2) fallback local (si no hay nube): suma por días/cedis de lo guardado local
-    try{
-      let plantilla = 0, maniobra = 0;
-      const d0 = _ymdToDate(range.start);
-      const d1 = _ymdToDate(range.end);
-      if(d0 && d1){
-        const cList = (cedisList && cedisList.length) ? cedisList : (CEDIS_LIST||[]);
-        for(let dt = new Date(d0); dt <= d1; dt.setDate(dt.getDate()+1)){
-          const ymd = _dateToYMD(dt);
-          for(const cedis of cList){
-            const day = _attLoadLocalDay(cedis, ymd);
-            const ppl = day && day.people ? day.people : {};
-            for(const k of Object.keys(ppl)){
-              if(ppl[k] && ppl[k].present) plantilla += 1;
-            }
-            const m = day && day.maneuvers ? day.maneuvers : {};
-            maniobra += (Number(m.rodriguez)||0) + (Number(m.hernandez)||0) + (Number(m.zuniga)||0);
-          }
-        }
-      }
-      _staffKpiCache = { plantilla, maniobra };
-      _staffKpiKey = key;
-      return _staffKpiCache;
-    }catch(e){
-      console.warn('Staff KPI local error', e);
-      _staffKpiCache = { plantilla: 0, maniobra: 0 };
-      _staffKpiKey = key;
-      return _staffKpiCache;
-    }
-  }
-
-  function refreshStaffKPIsDebounced(){
-    clearTimeout(_staffKpiTimer);
-    _staffKpiTimer = setTimeout(async ()=>{
-      const range = getWorkRange();
-      const totals = await _computeStaffTotals(range);
-
-      // Tablero (chips)
-      _staffSetText('kpiPlantillaBoard', totals.plantilla);
-      _staffSetText('kpiManiobraBoard', totals.maniobra);
-
-      // Resumen (meta chips)
-      if(el('sumMetaPlantilla')) el('sumMetaPlantilla').textContent = `Plantilla: ${totals.plantilla}`;
-      if(el('sumMetaManiobra')) el('sumMetaManiobra').textContent = `Maniobra: ${totals.maniobra}`;
-    }, 220);
-  }
-
-
   function renderKPIs(visible){
     const by = (code)=>visible.filter(r=>r.status===code).length;
     const range = getWorkRange();
@@ -1597,9 +1461,7 @@ async function fetchRows(range){
       ['Cortina asignada', by('CORTINA_ASIGNADA')],
       ['Descarga en proceso', by('DESCARGA_PROCESO')],
       ['Bloqueos (hold/fumig)', visible.filter(r=>['HOLD_NO_DESCARGAR','FUMIG_PEND','FUMIG_CUARENTENA','ESPERA_CONFRONTA'].includes(r.status)).length],
-            ['Concluidos día', conclWork],
-      ['Plantilla', `<span id="kpiPlantillaBoard">${_staffKpiCache.plantilla}</span>`],
-      ['Maniobra', `<span id="kpiManiobraBoard">${_staffKpiCache.maniobra}</span>`],
+      ['Concluidos día', conclWork],
     ];
 
     el('kpis').innerHTML = chips.map(([k,v])=>`<span class="chip"><b>${v}</b> <span class="muted">${k}</span></span>`).join('');
@@ -1674,7 +1536,6 @@ async function fetchRows(range){
     rows.sort(cmp);
 
     renderKPIs(rows);
-    refreshStaffKPIsDebounced();
     updateIndicacionWidth(rows);
 
     el('tbody').innerHTML = rows.map((r,i)=>`
@@ -3114,7 +2975,6 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
     if(el('sumMetaEstatus')) el('sumMetaEstatus').textContent = estTxt;
     const fTxt = (range.start===range.end) ? range.start : `${range.start} - ${range.end}`;
     if(el('sumMetaFecha')) el('sumMetaFecha').textContent = `Fecha: ${fTxt.replaceAll('-','/')}`;
-    refreshStaffKPIsDebounced();
 
     const statusOrder = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
 
@@ -3636,7 +3496,7 @@ const q = (el('q')?.value || '').trim();
 
   function _attLoadLocalDay(cedis, date){
     const raw = localStorage.getItem(_attKey(cedis,date));
-    const def = {people:{}, maneuvers:{rodriguez:'', hernandez:'', zuniga:''}, events:[]};
+    const def = {people:{}, maneuvers:{rodriguez:'', hernandez:''}, events:[]};
     const obj = _attSafeParse(raw||"", def) || def;
     if(!obj.people) obj.people = {};
     if(!obj.maneuvers) obj.maneuvers = {rodriguez:'', hernandez:''};
@@ -3668,7 +3528,7 @@ const q = (el('q')?.value || '').trim();
   }
 
   async function _attLoadCloudDay(sb, cedis, date){
-    const out = {people:{}, maneuvers:{rodriguez:'', hernandez:'', zuniga:''}, events:[]};
+    const out = {people:{}, maneuvers:{rodriguez:'', hernandez:''}, events:[]};
 
     // entries
     const r1 = await sb.from('attendance_entries').select('person,present,arrival_at').eq('cedis', cedis).eq('work_date', date);
@@ -3682,11 +3542,10 @@ const q = (el('q')?.value || '').trim();
 
     // maneuvers (opcional)
     try{
-      const r2 = await sb.from('attendance_maneuvers').select('manobra_rodriguez,manobra_hernandez,manobra_zuniga').eq('cedis', cedis).eq('work_date', date).maybeSingle();
+      const r2 = await sb.from('attendance_maneuvers').select('manobra_rodriguez,manobra_hernandez').eq('cedis', cedis).eq('work_date', date).maybeSingle();
       if(!r2.error && r2.data){
         out.maneuvers.rodriguez = (r2.data.manobra_rodriguez ?? '').toString();
         out.maneuvers.hernandez = (r2.data.manobra_hernandez ?? '').toString();
-        out.maneuvers.zuniga = (r2.data.manobra_zuniga ?? '').toString();
       }
     }catch(_e){}
 
@@ -3710,7 +3569,6 @@ const q = (el('q')?.value || '').trim();
   }
 
   let _attUIReady = false;
-  let _attRosterForceOpen = false;
   let _attCurrent = {cedis:null, date:null, roster:[], day:null};
 
   function _attRenderAudit(events){
@@ -3904,17 +3762,15 @@ const q = (el('q')?.value || '').trim();
 
     const ro = el('att_man_rodriguez');
     const he = el('att_man_hernandez');
-    const zu = el('att_man_zuniga');
-    if(!ro || !he || !zu) return;
+    if(!ro || !he) return;
 
     const vro = (ro.value||'').toString().trim();
     const vhe = (he.value||'').toString().trim();
-    const vzu = (zu.value||'').toString().trim();
 
     const day = _attLoadLocalDay(cedis, date);
-    const prev = {...(day.maneuvers||{rodriguez:'',hernandez:'',zuniga:''})};
+    const prev = {...(day.maneuvers||{rodriguez:'',hernandez:''})};
 
-    day.maneuvers = {rodriguez: vro, hernandez: vhe, zuniga: vzu};
+    day.maneuvers = {rodriguez: vro, hernandez: vhe};
     if((prev.rodriguez||'') !== (vro||'')){
       _attPushLocalEvent(day, `MANIOBRA RODRIGUEZ: ${prev.rodriguez||'0'} → ${vro||'0'}`);
       _attPersistEventCloud('manobra_rodriguez', null, prev.rodriguez||'0', vro||'0');
@@ -3922,10 +3778,6 @@ const q = (el('q')?.value || '').trim();
     if((prev.hernandez||'') !== (vhe||'')){
       _attPushLocalEvent(day, `MANIOBRA HERNANDEZ: ${prev.hernandez||'0'} → ${vhe||'0'}`);
       _attPersistEventCloud('manobra_hernandez', null, prev.hernandez||'0', vhe||'0');
-    }
-    if((prev.zuniga||'') !== (vzu||'')){
-      _attPushLocalEvent(day, `MANIOBRA ZUÑIGA: ${prev.zuniga||'0'} → ${vzu||'0'}`);
-      _attPersistEventCloud('manobra_zuniga', null, prev.zuniga||'0', vzu||'0');
     }
 
     _attSaveLocalDay(cedis, date, day);
@@ -3941,7 +3793,6 @@ const q = (el('q')?.value || '').trim();
         cedis, work_date: date,
         manobra_rodriguez: (vro===''? null : parseInt(vro,10)),
         manobra_hernandez: (vhe===''? null : parseInt(vhe,10)),
-        manobra_zuniga: (vzu===''? null : parseInt(vzu,10)),
         updated_at: (nowLocalIso ? nowLocalIso() : (new Date()).toISOString()),
         updated_by: (authUser && authUser.email) ? authUser.email : null
       };
@@ -3972,24 +3823,13 @@ const q = (el('q')?.value || '').trim();
 
     const editor = el('att_roster_editor');
     if(editor){
-      const ta = el('att_roster_text');
-      if(_attRosterForceOpen){
-        editor.classList.remove('hidden');
-        if(ta) ta.value = (roster||[]).join('\n');
+      if(roster.length){
+        editor.classList.add('hidden');
       }else{
-        if(roster.length){
-          editor.classList.add('hidden');
-          if(ta) ta.value = (roster||[]).join('\n');
-        }else{
-          editor.classList.remove('hidden');
-          if(ta) ta.value = '';
-        }
+        editor.classList.remove('hidden');
+        if(el('att_roster_text')) el('att_roster_text').value = '';
       }
     }
-
-    // set toggle label
-    const tb = el('att_roster_toggle');
-    if(tb) tb.textContent = _attRosterForceOpen ? 'Ocultar plantilla' : 'Editar plantilla';
 
     // load local first
     let day = _attLoadLocalDay(cedis, date);
@@ -4000,7 +3840,7 @@ const q = (el('q')?.value || '').trim();
       if(sb){
         const cloud = await _attLoadCloudDay(sb, cedis, date);
         // merge (cloud gana si trae datos)
-        const cloudHas = Object.keys(cloud.people||{}).length > 0 || (cloud.maneuvers && (cloud.maneuvers.rodriguez || cloud.maneuvers.hernandez || cloud.maneuvers.zuniga)) || (cloud.events && cloud.events.length);
+        const cloudHas = Object.keys(cloud.people||{}).length > 0 || (cloud.maneuvers && (cloud.maneuvers.rodriguez || cloud.maneuvers.hernandez)) || (cloud.events && cloud.events.length);
         if(cloudHas){
           day.people = {...(day.people||{}), ...(cloud.people||{})};
           day.maneuvers = {...(day.maneuvers||{}), ...(cloud.maneuvers||{})};
@@ -4020,7 +3860,6 @@ const q = (el('q')?.value || '').trim();
     // prefill maneuvers
     if(el('att_man_rodriguez')) el('att_man_rodriguez').value = (day.maneuvers && day.maneuvers.rodriguez) ? day.maneuvers.rodriguez : '';
     if(el('att_man_hernandez')) el('att_man_hernandez').value = (day.maneuvers && day.maneuvers.hernandez) ? day.maneuvers.hernandez : '';
-    if(el('att_man_zuniga')) el('att_man_zuniga').value = (day.maneuvers && day.maneuvers.zuniga) ? day.maneuvers.zuniga : '';
 
     _attRenderTable();
   }
@@ -4072,29 +3911,8 @@ const q = (el('q')?.value || '').trim();
 
       const ro = el('att_man_rodriguez');
       const he = el('att_man_hernandez');
-      const zu = el('att_man_zuniga');
       if(ro) ro.addEventListener('change', _attPersistManeuvers);
       if(he) he.addEventListener('change', _attPersistManeuvers);
-      if(zu) zu.addEventListener('change', _attPersistManeuvers);
-
-      const toggleRosterBtn = el('att_roster_toggle');
-      if(toggleRosterBtn){
-        toggleRosterBtn.addEventListener('click', ()=>{
-          _attRosterForceOpen = !_attRosterForceOpen;
-          const editor = el('att_roster_editor');
-          const ta = el('att_roster_text');
-          if(editor){
-            if(_attRosterForceOpen){
-              editor.classList.remove('hidden');
-              if(ta) ta.value = (_attCurrent.roster||[]).join('\n');
-              toggleRosterBtn.textContent = 'Ocultar plantilla';
-            }else{
-              editor.classList.add('hidden');
-              toggleRosterBtn.textContent = 'Editar plantilla';
-            }
-          }
-        });
-      }
 
       _attUIReady = true;
       _attReload();
