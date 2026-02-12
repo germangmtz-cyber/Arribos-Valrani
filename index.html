@@ -274,6 +274,15 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 #tableSummary thead th.sumHdr.st-cuar{ background: var(--st-cuar); }
 #tableSummary thead th.sumHdr.st-rech{ background: var(--st-rech); color:#fff; }
 
+    /* ---- ASISTENCIA (ADMIN) ---- */
+    #attendanceCard .table thead th{font-size:12px;letter-spacing:0.02em;}
+    #attendanceCard .table tbody td{padding-top:10px;padding-bottom:10px;vertical-align:middle;}
+    #attendanceCard .att-name{font-weight:800;}
+    #attendanceCard .att-time{width:140px;}
+    #attendanceCard .att-present{display:flex;align-items:center;gap:10px;}
+    #attendanceCard .att-audit-item{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(17,24,38,0.35);margin-bottom:8px;}
+    #attendanceCard .att-audit-item .when{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-size:12px;opacity:.9;min-width:132px}
+    #attendanceCard .att-audit-item .msg{font-size:12px;line-height:1.35}
 </style>
 </head>
 <body>
@@ -291,6 +300,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <button class="tab active" id="tabBoard">TABLERO</button>
       <button class="btn secondary tiny" id="btnExport" title="Exportar tabla a Excel">EXPORTAR</button>
       </div>
+      <button class="tab" id="tabDashboard">DASHBOARD</button>
       <button class="tab" id="tabScreen">PANTALLA</button>
       <button class="tab" id="tabAdmin">ADMIN</button>
     </div>
@@ -365,9 +375,39 @@ html,body{overflow-y:auto;overflow-x:hidden;}
         El <u>histórico</u> se consulta seleccionando una fecha.
         Para terminar el día natural, usa <u>Cerrar día</u>: archiva concluidos (no se borran, solo salen del activo).
       </div>
-    
-    </section>
+</section>
 
+
+        
+    
+    <section id="dashboardView" class="hidden">
+      <div class="screenCard">
+        <div class="screenTop">
+          <div>
+            <div class="screenTitle">DASHBOARD</div>
+            <div class="screenSub muted">Indicadores en tiempo real (según filtros del Tablero)</div>
+          </div>
+          <div class="screenMeta">
+            <span class="chip small" id="dashMetaCedis">CEDIS: Todos</span>
+            <span class="chip small" id="dashMetaEstatus">Estatus: Todos</span>
+            <span class="chip small" id="dashMetaFecha">Fecha: </span>
+          </div>
+        </div>
+
+        <div class="kpis" id="dashKpis" style="margin-top:10px"></div>
+
+        <div class="grid two" style="margin-top:12px">
+          <div class="card">
+            <div class="muted" style="font-size:12px;margin-bottom:8px">Estatus (Concluidos vs Pendientes)</div>
+            <div id="chartDonut" style="width:100%;height:320px"></div>
+          </div>
+          <div class="card">
+            <div class="muted" style="font-size:12px;margin-bottom:8px">Recepción en el tiempo</div>
+            <div id="chartTrend" style="width:100%;height:320px"></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section id="summaryView" class="hidden">
       <div class="screenCard">
@@ -380,6 +420,8 @@ html,body{overflow-y:auto;overflow-x:hidden;}
             <span class="chip small" id="sumMetaCedis">CEDIS: Todos</span>
             <span class="chip small" id="sumMetaEstatus">Estatus: Todos</span>
             <span class="chip small" id="sumMetaFecha">Fecha: </span>
+            <span class="chip small" id="sumMetaPlantilla">Plantilla: 0</span>
+            <span class="chip small" id="sumMetaManiobra">Maniobra: 0</span>
           </div>
         </div>
 
@@ -516,7 +558,111 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       </div>
 
       <div style="height:12px"></div>
-      <div class="card compact">
+            <div class="card compact" id="attendanceCard">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:900;margin-bottom:4px">Lista de asistencia</div>
+            <div class="muted" style="font-size:12px;line-height:1.35">Por día y CEDIS. Marca presentes: se registra la hora de llegada y la huella de cambios.</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+            <div>
+              <div class="muted" style="font-size:12px">CEDIS</div>
+              <select id="att_cedis" class="input" style="min-width:220px"></select>
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">Inicio</div>
+              <input id="att_start" type="date" class="input" style="width:150px" />
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">Fin</div>
+              <input id="att_end" type="date" class="input" style="width:150px" />
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">&nbsp;</div>
+              <button class="btn secondary" id="att_today">Hoy</button>
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">Presentes</div>
+              <div class="pill" id="att_count" style="font-weight:900;min-width:56px;text-align:center;">0</div>
+            </div>
+
+            <div>
+              <div class="muted" style="font-size:12px">&nbsp;</div>
+              <button class="btn secondary" id="att_roster_toggle">Editar plantilla</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:10px"></div>
+
+        <div id="att_roster_editor" class="hidden" style="border:1px dashed var(--line);border-radius:14px;padding:12px;background:rgba(17,24,38,0.35)">
+          <div style="font-weight:800;margin-bottom:6px">Plantilla de personal (este CEDIS)</div>
+          <div class="muted" style="font-size:12px;line-height:1.35;margin-bottom:8px">Pega la lista de nombres (uno por línea) y guarda. Se guarda en nube (si está conectada) y se conserva como respaldo en este navegador.</div>
+          <textarea id="att_roster_text" class="input" rows="6" style="width:100%;resize:vertical" placeholder="Ej:
+JUAN PEREZ
+MARIA LOPEZ
+..."></textarea>
+          <div style="height:10px"></div>
+          <button class="btn secondary" id="att_roster_save">Guardar plantilla</button>
+        </div>
+
+        <div id="att_range_panel" class="hidden" style="margin-top:10px">
+          <div class="muted" style="font-size:12px;line-height:1.35;margin-bottom:8px">
+            Rango: <span id="att_range_label"></span> (haz clic en una fecha para abrir el detalle editable)
+          </div>
+          <div class="tableWrap" style="overflow:auto;border:1px solid var(--line);border-radius:14px">
+            <table class="table" style="min-width:520px">
+              <thead>
+                <tr>
+                  <th style="width:140px">Fecha</th>
+                  <th style="width:120px">Presentes</th>
+                  <th style="width:120px">Maniobra</th>
+                </tr>
+              </thead>
+              <tbody id="att_range_body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tableWrap" id="att_table_wrap" style="overflow:auto;border:1px solid var(--line);border-radius:14px">
+          <table class="table" style="min-width:640px">
+            <thead>
+              <tr>
+                <th style="width:92px">Presente</th>
+                <th>Nombre</th>
+                <th style="width:150px">Hora llegada</th>
+              </tr>
+            </thead>
+            <tbody id="att_body"></tbody>
+          </table>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <div class="grid" id="att_maneuvers_grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px">
+          <div>
+            <div class="muted" style="font-size:12px">MANIOBRA RODRIGUEZ</div>
+            <input class="input" id="att_man_rodriguez" inputmode="numeric" placeholder="0" style="width:100%" />
+          </div>
+          <div>
+            <div class="muted" style="font-size:12px">MANIOBRA HERNANDEZ</div>
+            <input class="input" id="att_man_hernandez" inputmode="numeric" placeholder="0" style="width:100%" />
+          </div>
+
+          <div>
+            <div class="muted" style="font-size:12px">MANIOBRA ZUÑIGA</div>
+            <input class="input" id="att_man_zuniga" inputmode="numeric" placeholder="0" style="width:100%" />
+          </div>
+        </div>
+
+        <details id="att_audit_details" style="margin-top:12px">
+          <summary class="muted" style="cursor:pointer;font-size:12px">Bitácora (cambios de hoy)</summary>
+          <div id="att_audit" style="margin-top:10px"></div>
+        </details>
+      </div>
+
+      <div style="height:12px"></div>
+<div class="card compact">
         <div style="font-weight:900;margin-bottom:8px">Unidades (acciones permitidas)</div>
         <div class="muted" style="font-size:12px;margin-bottom:10px">Los botones se ajustan al estatus actual (solo transiciones válidas).</div>
         <div id="adminList" class="unitsCard"></div>
@@ -610,6 +756,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 
   <script>
   // Seed local (para referencia)
@@ -1314,11 +1461,17 @@ async function fetchRows(range){
 
       // Enriquecer: fechas de estatus (LIBERADO / RECHAZADO) desde shipment_events (para visibilidad y columna F. liberación)
       const ids = rows.map(r=>r.id).filter(Boolean);
-      const [libMap, rejMap, descMap] = await Promise.all([
-        fetchStatusEventMap(ids, 'LIBERADO'),
-        fetchStatusEventMap(ids, 'RECHAZADO'),
-        fetchStatusEventMap(ids, 'DESCARGA_CONCL'),
-      ]);
+      let libMap = {}, rejMap = {}, descMap = {};
+      try{
+        [libMap, rejMap, descMap] = await Promise.all([
+          fetchStatusEventMap(ids, 'LIBERADO'),
+          fetchStatusEventMap(ids, 'RECHAZADO'),
+          fetchStatusEventMap(ids, 'DESCARGA_CONCL'),
+        ]);
+      }catch(_e){
+        console.warn('No se pudo leer shipment_events; tablero continúa sin fechas enriquecidas.', _e);
+        libMap = libMap || {}; rejMap = rejMap || {}; descMap = descMap || {};
+      }
       for(const r of rows){
         r.liberado_ymd = libMap[r.id] || '';
         r.rechazado_ymd = rejMap[r.id] || '';
@@ -1340,6 +1493,130 @@ async function fetchRows(range){
   }
 
   // ------------------- KPIs + Render -------------------
+  // ---- Plantilla/Maniobra KPIs (según filtros) ----
+  let _staffKpiCache = { plantilla: 0, maniobra: 0 };
+  let _staffKpiKey = '';
+  let _staffKpiTimer = null;
+
+  function _staffSetText(id, val){
+    const n = (val===null||val===undefined) ? 0 : val;
+    const node = el(id);
+    if(node) node.textContent = String(n);
+  }
+
+  function _staffKey(range){
+    const c = (cedisFilter && cedisFilter.size) ? Array.from(cedisFilter).sort().join('|') : '*';
+    return `${range.start}..${range.end}__${c}`;
+  }
+
+  function _ymdToDate(ymd){
+    const [y,m,d] = (ymd||'').split('-').map(Number);
+    if(!y||!m||!d) return null;
+    return new Date(y, m-1, d);
+  }
+  function _dateToYMD(dt){
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth()+1).padStart(2,'0');
+    const d = String(dt.getDate()).padStart(2,'0');
+    return `${y}-${m}-${d}`;
+  }
+
+  async function _computeStaffTotals(range){
+    const key = _staffKey(range);
+
+    // evita recomputar si ya está fresco para el mismo key
+    if(key === _staffKpiKey && _staffKpiCache) return _staffKpiCache;
+
+    const cedisList = (cedisFilter && cedisFilter.size) ? Array.from(cedisFilter) : null;
+
+    // 1) intenta nube (Supabase)
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(sb){
+        // Plantilla (presentes)
+        let q1 = sb.from('attendance_entries')
+          .select('person')
+          .eq('present', true)
+          .gte('work_date', range.start)
+          .lte('work_date', range.end);
+        if(cedisList && cedisList.length) q1 = q1.in('cedis', cedisList);
+        const r1 = await q1;
+        if(r1.error) throw r1.error;
+        const plantilla = (r1.data||[]).length;
+
+        // Maniobra (suma de 3)
+        let q2 = sb.from('attendance_maneuvers')
+          .select('manobra_rodriguez,manobra_hernandez,manobra_zuniga')
+          .gte('work_date', range.start)
+          .lte('work_date', range.end);
+        if(cedisList && cedisList.length) q2 = q2.in('cedis', cedisList);
+        const r2 = await q2;
+        if(r2.error) throw r2.error;
+
+        const maniobra = (r2.data||[]).reduce((acc,row)=>{
+          const a = (row.manobra_rodriguez==null?0:Number(row.manobra_rodriguez)) || 0;
+          const b = (row.manobra_hernandez==null?0:Number(row.manobra_hernandez)) || 0;
+          const c = (row.manobra_zuniga==null?0:Number(row.manobra_zuniga)) || 0;
+          return acc + a + b + c;
+        }, 0);
+
+        _staffKpiCache = { plantilla, maniobra };
+        _staffKpiKey = key;
+        return _staffKpiCache;
+      }
+    }catch(e){
+      // si hay error de esquema, no revientes la app
+      if(!_attSchemaMissing(e)) console.warn('Staff KPI nube error', e);
+    }
+
+    // 2) fallback local (si no hay nube): suma por días/cedis de lo guardado local
+    try{
+      let plantilla = 0, maniobra = 0;
+      const d0 = _ymdToDate(range.start);
+      const d1 = _ymdToDate(range.end);
+      if(d0 && d1){
+        const cList = (cedisList && cedisList.length) ? cedisList : (CEDIS_LIST||[]);
+        for(let dt = new Date(d0); dt <= d1; dt.setDate(dt.getDate()+1)){
+          const ymd = _dateToYMD(dt);
+          for(const cedis of cList){
+            const day = _attLoadLocalDay(cedis, ymd);
+            const ppl = day && day.people ? day.people : {};
+            for(const k of Object.keys(ppl)){
+              if(ppl[k] && ppl[k].present) plantilla += 1;
+            }
+            const m = day && day.maneuvers ? day.maneuvers : {};
+            maniobra += (Number(m.rodriguez)||0) + (Number(m.hernandez)||0) + (Number(m.zuniga)||0);
+          }
+        }
+      }
+      _staffKpiCache = { plantilla, maniobra };
+      _staffKpiKey = key;
+      return _staffKpiCache;
+    }catch(e){
+      console.warn('Staff KPI local error', e);
+      _staffKpiCache = { plantilla: 0, maniobra: 0 };
+      _staffKpiKey = key;
+      return _staffKpiCache;
+    }
+  }
+
+  function refreshStaffKPIsDebounced(){
+    clearTimeout(_staffKpiTimer);
+    _staffKpiTimer = setTimeout(async ()=>{
+      const range = getWorkRange();
+      const totals = await _computeStaffTotals(range);
+
+      // Tablero (chips)
+      _staffSetText('kpiPlantillaBoard', totals.plantilla);
+      _staffSetText('kpiManiobraBoard', totals.maniobra);
+
+      // Resumen (meta chips)
+      if(el('sumMetaPlantilla')) el('sumMetaPlantilla').textContent = `Plantilla: ${totals.plantilla}`;
+      if(el('sumMetaManiobra')) el('sumMetaManiobra').textContent = `Maniobra: ${totals.maniobra}`;
+    }, 220);
+  }
+
+
   function renderKPIs(visible){
     const by = (code)=>visible.filter(r=>r.status===code).length;
     const range = getWorkRange();
@@ -1352,7 +1629,9 @@ async function fetchRows(range){
       ['Cortina asignada', by('CORTINA_ASIGNADA')],
       ['Descarga en proceso', by('DESCARGA_PROCESO')],
       ['Bloqueos (hold/fumig)', visible.filter(r=>['HOLD_NO_DESCARGAR','FUMIG_PEND','FUMIG_CUARENTENA','ESPERA_CONFRONTA'].includes(r.status)).length],
-      ['Concluidos día', conclWork],
+            ['Concluidos día', conclWork],
+      ['Plantilla', `<span id="kpiPlantillaBoard">${_staffKpiCache.plantilla}</span>`],
+      ['Maniobra', `<span id="kpiManiobraBoard">${_staffKpiCache.maniobra}</span>`],
     ];
 
     el('kpis').innerHTML = chips.map(([k,v])=>`<span class="chip"><b>${v}</b> <span class="muted">${k}</span></span>`).join('');
@@ -1427,6 +1706,7 @@ async function fetchRows(range){
     rows.sort(cmp);
 
     renderKPIs(rows);
+    refreshStaffKPIsDebounced();
     updateIndicacionWidth(rows);
 
     el('tbody').innerHTML = rows.map((r,i)=>`
@@ -1839,29 +2119,37 @@ No se borran: quedan disponibles en Histórico por fecha.
   // --------- Extra: mapa de fecha (YYYY-MM-DD, local) por estatus desde shipment_events ----------
   async function fetchStatusEventMap(ids, statusCode){
     if(!ids || !ids.length) return {};
-    const s = await ensureSupabase();
-    const out = {};
-    const chunk = 200;
-    for(let i=0;i<ids.length;i+=chunk){
-      const part = ids.slice(i,i+chunk);
-      const q = await s.from('shipment_events')
-        .select('shipment_id,event_at,to_status')
-        .in('shipment_id', part)
-        .eq('to_status', statusCode)
-        .order('event_at', {ascending:false})
-        .limit(5000);
-      if(q.error) throw q.error;
-      for(const r of (q.data||[])){
-        if(!out[r.shipment_id] && r.event_at){
-          // Usa fecha LOCAL, evita desfase por UTC
-          out[r.shipment_id] = ymd(new Date(r.event_at));
+    try{
+      const s = await ensureSupabase();
+      const out = {};
+      const chunk = 200;
+      for(let i=0;i<ids.length;i+=chunk){
+        const part = ids.slice(i,i+chunk);
+        const q = await s.from('shipment_events')
+          .select('shipment_id,event_at,to_status')
+          .in('shipment_id', part)
+          .eq('to_status', statusCode)
+          .order('event_at', {ascending:false})
+          .limit(5000);
+        if(q.error){
+          // Si RLS no permite leer shipment_events en modo Tablero, no bloquees el tablero
+          console.warn('shipment_events no disponible (RLS/permiso). Se omite enriquecimiento.', q.error);
+          return {};
+        }
+        for(const r of (q.data||[])){
+          if(!out[r.shipment_id] && r.event_at){
+            // Usa fecha LOCAL, evita desfase por UTC
+            out[r.shipment_id] = ymd(new Date(r.event_at));
+          }
         }
       }
+      return out;
+    }catch(e){
+      console.warn('shipment_events no disponible. Se omite enriquecimiento.', e);
+      return {};
     }
-    return out;
   }
-
-  // --------- Extra: back options por historial (para Detalle TABLERO) ----------
+      // --------- Extra: back options por historial (para Detalle TABLERO) ----------
   async function fetchBackOptions(id, curStatus){
     const s = await ensureSupabase();
     const q = await s.from('shipment_events')
@@ -2450,18 +2738,21 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const isAdmin = which==='admin';
     const isScreen = which==='screen';
     const isSummary = which==='summary';
+    const isDashboard = which==='dashboard';
 
     el('boardView').classList.toggle('hidden', !isBoard);
     el('adminView').classList.toggle('hidden', !isAdmin);
     el('screenView').classList.toggle('hidden', !isScreen);
     if(el('summaryView')) el('summaryView').classList.toggle('hidden', !isSummary);
+    if(el('dashboardView')) el('dashboardView').classList.toggle('hidden', !isDashboard);
 
     el('tabBoard').classList.toggle('active', isBoard);
     el('tabAdmin').classList.toggle('active', isAdmin);
     if(el('tabScreen')) el('tabScreen').classList.toggle('active', isScreen);
     if(el('tabSummary')) el('tabSummary').classList.toggle('active', isSummary);
+    if(el('tabDashboard')) el('tabDashboard').classList.toggle('active', isDashboard);
 
-    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : (isSummary ? 'Resumen' : 'Pantalla'))}`;
+    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : (isSummary ? 'Resumen' : (isDashboard ? 'Dashboard' : 'Pantalla')))}`;
 
     if(isBoard) closeAuthDialog();
 
@@ -2471,6 +2762,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(isAdmin){ renderAudit(); }
     if(isBoard){ renderBoard(); }
     if(isSummary){ renderSummary(); }
+    if(isDashboard){ renderDashboard(); setTimeout(dashResize, 60); }
   }
 
 
@@ -2637,6 +2929,7 @@ function initStatusMulti(){
   el('tabAdmin').addEventListener('click', ()=>setTab('admin'));
   if(el('tabScreen')) el('tabScreen').addEventListener('click', ()=>setTab('screen'));
   if(el('tabSummary')) el('tabSummary').addEventListener('click', ()=>setTab('summary'));
+  if(el('tabDashboard')) el('tabDashboard').addEventListener('click', ()=>setTab('dashboard'));
   el('toScreen').addEventListener('click', ()=>setTab('screen'));
 
   el('q').addEventListener('input', ()=>renderBoard());
@@ -2861,6 +3154,7 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
     if(el('sumMetaEstatus')) el('sumMetaEstatus').textContent = estTxt;
     const fTxt = (range.start===range.end) ? range.start : `${range.start} - ${range.end}`;
     if(el('sumMetaFecha')) el('sumMetaFecha').textContent = `Fecha: ${fTxt.replaceAll('-','/')}`;
+    refreshStaffKPIsDebounced();
 
     const statusOrder = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
 
@@ -2982,10 +3276,117 @@ const q = (el('q')?.value || '').trim();
     // Re-render whichever view is active
     const isScreen = !el('screenView').classList.contains('hidden');
     const isSummary = !!el('summaryView') && !el('summaryView').classList.contains('hidden');
+    const isDashboard = !!el('dashboardView') && !el('dashboardView').classList.contains('hidden');
+
     renderBoard();
     if(isScreen) renderScreen();
     if(isSummary) renderSummary();
+    if(isDashboard) renderDashboard();
   }
+
+  // ------------------- DASHBOARD -------------------
+  let dashDonut = null;
+  let dashTrend = null;
+
+  function dashEnsureCharts(){
+    if(!window.echarts) return false;
+    const d1 = el('chartDonut');
+    const d2 = el('chartTrend');
+    if(d1 && !dashDonut) dashDonut = echarts.init(d1);
+    if(d2 && !dashTrend) dashTrend = echarts.init(d2);
+    return true;
+  }
+
+  function dashResize(){
+    try{ dashDonut && dashDonut.resize(); }catch(_e){}
+    try{ dashTrend && dashTrend.resize(); }catch(_e){}
+  }
+
+  window.addEventListener('resize', ()=>{
+    try{
+      if(el('dashboardView') && !el('dashboardView').classList.contains('hidden')) dashResize();
+    }catch(_e){}
+  });
+
+  function renderDashboard(){
+    const view = el('dashboardView');
+    if(!view) return;
+
+    const range = getWorkRange();
+    const dateTxt = (range.start===range.end) ? range.start : `${range.start} a ${range.end}`;
+
+    const cTxt = (cedisFilter && cedisFilter.size) ? `CEDIS: ${cedisFilter.size} seleccionados` : 'CEDIS: Todos';
+    const sTxt = (statusFilter && statusFilter.size) ? `Estatus: ${statusFilter.size} seleccionados` : 'Estatus: Todos';
+
+    if(el('dashMetaCedis')) el('dashMetaCedis').textContent = cTxt;
+    if(el('dashMetaEstatus')) el('dashMetaEstatus').textContent = sTxt;
+    if(el('dashMetaFecha')) el('dashMetaFecha').textContent = 'Fecha: ' + dateTxt;
+
+    const rows = getFilteredRows();
+    const recibidos = rows.length;
+    const concluidos = rows.filter(r=>r.status==='DESCARGA_CONCL').length; // definición A
+    const pendientes = Math.max(0, recibidos - concluidos);
+
+    if(el('dashKpis')){
+      el('dashKpis').innerHTML = [
+        ['Contenedores recibidos', recibidos],
+        ['Concluidos', concluidos],
+        ['Pendientes', pendientes],
+      ].map(([k,v])=>`<span class="chip"><b>${esc(String(v))}</b> <span class="muted">${esc(k)}</span></span>`).join('');
+    }
+
+    if(!dashEnsureCharts()) return;
+
+    // Donut: concluidos vs pendientes
+    try{
+      dashDonut.setOption({
+        tooltip:{trigger:'item'},
+        legend:{top:0, textStyle:{color:'#9fb0c3'}},
+        series:[{
+          type:'pie',
+          radius:['55%','80%'],
+          avoidLabelOverlap:true,
+          itemStyle:{borderRadius:10,borderColor:'#0b0f14',borderWidth:2},
+          label:{show:true, color:'#e8eef6', formatter:'{b}: {c}'},
+          data:[
+            {value:concluidos, name:'Concluidos'},
+            {value:pendientes, name:'Pendientes'},
+          ]
+        }]
+      }, true);
+    }catch(e){ console.warn(e); }
+
+    // Trend: por hora si es un solo día; si no, por fecha
+    const sameDay = (range.start===range.end);
+    const map = new Map();
+    for(const r of rows){
+      const iso = r.arribo_at || r.created_at || '';
+      let key = '';
+      if(iso){
+        const d = new Date(iso);
+        if(!isNaN(d)){
+          key = sameDay ? (String(d.getHours()).padStart(2,'0') + ':00') : ymd(d);
+        }
+      }
+      if(!key) key = sameDay ? '—' : (r.arribo_ymd || '—');
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    const keys = Array.from(map.keys()).sort((a,b)=>a.localeCompare(b));
+    const vals = keys.map(k=>map.get(k)||0);
+
+    try{
+      dashTrend.setOption({
+        tooltip:{trigger:'axis'},
+        grid:{left:40,right:16,top:18,bottom:35},
+        xAxis:{type:'category',data:keys, axisLabel:{color:'#9fb0c3', rotate: sameDay ? 0 : 35}},
+        yAxis:{type:'value', axisLabel:{color:'#9fb0c3'}, splitLine:{lineStyle:{color:'rgba(34,48,68,0.45)'}}},
+        series:[{type:'bar', data:vals, barMaxWidth:28, emphasis:{focus:'series'}}]
+      }, true);
+    }catch(e){ console.warn(e); }
+
+    setTimeout(dashResize, 0);
+  }
+  // ------------------------------------------------
 
   // ------------------- Exportar a Excel (tabla visible en TABLERO) -------------------
   async function exportBoardToExcel(){
@@ -3139,6 +3540,909 @@ const q = (el('q')?.value || '').trim();
     });
   }
   // -----------------------------------------------------------
+
+
+  // ------------------- ASISTENCIA (ADMIN) -------------------
+  const LS_ATT_ROSTER = 'fids_att_roster_v1';
+  const LS_ATT_DAY_PREFIX = 'fids_att_day_v1';
+
+  function _attSafeParse(s, def){
+    try{ return JSON.parse(s); }catch(_e){ return def; }
+  }
+  function _attKey(cedis, date){ return `${LS_ATT_DAY_PREFIX}:${cedis}:${date}`; }
+
+  function _attTodayYMD(){ return ymd(); } // usa fecha local
+  function _attDispDate(ymdStr){ return String(ymdStr||''); }
+  function _attNowHHMM(){
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    return `${hh}:${mm}`;
+  }
+  function _attHHMMFromTS(ts){
+    try{
+      const d = new Date(ts);
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      return `${hh}:${mm}`;
+    }catch(_e){ return ''; }
+  }
+  function _attLocalDateTimeISO(dateYMD, hhmm){
+    // dateYMD: YYYY-MM-DD, hhmm: HH:MM (local)
+    try{
+      const [y,m,d] = dateYMD.split('-').map(n=>parseInt(n,10));
+      const [hh,mm] = hhmm.split(':').map(n=>parseInt(n,10));
+      const dt = new Date(y, (m||1)-1, d||1, hh||0, mm||0, 0, 0);
+      return dt.toISOString();
+    }catch(_e){ return nowLocalIso ? nowLocalIso() : (new Date()).toISOString(); }
+  }
+
+  function _attLoadRosterMap(){
+    let map = _attSafeParse(localStorage.getItem(LS_ATT_ROSTER) || "{}", {});
+    const has = map && Object.keys(map).length;
+    if(!has){
+      // compat: versiones anteriores (no romper históricos en el mismo navegador)
+      const legacyKeys = ['fids_att_roster','att_roster_v1','attendance_roster_v1','roster_map_v1'];
+      for(const k of legacyKeys){
+        const m2 = _attSafeParse(localStorage.getItem(k) || "{}", {});
+        if(m2 && Object.keys(m2).length){
+          map = m2;
+          // migra a la llave actual
+          localStorage.setItem(LS_ATT_ROSTER, JSON.stringify(map));
+          break;
+        }
+      }
+    }
+    return map || {};
+  }
+  function _attSaveRosterMap(map){
+    localStorage.setItem(LS_ATT_ROSTER, JSON.stringify(map||{}));
+  }
+  function _attGetRosterLocal(cedis){
+    const map = _attLoadRosterMap();
+    const arr = Array.isArray(map[cedis]) ? map[cedis] : [];
+    return arr.map(x=>String(x).trim()).filter(Boolean);
+  }
+  function _attSetRosterLocal(cedis, names){
+    const map = _attLoadRosterMap();
+    map[cedis] = names;
+    _attSaveRosterMap(map);
+  }
+
+
+      async function _attGetRoster(cedis){
+        const local = _attGetRosterLocal(cedis);
+        try{
+          const sb = await _attGetSupabaseSilent();
+          if(!sb) return local;
+          const r = await sb.from('attendance_roster')
+            .select('person')
+            .eq('cedis', cedis)
+            .eq('active', true)
+            .order('person', {ascending:true});
+          if(r.error){
+            if(!_attSchemaMissing(r.error)) console.warn(r.error);
+            return local;
+          }
+          const arr = (r.data||[]).map(x=>String(x.person||'').trim()).filter(Boolean);
+          if(arr.length){
+            _attSetRosterLocal(cedis, arr);
+            return arr;
+          }
+          return local;
+        }catch(e){
+          if(!_attSchemaMissing(e)) console.warn(e);
+          return local;
+        }
+      }
+
+      async function _attSaveRosterCloud(cedis, names){
+        try{
+          const sb = await _attGetSupabaseSilent();
+          if(!sb) return false;
+          if(!(authUser && authUser.email)){
+            toast('Para guardar plantilla en nube, inicia sesión (modo Admin).');
+            return false;
+          }
+          const nowIso = nowLocalIso ? nowLocalIso() : (new Date()).toISOString();
+
+          const cur = await sb.from('attendance_roster')
+            .select('person,active')
+            .eq('cedis', cedis);
+
+          if(cur.error){
+            if(!_attSchemaMissing(cur.error)) toast(`No se pudo leer plantilla en nube: ${cur.error.message||cur.error}`);
+            return false;
+          }
+
+          const existing = new Map((cur.data||[]).map(r=>[String(r.person||'').trim(), !!r.active]));
+          const setNew = new Set(names.map(n=>String(n).trim()).filter(Boolean));
+          const toDeactivate = [];
+          for(const [p, active] of existing.entries()){
+            if(active && !setNew.has(p)) toDeactivate.push(p);
+          }
+
+          const up = names.map(p=>({cedis, person:p, active:true, updated_at: nowIso, updated_by: authUser.email}));
+          const u = await sb.from('attendance_roster').upsert(up, {onConflict:'cedis,person'});
+          if(u.error){
+            if(!_attSchemaMissing(u.error)) toast(`No se pudo guardar plantilla en nube: ${u.error.message||u.error}`);
+            return false;
+          }
+
+          if(toDeactivate.length){
+            const d = await sb.from('attendance_roster')
+              .update({active:false, updated_at: nowIso, updated_by: authUser.email})
+              .eq('cedis', cedis)
+              .in('person', toDeactivate);
+            if(d.error && !_attSchemaMissing(d.error)) console.warn(d.error);
+          }
+
+          const added = names.filter(p=>!existing.has(p));
+          const removed = toDeactivate;
+          for(const p of added) _attPersistEventCloud('roster_add', p, '', 'activo');
+          for(const p of removed) _attPersistEventCloud('roster_remove', p, 'activo', 'inactivo');
+
+          return true;
+        }catch(e){
+          if(!_attSchemaMissing(e)) console.warn(e);
+          return false;
+        }
+      }
+
+  function _attLoadLocalDay(cedis, date){
+    let raw = localStorage.getItem(_attKey(cedis,date));
+    if(!raw){
+      // compat: intenta prefijos anteriores de la misma máquina/navegador
+      const legacyPrefixes = ['fids_att_day','att_day_v1','attendance_day_v1','fids_att_day_v0'];
+      for(const p of legacyPrefixes){
+        const k = `${p}:${cedis}:${date}`;
+        raw = localStorage.getItem(k);
+        if(raw){
+          // migra a la llave actual
+          localStorage.setItem(_attKey(cedis,date), raw);
+          break;
+        }
+      }
+    }
+    const def = {people:{}, maneuvers:{rodriguez:'', hernandez:'', zuniga:''}, events:[]};
+    const obj = _attSafeParse(raw||"", def) || def;
+    if(!obj.people) obj.people = {};
+    if(!obj.maneuvers) obj.maneuvers = {rodriguez:'', hernandez:''};
+    if(!Array.isArray(obj.events)) obj.events = [];
+    return obj;
+  }
+  function _attSaveLocalDay(cedis, date, obj){
+    localStorage.setItem(_attKey(cedis,date), JSON.stringify(obj||{}));
+  }
+
+  function _attEscape(s){
+    return String(s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+  function _attSchemaMissing(err){
+    const msg = (err && (err.message || err.error_description || err.toString())) || "";
+    return /schema cache|does not exist|relation .* does not exist|Could not find/i.test(msg);
+  }
+
+  async function _attGetSupabaseSilent(){
+    try{
+      if(typeof loadCfg !== 'function') return null;
+      const cfg = loadCfg();
+      if(!cfg || !cfg.url || !cfg.anon) return null;
+      if(!window.supabase || typeof ensureSupabase !== 'function') return null;
+      return await ensureSupabase();
+    }catch(_e){
+      return null;
+    }
+  }
+
+  async function _attLoadCloudDay(sb, cedis, date){
+    const out = {people:{}, maneuvers:{rodriguez:'', hernandez:'', zuniga:''}, events:[]};
+
+    // entries
+    const r1 = await sb.from('attendance_entries').select('person,present,arrival_at').eq('cedis', cedis).eq('work_date', date);
+    if(r1.error) throw r1.error;
+    (r1.data||[]).forEach(row=>{
+      out.people[row.person] = {
+        present: !!row.present,
+        arrival: row.arrival_at ? _attHHMMFromTS(row.arrival_at) : ''
+      };
+    });
+
+    // maneuvers (opcional)
+    try{
+      const r2 = await sb.from('attendance_maneuvers').select('manobra_rodriguez,manobra_hernandez,manobra_zuniga').eq('cedis', cedis).eq('work_date', date).maybeSingle();
+      if(!r2.error && r2.data){
+        out.maneuvers.rodriguez = (r2.data.manobra_rodriguez ?? '').toString();
+        out.maneuvers.hernandez = (r2.data.manobra_hernandez ?? '').toString();
+        out.maneuvers.zuniga = (r2.data.manobra_zuniga ?? '').toString();
+      }
+    }catch(_e){}
+
+    // bitácora (opcional)
+    try{
+      const r3 = await sb.from('attendance_events')
+        .select('event_at,field,person,old_value,new_value,event_by')
+        .eq('cedis', cedis).eq('work_date', date)
+        .order('event_at',{ascending:false}).limit(30);
+      if(!r3.error){
+        out.events = (r3.data||[]).map(ev=>{
+          const who = ev.person ? `${ev.person}: ` : '';
+          const by = ev.event_by ? ` (${ev.event_by})` : '';
+          const msg = `${who}${ev.field}: ${(ev.old_value??'')} → ${(ev.new_value??'')}${by}`;
+          return {t: ev.event_at, msg};
+        });
+      }
+    }catch(_e){}
+
+    return out;
+  }
+
+  let _attUIReady = false;
+  let _attRosterForceOpen = false;
+  let _attCurrent = {cedis:null, date:null, roster:[], day:null};
+
+  function _attRenderAudit(events){
+    const host = el('att_audit');
+    if(!host) return;
+    if(!events || !events.length){
+      host.innerHTML = `<div class="muted" style="font-size:12px">Sin movimientos registrados.</div>`;
+      return;
+    }
+    host.innerHTML = events.slice(0,30).map(ev=>{
+      const when = ev.t ? _attEscape(_attHHMMFromTS(ev.t)) : '';
+      const d = ev.t ? _attEscape(String(ev.t).split('T')[0]||'') : '';
+      return `<div class="att-audit-item"><div class="when">${d} ${when}</div><div class="msg">${_attEscape(ev.msg)}</div></div>`;
+    }).join('');
+  }
+
+  function _attUpdateCount(){
+    const pill = el('att_count');
+    if(!pill) return;
+    const day = _attCurrent.day || {people:{}};
+    const n = Object.values(day.people||{}).filter(v=>v && v.present).length;
+    pill.textContent = String(n);
+  }
+
+  function _attRenderTable(){
+    const tbody = el('att_body');
+    if(!tbody) return;
+
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    const roster = _attCurrent.roster || [];
+    const day = _attCurrent.day || {people:{}};
+
+    tbody.innerHTML = '';
+
+    if(!cedis || !date){
+      tbody.innerHTML = `<tr><td colspan="3" class="muted" style="font-size:12px;padding:12px">Selecciona CEDIS y fecha.</td></tr>`;
+      return;
+    }
+
+    // nombres = plantilla + cualquiera que ya tenga registro (local o nube)
+    const set = new Set();
+    for(const n of roster) if(n) set.add(String(n).trim());
+    for(const n of Object.keys(day.people||{})) if(n) set.add(String(n).trim());
+
+    const rosterClean = roster.map(n=>String(n||'').trim()).filter(Boolean);
+    const extras = Array.from(set).filter(n=>!rosterClean.includes(n)).sort((a,b)=>a.localeCompare(b,'es'));
+    const names = [...new Set([...rosterClean, ...extras])];
+
+    if(!names.length){
+      tbody.innerHTML = `<tr><td colspan="3" class="muted" style="font-size:12px;padding:12px">Sin registros de asistencia para este día. (Puedes cargar plantilla con “Editar plantilla”.)</td></tr>`;
+      return;
+    }
+
+    names.forEach(name=>{
+      const st = (day.people && day.people[name]) ? day.people[name] : {present:false, arrival:''};
+
+      const tr = document.createElement('tr');
+
+      const td0 = document.createElement('td');
+      const wrap = document.createElement('div');
+      wrap.className = 'att-present';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!st.present;
+      cb.addEventListener('change', ()=>_attTogglePerson(name, cb.checked));
+
+      const lab = document.createElement('span');
+      lab.className = 'muted';
+      lab.style.fontSize = '12px';
+      lab.textContent = cb.checked ? 'Sí' : '';
+
+      wrap.appendChild(cb);
+      wrap.appendChild(lab);
+      td0.appendChild(wrap);
+
+      const td1 = document.createElement('td');
+      td1.innerHTML = `<div class="att-name">${_attEscape(name)}</div>`;
+
+      const td2 = document.createElement('td');
+      td2.className = 'att-time';
+
+      const inp = document.createElement('input');
+      inp.className = 'input';
+      inp.type = 'time';
+      inp.step = 60;
+      inp.value = st.arrival || '';
+      inp.style.width = '130px';
+      inp.disabled = !cb.checked;
+      inp.addEventListener('change', ()=>_attSetArrival(name, inp.value));
+
+      td2.appendChild(inp);
+
+      tr.appendChild(td0);
+      tr.appendChild(td1);
+      tr.appendChild(td2);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+
+async function _attPersistEventCloud(field, person, oldValue, newValue){
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(!sb) return;
+      const payload = {
+        cedis: _attCurrent.cedis,
+        work_date: _attCurrent.date,
+        person: person || null,
+        field,
+        old_value: (oldValue===undefined || oldValue===null) ? null : String(oldValue),
+        new_value: (newValue===undefined || newValue===null) ? null : String(newValue),
+        event_at: (nowLocalIso ? nowLocalIso() : (new Date()).toISOString()),
+        event_by: (authUser && authUser.email) ? authUser.email : null
+      };
+      const r = await sb.from('attendance_events').insert(payload);
+      if(r.error && !_attSchemaMissing(r.error)) console.warn(r.error);
+    }catch(_e){}
+  }
+
+  async function _attPersistPerson(name, oldRec, nextRec){
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    if(!cedis || !date) return;
+
+    const day = _attLoadLocalDay(cedis, date);
+    const prev = day.people[name] || {present:false, arrival:''};
+
+    day.people[name] = {present: !!nextRec.present, arrival: nextRec.arrival || ''};
+
+    // bitácora local + nube (si existe)
+    if(!!prev.present !== !!nextRec.present){
+      const msg = `${name}: presente ${prev.present?'Sí':'No'} → ${nextRec.present?'Sí':'No'}`;
+      _attPushLocalEvent(day, msg);
+      _attPersistEventCloud('present', name, prev.present?'Sí':'No', nextRec.present?'Sí':'No');
+    }
+    if((prev.arrival||'') !== (nextRec.arrival||'')){
+      const msg = `${name}: hora ${prev.arrival||'-'} → ${nextRec.arrival||'-'}`;
+      _attPushLocalEvent(day, msg);
+      _attPersistEventCloud('arrival', name, prev.arrival||'', nextRec.arrival||'');
+    }
+
+    _attSaveLocalDay(cedis, date, day);
+    _attCurrent.day = day;
+
+    _attUpdateCount();
+    _attRenderAudit(day.events||[]);
+
+    // nube: upsert principal
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(!sb) return;
+
+      const arrival_at = (nextRec.present && nextRec.arrival) ? _attLocalDateTimeISO(date, nextRec.arrival) : null;
+      const payload = {
+        cedis, work_date: date, person: name,
+        present: !!nextRec.present,
+        arrival_at,
+        updated_at: (nowLocalIso ? nowLocalIso() : (new Date()).toISOString()),
+        updated_by: (authUser && authUser.email) ? authUser.email : null
+      };
+
+      const r = await sb.from('attendance_entries').upsert(payload, {onConflict:'cedis,work_date,person'});
+      if(r.error){
+        if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar asistencia: ${r.error.message||r.error}`);
+      }
+    }catch(_e){}
+  }
+
+  async function _attPersistManeuvers(){
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    if(!cedis || !date) return;
+
+    const ro = el('att_man_rodriguez');
+    const he = el('att_man_hernandez');
+    const zu = el('att_man_zuniga');
+    if(!ro || !he || !zu) return;
+
+    const vro = (ro.value||'').toString().trim();
+    const vhe = (he.value||'').toString().trim();
+    const vzu = (zu.value||'').toString().trim();
+
+    const day = _attLoadLocalDay(cedis, date);
+    const prev = {...(day.maneuvers||{rodriguez:'',hernandez:'',zuniga:''})};
+
+    day.maneuvers = {rodriguez: vro, hernandez: vhe, zuniga: vzu};
+    if((prev.rodriguez||'') !== (vro||'')){
+      _attPushLocalEvent(day, `MANIOBRA RODRIGUEZ: ${prev.rodriguez||'0'} → ${vro||'0'}`);
+      _attPersistEventCloud('manobra_rodriguez', null, prev.rodriguez||'0', vro||'0');
+    }
+    if((prev.hernandez||'') !== (vhe||'')){
+      _attPushLocalEvent(day, `MANIOBRA HERNANDEZ: ${prev.hernandez||'0'} → ${vhe||'0'}`);
+      _attPersistEventCloud('manobra_hernandez', null, prev.hernandez||'0', vhe||'0');
+    }
+    if((prev.zuniga||'') !== (vzu||'')){
+      _attPushLocalEvent(day, `MANIOBRA ZUÑIGA: ${prev.zuniga||'0'} → ${vzu||'0'}`);
+      _attPersistEventCloud('manobra_zuniga', null, prev.zuniga||'0', vzu||'0');
+    }
+
+    _attSaveLocalDay(cedis, date, day);
+    _attCurrent.day = day;
+    _attRenderAudit(day.events||[]);
+
+    // nube
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(!sb) return;
+
+      const payload = {
+        cedis, work_date: date,
+        manobra_rodriguez: (vro===''? null : parseInt(vro,10)),
+        manobra_hernandez: (vhe===''? null : parseInt(vhe,10)),
+        manobra_zuniga: (vzu===''? null : parseInt(vzu,10)),
+        updated_at: (nowLocalIso ? nowLocalIso() : (new Date()).toISOString()),
+        updated_by: (authUser && authUser.email) ? authUser.email : null
+      };
+      const r = await sb.from('attendance_maneuvers').upsert(payload, {onConflict:'cedis,work_date'});
+      if(r.error){
+        if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar maniobras: ${r.error.message||r.error}`);
+      }
+    }catch(_e){}
+  }
+
+  async function _attReload(){
+    if(!_attUIReady) return;
+
+    const sel = el('att_cedis');
+    if(!sel) return;
+
+    const cedis = sel.value || (CEDIS_LIST && CEDIS_LIST[0]) || '';
+
+    // lee rango desde UI (inicio/fin). Si no hay fin, usa inicio.
+    const stEl = el('att_start') || el('att_date');
+    const enEl = el('att_end');
+
+    let start = (stEl && stEl.value) ? String(stEl.value).trim() : '';
+    let end = (enEl && enEl.value) ? String(enEl.value).trim() : '';
+
+    const normalize = (v)=>{
+      if(!v) return '';
+      v = String(v).trim();
+      // compat: versiones que mostraban YYYY/MM/DD
+      if(v.includes('/')) v = v.replaceAll('/','-');
+      // si trae tiempo, recorta
+      if(v.includes('T')) v = v.split('T')[0];
+      return v;
+    };
+    start = normalize(start);
+    end = normalize(end);
+
+    if(!start) start = _attTodayYMD();
+    if(!end) end = start;
+
+    if(stEl) stEl.value = start;
+    if(enEl) enEl.value = end;
+
+    _attCurrent.cedis = cedis;
+    _attCurrent.date = start;
+    _attCurrent.range = {start, end};
+
+    const showRangePanel = (on)=>{
+      const p = el('att_range_panel');
+      if(p) p.classList.toggle('hidden', !on);
+      const tw = el('att_table_wrap');
+      if(tw) tw.classList.toggle('hidden', on);
+      const mg = el('att_maneuvers_grid');
+      if(mg) mg.classList.toggle('hidden', on);
+      const ad = el('att_audit_details');
+      if(ad) ad.classList.toggle('hidden', on);
+    };
+
+    const setRangeLabel = ()=>{
+      const lab = el('att_range_label');
+      if(lab) lab.textContent = `${start.replaceAll('-','/')}  →  ${end.replaceAll('-','/')}`;
+    };
+
+    // roster (siempre)
+    const roster = await _attGetRoster(cedis);
+    _attCurrent.roster = roster;
+
+    const editor = el('att_roster_editor');
+    if(editor){
+      const ta = el('att_roster_text');
+      if(_attRosterForceOpen){
+        editor.classList.remove('hidden');
+        if(ta) ta.value = (roster||[]).join('\n');
+      }else{
+        if(roster.length){
+          editor.classList.add('hidden');
+          if(ta) ta.value = (roster||[]).join('\n');
+        }else{
+          editor.classList.remove('hidden');
+          if(ta) ta.value = '';
+        }
+      }
+    }
+
+    // set toggle label
+    const tb = el('att_roster_toggle');
+    if(tb) tb.textContent = _attRosterForceOpen ? 'Ocultar plantilla' : 'Editar plantilla';
+
+    // -------- RANGO (solo consulta) --------
+    if(start !== end){
+      showRangePanel(true);
+      setRangeLabel();
+
+      const tbody = el('att_range_body');
+      if(tbody) tbody.innerHTML = '';
+
+      const presentByDate = {};
+      const maniByDate = {};
+
+      // intenta nube (Supabase)
+      try{
+        const sb = await _attGetSupabaseSilent();
+        if(sb){
+          // presentes
+          let q1 = sb.from('attendance_entries')
+            .select('work_date')
+            .eq('present', true)
+            .eq('cedis', cedis)
+            .gte('work_date', start)
+            .lte('work_date', end);
+          const r1 = await q1;
+          if(!r1.error){
+            for(const row of (r1.data||[])){
+              const d = row.work_date;
+              if(!d) continue;
+              presentByDate[d] = (presentByDate[d]||0) + 1;
+            }
+          }else if(!_attSchemaMissing(r1.error)){
+            console.warn(r1.error);
+          }
+
+          // maniobras (suma 3)
+          let q2 = sb.from('attendance_maneuvers')
+            .select('work_date,manobra_rodriguez,manobra_hernandez,manobra_zuniga')
+            .eq('cedis', cedis)
+            .gte('work_date', start)
+            .lte('work_date', end);
+          const r2 = await q2;
+          if(!r2.error){
+            for(const row of (r2.data||[])){
+              const d = row.work_date;
+              if(!d) continue;
+              const a = parseInt(row.manobra_rodriguez||0,10) || 0;
+              const b = parseInt(row.manobra_hernandez||0,10) || 0;
+              const c = parseInt(row.manobra_zuniga||0,10) || 0;
+              maniByDate[d] = (maniByDate[d]||0) + a + b + c;
+            }
+          }else if(!_attSchemaMissing(r2.error)){
+            console.warn(r2.error);
+          }
+        }
+      }catch(_e){}
+
+      // fallback local (si no hubo nube)
+      const hasCloudData = Object.keys(presentByDate).length || Object.keys(maniByDate).length;
+      if(!hasCloudData){
+        try{
+          const sd = _ymdToDate(start);
+          const ed = _ymdToDate(end);
+          if(sd && ed){
+            for(let d = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate()); d <= ed; d.setDate(d.getDate()+1)){
+              const y = _dateToYMD(d);
+              const day = _attLoadLocalDay(cedis, y);
+              const n = Object.values(day.people||{}).filter(v=>v && v.present).length;
+              presentByDate[y] = n;
+              const mv = day.maneuvers||{};
+              const tot = (parseInt(mv.rodriguez||0,10)||0)+(parseInt(mv.hernandez||0,10)||0)+(parseInt(mv.zuniga||0,10)||0);
+              maniByDate[y] = tot;
+            }
+          }
+        }catch(_e){}
+      }
+
+      // render tabla rango
+      if(tbody){
+        const sd = _ymdToDate(start);
+        const ed = _ymdToDate(end);
+        const dates = [];
+        if(sd && ed){
+          for(let d = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate()); d <= ed; d.setDate(d.getDate()+1)){
+            dates.push(_dateToYMD(d));
+          }
+        }
+
+        const totalPresentes = dates.reduce((acc, d)=>acc + (presentByDate[d]||0), 0);
+        if(el('att_count')) el('att_count').textContent = String(totalPresentes);
+
+        tbody.innerHTML = dates.map(d=>{
+          const p = presentByDate[d]||0;
+          const m = maniByDate[d]||0;
+          return `<tr class="rowHover" data-date="${_attEscape(d)}" style="cursor:pointer">
+            <td>${_attEscape(d.replaceAll('-','/'))}</td>
+            <td style="font-weight:900">${p}</td>
+            <td style="font-weight:900">${m}</td>
+          </tr>`;
+        }).join('');
+
+        // click para abrir detalle del día
+        Array.from(tbody.querySelectorAll('tr[data-date]')).forEach(tr=>{
+          tr.addEventListener('click', ()=>{
+            const d = tr.getAttribute('data-date');
+            if(stEl) stEl.value = d;
+            if(enEl) enEl.value = d;
+            _attReload();
+          });
+        });
+      }
+
+      // en rango, no mostramos detalle del día
+      _attCurrent.day = {people:{}, maneuvers:{rodriguez:'',hernandez:'',zuniga:''}, events:[]};
+      _attRenderAudit([]);
+      return;
+    }
+
+    // -------- DÍA (editable) --------
+    showRangePanel(false);
+
+    const date = start;
+
+    // load local first
+    let day = _attLoadLocalDay(cedis, date);
+
+    // try cloud merge (si existe tabla)
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(sb){
+        const cloud = await _attLoadCloudDay(sb, cedis, date);
+        // merge (cloud gana si trae datos)
+        const cloudHas = Object.keys(cloud.people||{}).length > 0 || (cloud.maneuvers && (cloud.maneuvers.rodriguez || cloud.maneuvers.hernandez || cloud.maneuvers.zuniga)) || (cloud.events && cloud.events.length);
+        if(cloudHas){
+          day.people = {...(day.people||{}), ...(cloud.people||{})};
+          day.maneuvers = {...(day.maneuvers||{}), ...(cloud.maneuvers||{})};
+          if(cloud.events && cloud.events.length){
+            day.events = cloud.events;
+          }
+          _attSaveLocalDay(cedis, date, day);
+        }
+      }
+    }catch(e){
+      if(!_attSchemaMissing(e)) console.warn(e);
+    }
+
+    _attCurrent.day = day;
+
+    // prefill maneuvers
+    if(el('att_man_rodriguez')) el('att_man_rodriguez').value = (day.maneuvers && day.maneuvers.rodriguez) ? day.maneuvers.rodriguez : '';
+    if(el('att_man_hernandez')) el('att_man_hernandez').value = (day.maneuvers && day.maneuvers.hernandez) ? day.maneuvers.hernandez : '';
+    if(el('att_man_zuniga')) el('att_man_zuniga').value = (day.maneuvers && day.maneuvers.zuniga) ? day.maneuvers.zuniga : '';
+
+    _attUpdateCount();
+    _attRenderAudit(day.events||[]);
+    _attRenderTable();
+  }
+
+function initAttendanceUI(){
+    try{
+      const card = el('attendanceCard');
+      if(!card) return;
+
+      const date = _attTodayYMD();
+      // Inicializa rango (inicio/fin)
+      if(el('att_start')) el('att_start').value = date;
+      if(el('att_end')) el('att_end').value = date;
+      // compat (si existiera un campo viejo)
+      if(el('att_date')) el('att_date').value = _attDispDate(date);
+
+      const st = el('att_start');
+      const en = el('att_end');
+      if(st) st.addEventListener('change', _attReload);
+      if(en) en.addEventListener('change', _attReload);
+
+      const hoyBtn = el('att_today');
+      if(hoyBtn){
+        hoyBtn.addEventListener('click', ()=>{
+          const t = _attTodayYMD();
+          if(st) st.value = t;
+          if(en) en.value = t;
+          _attReload();
+        });
+      }
+
+      const sel = el('att_cedis');
+      if(sel){
+        sel.innerHTML = (CEDIS_LIST||[]).map(c=>`<option value="${_attEscape(c)}">${_attEscape(c)}</option>`).join('');
+        // default: toma CEDIS actual de captura rápida si existe
+        const aCedis = el('aCedis');
+        sel.value = (aCedis && aCedis.value) ? aCedis.value : ((CEDIS_LIST && CEDIS_LIST[0]) || '');
+        sel.addEventListener('change', _attReload);
+
+        if(aCedis){
+          aCedis.addEventListener('change', ()=>{
+            if(sel.value !== aCedis.value){
+              sel.value = aCedis.value;
+              _attReload();
+            }
+          });
+        }
+      }
+
+      const saveRosterBtn = el('att_roster_save');
+      if(saveRosterBtn){
+        saveRosterBtn.addEventListener('click', async ()=>{
+          const sel = el('att_cedis');
+          const cedis = sel ? sel.value : '';
+          const ta = el('att_roster_text');
+          const raw = ta ? ta.value : '';
+          const names = raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+          if(!names.length){
+            toast('Pega al menos un nombre para guardar la plantilla.');
+            return;
+          }
+          _attSetRosterLocal(cedis, names);
+          const okCloud = await _attSaveRosterCloud(cedis, names);
+          toast(okCloud ? 'Plantilla guardada en nube.' : 'Plantilla guardada (nube no disponible).');
+          _attReload();
+        });
+      }
+
+      const ro = el('att_man_rodriguez');
+      const he = el('att_man_hernandez');
+      const zu = el('att_man_zuniga');
+      if(ro) ro.addEventListener('change', _attPersistManeuvers);
+      if(he) he.addEventListener('change', _attPersistManeuvers);
+      if(zu) zu.addEventListener('change', _attPersistManeuvers);
+
+      const toggleRosterBtn = el('att_roster_toggle');
+      if(toggleRosterBtn){
+        toggleRosterBtn.addEventListener('click', ()=>{
+          _attRosterForceOpen = !_attRosterForceOpen;
+          const editor = el('att_roster_editor');
+          const ta = el('att_roster_text');
+          if(editor){
+            if(_attRosterForceOpen){
+              editor.classList.remove('hidden');
+              if(ta) ta.value = (_attCurrent.roster||[]).join('\n');
+              toggleRosterBtn.textContent = 'Ocultar plantilla';
+            }else{
+              editor.classList.add('hidden');
+              toggleRosterBtn.textContent = 'Editar plantilla';
+            }
+          }
+        });
+      }
+
+      _attUIReady = true;
+      _attReload();
+    }catch(e){
+      console.warn('initAttendanceUI error', e);
+    }
+  }
+
+
+  // Inicializa Asistencia (ADMIN)
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', initAttendanceUI); } else { initAttendanceUI(); }
+</script>
+</body>
+</html>
+
+function initAttendanceUI(){
+    try{
+      const card = el('attendanceCard');
+      if(!card) return;
+
+      const date = _attTodayYMD();
+      // Inicializa rango (inicio/fin)
+      if(el('att_start')) el('att_start').value = date;
+      if(el('att_end')) el('att_end').value = date;
+      // compat (si existiera un campo viejo)
+      if(el('att_date')) el('att_date').value = _attDispDate(date);
+
+      const st = el('att_start');
+      const en = el('att_end');
+      if(st) st.addEventListener('change', _attReload);
+      if(en) en.addEventListener('change', _attReload);
+
+      const hoyBtn = el('att_today');
+      if(hoyBtn){
+        hoyBtn.addEventListener('click', ()=>{
+          const t = _attTodayYMD();
+          if(st) st.value = t;
+          if(en) en.value = t;
+          _attReload();
+        });
+      }
+
+      const sel = el('att_cedis');
+      if(sel){
+        sel.innerHTML = (CEDIS_LIST||[]).map(c=>`<option value="${_attEscape(c)}">${_attEscape(c)}</option>`).join('');
+        // default: toma CEDIS actual de captura rápida si existe
+        const aCedis = el('aCedis');
+        sel.value = (aCedis && aCedis.value) ? aCedis.value : ((CEDIS_LIST && CEDIS_LIST[0]) || '');
+        sel.addEventListener('change', _attReload);
+
+        if(aCedis){
+          aCedis.addEventListener('change', ()=>{
+            if(sel.value !== aCedis.value){
+              sel.value = aCedis.value;
+              _attReload();
+            }
+          });
+        }
+      }
+
+      const saveRosterBtn = el('att_roster_save');
+      if(saveRosterBtn){
+        saveRosterBtn.addEventListener('click', async ()=>{
+          const sel = el('att_cedis');
+          const cedis = sel ? sel.value : '';
+          const ta = el('att_roster_text');
+          const raw = ta ? ta.value : '';
+          const names = raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+          if(!names.length){
+            toast('Pega al menos un nombre para guardar la plantilla.');
+            return;
+          }
+          _attSetRosterLocal(cedis, names);
+          const okCloud = await _attSaveRosterCloud(cedis, names);
+          toast(okCloud ? 'Plantilla guardada en nube.' : 'Plantilla guardada (nube no disponible).');
+          _attReload();
+        });
+      }
+
+      const ro = el('att_man_rodriguez');
+      const he = el('att_man_hernandez');
+      const zu = el('att_man_zuniga');
+      if(ro) ro.addEventListener('change', _attPersistManeuvers);
+      if(he) he.addEventListener('change', _attPersistManeuvers);
+      if(zu) zu.addEventListener('change', _attPersistManeuvers);
+
+      const toggleRosterBtn = el('att_roster_toggle');
+      if(toggleRosterBtn){
+        toggleRosterBtn.addEventListener('click', ()=>{
+          _attRosterForceOpen = !_attRosterForceOpen;
+          const editor = el('att_roster_editor');
+          const ta = el('att_roster_text');
+          if(editor){
+            if(_attRosterForceOpen){
+              editor.classList.remove('hidden');
+              if(ta) ta.value = (_attCurrent.roster||[]).join('\n');
+              toggleRosterBtn.textContent = 'Ocultar plantilla';
+            }else{
+              editor.classList.add('hidden');
+              toggleRosterBtn.textContent = 'Editar plantilla';
+            }
+          }
+        });
+      }
+
+      _attUIReady = true;
+      _attReload();
+    }catch(e){
+      console.warn('initAttendanceUI error', e);
+    }
+  }
+
+
+  // Inicializa Asistencia (ADMIN)
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', initAttendanceUI); } else { initAttendanceUI(); }
 </script>
 </body>
 </html>
