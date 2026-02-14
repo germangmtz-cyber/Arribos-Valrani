@@ -1422,6 +1422,63 @@ function ymd(d=new Date()){
 
   // ------------------- Fetch principal -------------------
   
+
+  // =================== AVISOS (ARRIBOS POR LLEGAR) ===================
+  // Lee una tabla de avisos en la nube (Supabase) y usa su INDICACIÓN como fallback en TABLERO.
+  // Requisito BD: tabla 'arribos_por_llegar' con columnas:
+  //   contenedor_norm (text, PK), indicacion (text), fecha_arribo (date, opcional), updated_at (timestamptz)
+  function normContKey(v){
+    return String(v ?? '').toUpperCase().replace(/\s+/g,'').trim();
+  }
+
+  async function fetchAvisosIndicacionMapByConts(conts){
+    try{
+      const s = await ensureSupabase();
+      const uniq = Array.from(new Set((conts||[]).map(normContKey).filter(Boolean)));
+      if(!uniq.length) return {};
+      const out = {};
+      const chunk = 200;
+      for(let i=0;i<uniq.length;i+=chunk){
+        const part = uniq.slice(i,i+chunk);
+        const q = await s.from('arribos_por_llegar').select('contenedor_norm, indicacion').in('contenedor_norm', part);
+        if(q.error){
+          const msg = (q.error.message || '').toLowerCase();
+          // si no existe la tabla o no hay policy SELECT, no rompas el tablero
+          console.warn('Avisos: no se pudo leer arribos_por_llegar (continuo sin fallback).', q.error);
+          return {};
+        }
+        for(const r of (q.data||[])){
+          const k = normContKey(r.contenedor_norm);
+          if(!k) continue;
+          if(r.indicacion !== null && r.indicacion !== undefined && String(r.indicacion).trim() !== ''){
+            out[k] = String(r.indicacion).trim();
+          }
+        }
+      }
+      return out;
+    }catch(e){
+      console.warn('Avisos: error inesperado (se ignora).', e);
+      return {};
+    }
+  }
+
+  async function attachAvisosIndicacion(rows){
+    if(!Array.isArray(rows) || !rows.length) return rows;
+    const conts = rows.map(r=>r?.contenedor).filter(Boolean);
+    const map = await fetchAvisosIndicacionMapByConts(conts);
+
+    for(const r of rows){
+      const k = normContKey(r?.contenedor);
+      const aviso = map[k] || '';
+      r.indicacion_aviso = aviso;
+      // Solo aplica fallback si el registro NO trae indicación capturada
+      if((!r.indicacion || String(r.indicacion).trim()==='') && aviso){
+        r.indicacion = aviso;
+      }
+    }
+    return rows;
+  }
+
 async function fetchRows(range){
     const s = await ensureSupabase();
     const today = ymd();
@@ -1470,13 +1527,17 @@ async function fetchRows(range){
         }
       }
 
-      return Array.from(map.values());
+      const outRows = Array.from(map.values());
+      await attachAvisosIndicacion(outRows);
+      return outRows;
     }
 
     // Histórico / rango: solo por fecha de arribo (sin mezclar pendientes fuera del rango)
     const r = await s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
     if(r.error) throw r.error;
-    return (r.data||[]).map(dbToRow);
+    const outRows = (r.data||[]).map(dbToRow);
+    await attachAvisosIndicacion(outRows);
+    return outRows;
   }
 
   async function reloadData(force){
