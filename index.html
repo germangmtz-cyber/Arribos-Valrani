@@ -117,9 +117,16 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
     .card{background:rgba(17,24,38,0.6);border:1px solid var(--line);border-radius:14px;padding:14px;}
     .grid{display:grid;gap:12px;}
+
+    .dash2x2{grid-template-columns: 1fr 1fr;}
+    .dashKpiGrid{display:grid;grid-template-columns: repeat(2, 1fr);gap:10px;}
+    .dashKpiTile{background:rgba(255,255,255,0.04);border:1px solid rgba(34,48,68,0.7);border-radius:14px;padding:12px;}
+    .dashKpiNum{font-size:26px;font-weight:1000;letter-spacing:0.2px;font-variant-numeric:tabular-nums;}
+    .dashKpiLabel{margin-top:2px;font-size:12px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:0.4px;}
     .two{grid-template-columns: 1.15fr 0.85fr;}
     @media (max-width: 1100px){
       .two{grid-template-columns: 1fr;}
+      .dash2x2{grid-template-columns: 1fr;}
       .brand img{height:70px;}
       .brand b{font-size:36px;}
     }
@@ -380,7 +387,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
         
     
-    <section id="dashboardView" class="hidden">
+        <section id="dashboardView" class="hidden">
       <div class="screenCard">
         <div class="screenTop">
           <div>
@@ -394,16 +401,29 @@ html,body{overflow-y:auto;overflow-x:hidden;}
           </div>
         </div>
 
-        <div class="kpis" id="dashKpis" style="margin-top:10px"></div>
-
-        <div class="grid two" style="margin-top:12px">
+        <div class="grid dash2x2" style="margin-top:12px">
+          <!-- Cuadrante 1: KPI's -->
           <div class="card">
-            <div class="muted" style="font-size:12px;margin-bottom:8px">Estatus (Concluidos vs Pendientes)</div>
-            <div id="chartDonut" style="width:100%;height:320px"></div>
+            <div class="muted" style="font-size:12px;margin-bottom:8px">KPI’s (según filtros)</div>
+            <div class="dashKpiGrid" id="dashKpisGrid"></div>
           </div>
+
+          <!-- Cuadrante 2: Cajas descargadas vs pendientes -->
           <div class="card">
-            <div class="muted" style="font-size:12px;margin-bottom:8px">Recepción en el tiempo</div>
-            <div id="chartTrend" style="width:100%;height:320px"></div>
+            <div class="muted" style="font-size:12px;margin-bottom:8px">Cajas descargadas vs cajas pendientes</div>
+            <div id="chartCajas" style="width:100%;height:320px"></div>
+          </div>
+
+          <!-- Cuadrante 3: Tiempo por contenedor -->
+          <div class="card">
+            <div class="muted" style="font-size:12px;margin-bottom:8px">Tiempo por contenedor (Arribo → Fin)</div>
+            <div id="chartTiempo" style="width:100%;height:320px"></div>
+          </div>
+
+          <!-- Cuadrante 4: Indicaciones -->
+          <div class="card">
+            <div class="muted" style="font-size:12px;margin-bottom:8px">Indicación (conteo de contenedores)</div>
+            <div id="chartIndicaciones" style="width:100%;height:320px"></div>
           </div>
         </div>
       </div>
@@ -3345,22 +3365,26 @@ const q = (el('q')?.value || '').trim();
     if(isDashboard) renderDashboard();
   }
 
-  // ------------------- DASHBOARD -------------------
-  let dashDonut = null;
-  let dashTrend = null;
+    // ------------------- DASHBOARD -------------------
+  let dashCajas = null;
+  let dashTiempo = null;
+  let dashIndic = null;
 
   function dashEnsureCharts(){
     if(!window.echarts) return false;
-    const d1 = el('chartDonut');
-    const d2 = el('chartTrend');
-    if(d1 && !dashDonut) dashDonut = echarts.init(d1);
-    if(d2 && !dashTrend) dashTrend = echarts.init(d2);
+    const c1 = el('chartCajas');
+    const c2 = el('chartTiempo');
+    const c3 = el('chartIndicaciones');
+    if(c1 && !dashCajas) dashCajas = echarts.init(c1);
+    if(c2 && !dashTiempo) dashTiempo = echarts.init(c2);
+    if(c3 && !dashIndic) dashIndic = echarts.init(c3);
     return true;
   }
 
   function dashResize(){
-    try{ dashDonut && dashDonut.resize(); }catch(_e){}
-    try{ dashTrend && dashTrend.resize(); }catch(_e){}
+    try{ dashCajas && dashCajas.resize(); }catch(_e){}
+    try{ dashTiempo && dashTiempo.resize(); }catch(_e){}
+    try{ dashIndic && dashIndic.resize(); }catch(_e){}
   }
 
   window.addEventListener('resize', ()=>{
@@ -3368,6 +3392,30 @@ const q = (el('q')?.value || '').trim();
       if(el('dashboardView') && !el('dashboardView').classList.contains('hidden')) dashResize();
     }catch(_e){}
   });
+
+  function normIndic(v){
+    const s = String(v ?? '').trim();
+    return s ? s : 'SIN INDICACIÓN';
+  }
+
+  function isConcluido(r){
+    return r && r.status === 'DESCARGA_CONCL';
+  }
+
+  function isBloqueo(r){
+    const st = String(r?.status ?? '');
+    const ind = String(r?.indicacion ?? '');
+    return /BLOQ|HOLD|FUMIG/i.test(st) || /BLOQ|HOLD|FUMIG/i.test(ind);
+  }
+
+  function parseISOms(s){
+    const t = Date.parse(s);
+    return Number.isFinite(t) ? t : NaN;
+  }
+
+  function round2(n){
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+  }
 
   function renderDashboard(){
     const view = el('dashboardView');
@@ -3384,64 +3432,181 @@ const q = (el('q')?.value || '').trim();
     if(el('dashMetaFecha')) el('dashMetaFecha').textContent = 'Fecha: ' + dateTxt;
 
     const rows = getFilteredRows();
-    const recibidos = rows.length;
-    const concluidos = rows.filter(r=>r.status==='DESCARGA_CONCL').length; // definición A
-    const pendientes = Math.max(0, recibidos - concluidos);
 
-    if(el('dashKpis')){
-      el('dashKpis').innerHTML = [
-        ['Contenedores recibidos', recibidos],
+    // KPI's
+    const recibidos = rows.length;
+    const concluidos = rows.filter(isConcluido).length; // definición A (DESCARGA_CONCL)
+    const pendientes = Math.max(0, recibidos - concluidos);
+    const bloqueos = rows.filter(isBloqueo).length;
+
+    const kpiEl = el('dashKpisGrid');
+    if(kpiEl){
+      kpiEl.innerHTML = [
+        ['Recibidos', recibidos],
         ['Concluidos', concluidos],
         ['Pendientes', pendientes],
-      ].map(([k,v])=>`<span class="chip"><b>${esc(String(v))}</b> <span class="muted">${esc(k)}</span></span>`).join('');
+        ['Bloqueos / Hold-Fumig', bloqueos],
+      ].map(([label,val]) => `
+        <div class="dashKpiTile">
+          <div class="dashKpiNum">${esc(String(val))}</div>
+          <div class="dashKpiLabel">${esc(String(label))}</div>
+        </div>
+      `).join('');
     }
 
     if(!dashEnsureCharts()) return;
 
-    // Donut: concluidos vs pendientes
+    // ---------------- Cuadrante 2: Cajas descargadas vs pendientes (barra apilada) ----------------
     try{
-      dashDonut.setOption({
-        tooltip:{trigger:'item'},
+      let cajasConcl = 0;
+      let cajasPend = 0;
+      for(const r of rows){
+        const c = toInt(r.cajas);
+        if(isConcluido(r)) cajasConcl += c;
+        else cajasPend += c;
+      }
+
+      dashCajas.setOption({
+        tooltip:{trigger:'axis', axisPointer:{type:'shadow'}},
         legend:{top:0, textStyle:{color:'#9fb0c3'}},
-        series:[{
-          type:'pie',
-          radius:['55%','80%'],
-          avoidLabelOverlap:true,
-          itemStyle:{borderRadius:10,borderColor:'#0b0f14',borderWidth:2},
-          label:{show:true, color:'#e8eef6', formatter:'{b}: {c}'},
-          data:[
-            {value:concluidos, name:'Concluidos'},
-            {value:pendientes, name:'Pendientes'},
-          ]
-        }]
+        grid:{left:55,right:20,top:40,bottom:30},
+        xAxis:{
+          type:'category',
+          data:['Cajas'],
+          axisLabel:{color:'#9fb0c3'},
+          axisLine:{lineStyle:{color:'#223044'}}
+        },
+        yAxis:{
+          type:'value',
+          axisLabel:{color:'#9fb0c3'},
+          splitLine:{lineStyle:{color:'rgba(34,48,68,0.45)'}},
+          axisLine:{lineStyle:{color:'#223044'}}
+        },
+        series:[
+          {name:'Concluidas', type:'bar', stack:'total', data:[cajasConcl], barMaxWidth:60},
+          {name:'Pendientes', type:'bar', stack:'total', data:[cajasPend], barMaxWidth:60},
+        ]
       }, true);
     }catch(e){ console.warn(e); }
 
-    // Trend: por hora si es un solo día; si no, por fecha
-    const sameDay = (range.start===range.end);
-    const map = new Map();
-    for(const r of rows){
-      const iso = r.arribo_at || r.created_at || '';
-      let key = '';
-      if(iso){
-        const d = new Date(iso);
-        if(!isNaN(d)){
-          key = sameDay ? (String(d.getHours()).padStart(2,'0') + ':00') : ymd(d);
-        }
-      }
-      if(!key) key = sameDay ? '—' : (r.arribo_ymd || '—');
-      map.set(key, (map.get(key) || 0) + 1);
-    }
-    const keys = Array.from(map.keys()).sort((a,b)=>a.localeCompare(b));
-    const vals = keys.map(k=>map.get(k)||0);
-
+    // ---------------- Cuadrante 3: Tiempo por contenedor (Arribo → Fin; en proceso usa "ahora") ----------------
     try{
-      dashTrend.setOption({
-        tooltip:{trigger:'axis'},
-        grid:{left:40,right:16,top:18,bottom:35},
-        xAxis:{type:'category',data:keys, axisLabel:{color:'#9fb0c3', rotate: sameDay ? 0 : 35}},
-        yAxis:{type:'value', axisLabel:{color:'#9fb0c3'}, splitLine:{lineStyle:{color:'rgba(34,48,68,0.45)'}}},
-        series:[{type:'bar', data:vals, barMaxWidth:28, emphasis:{focus:'series'}}]
+      const nowMs = Date.now();
+      const xCats = [];
+      const serieConcl = [];
+      const serieProc = [];
+      const info = [];
+
+      rows.forEach((r, idx) => {
+        const no = String(idx + 1);
+        xCats.push(no);
+
+        const a = parseISOms(r.arribo_at);
+        const f = parseISOms(r.fin_at);
+
+        if(!Number.isFinite(a)){
+          serieConcl.push(null);
+          serieProc.push(null);
+          info.push({no, cont:r.contenedor, arr:null, fin:null, ms:null});
+          return;
+        }
+
+        if(Number.isFinite(f)){
+          const ms = Math.max(0, f - a);
+          serieConcl.push(round2(ms/3600000));
+          serieProc.push(null);
+          info.push({no, cont:r.contenedor, arr:r.arribo_at, fin:r.fin_at, ms});
+        } else {
+          const ms = Math.max(0, nowMs - a);
+          serieConcl.push(null);
+          serieProc.push(round2(ms/3600000));
+          info.push({no, cont:r.contenedor, arr:r.arribo_at, fin:null, ms});
+        }
+      });
+
+      const zoomEnd = (rows.length>18) ? Math.min(100, Math.round(18/rows.length*100)) : 100;
+
+      dashTiempo.setOption({
+        tooltip:{
+          trigger:'axis',
+          axisPointer:{type:'shadow'},
+          formatter:(params)=>{
+            if(!params || !params.length) return '';
+            const i = params[0].dataIndex;
+            const it = info[i] || {};
+            const hh = (it.ms==null) ? '—' : round2(it.ms/3600000);
+            const finTxt = it.fin ? it.fin : (it.arr ? 'EN PROCESO' : '—');
+            return `
+              <div style="font-weight:900;margin-bottom:4px">NO ${esc(String(it.no ?? ''))} — ${esc(String(it.cont ?? ''))}</div>
+              <div><span style="color:#9fb0c3">Arribo:</span> ${esc(String(it.arr ?? '—'))}</div>
+              <div><span style="color:#9fb0c3">Fin:</span> ${esc(String(finTxt))}</div>
+              <div><span style="color:#9fb0c3">Tiempo (h):</span> <b>${esc(String(hh))}</b></div>
+            `;
+          }
+        },
+        legend:{top:0, textStyle:{color:'#9fb0c3'}},
+        grid:{left:60,right:20,top:40,bottom:45},
+        xAxis:{
+          type:'category',
+          data:xCats,
+          axisLabel:{color:'#9fb0c3'},
+          axisLine:{lineStyle:{color:'#223044'}},
+          name:'NO',
+          nameTextStyle:{color:'#9fb0c3', padding:[20,0,0,0]}
+        },
+        yAxis:{
+          type:'value',
+          name:'Horas',
+          nameTextStyle:{color:'#9fb0c3'},
+          axisLabel:{color:'#9fb0c3'},
+          splitLine:{lineStyle:{color:'rgba(34,48,68,0.45)'}},
+          axisLine:{lineStyle:{color:'#223044'}}
+        },
+        dataZoom: (rows.length>18) ? [
+          {type:'inside', start:0, end:zoomEnd},
+          {type:'slider', height:18, bottom:18, start:0, end:zoomEnd}
+        ] : [],
+        series:[
+          {name:'Concluido', type:'bar', data:serieConcl, barMaxWidth:18, emphasis:{focus:'series'}},
+          {name:'En proceso', type:'bar', data:serieProc, barMaxWidth:18, emphasis:{focus:'series'}},
+        ]
+      }, true);
+    }catch(e){ console.warn(e); }
+
+    // ---------------- Cuadrante 4: Indicación (conteo de contenedores) ----------------
+    try{
+      const map = new Map();
+      for(const r of rows){
+        const key = normIndic(r.indicacion);
+        map.set(key, (map.get(key)||0) + 1);
+      }
+
+      const items = Array.from(map.entries()).sort((a,b)=>b[1]-a[1]);
+      const labels = items.map(x=>x[0]);
+      const vals = items.map(x=>x[1]);
+
+      const zoomEnd = (labels.length>10) ? Math.min(100, Math.round(10/labels.length*100)) : 100;
+
+      dashIndic.setOption({
+        tooltip:{trigger:'axis', axisPointer:{type:'shadow'}},
+        grid:{left:150,right:20,top:20,bottom:30},
+        xAxis:{
+          type:'value',
+          axisLabel:{color:'#9fb0c3'},
+          splitLine:{lineStyle:{color:'rgba(34,48,68,0.45)'}},
+          axisLine:{lineStyle:{color:'#223044'}}
+        },
+        yAxis:{
+          type:'category',
+          data:labels,
+          axisLabel:{color:'#9fb0c3'},
+          axisLine:{lineStyle:{color:'#223044'}}
+        },
+        dataZoom: (labels.length>10) ? [
+          {type:'inside', yAxisIndex:0, start:0, end:zoomEnd},
+          {type:'slider', yAxisIndex:0, width:12, right:6, start:0, end:zoomEnd}
+        ] : [],
+        series:[{type:'bar', data:vals, barMaxWidth:18, emphasis:{focus:'series'}}]
       }, true);
     }catch(e){ console.warn(e); }
 
