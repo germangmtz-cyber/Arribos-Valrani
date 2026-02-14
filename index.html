@@ -366,6 +366,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
             <th data-key="cajas">Cajas</th>
             <th data-key="tarimas">Tarimas</th>
             <th data-key="pallets">Pallets</th>
+            <th data-key="playos_utilizados">Playos</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -491,6 +492,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
               <th data-key="cajas">Cajas</th>
               <th data-key="tarimas">Tarimas</th>
               <th data-key="pallets">Pallets</th>
+            <th data-key="playos_utilizados">Playos</th>
             </tr>
           </thead>
           <tbody id="tbodyScreen"></tbody>
@@ -604,6 +606,10 @@ html,body{overflow-y:auto;overflow-x:hidden;}
             <div>
               <div class="muted" style="font-size:12px">&nbsp;</div>
               <button class="btn secondary" id="att_today">Hoy</button>
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">&nbsp;</div>
+              <button class="btn" id="att_update">Actualizar</button>
             </div>
             <div>
               <div class="muted" style="font-size:12px">Presentes</div>
@@ -1207,6 +1213,7 @@ function ymd(d=new Date()){
     {key:'cajas', label:'Cajas'},
     {key:'tarimas', label:'Tarimas'},
     {key:'pallets', label:'Pallets'},
+    {key:'playos_utilizados', label:'Playos'},
   ];
 
   function loadCols(){
@@ -1755,6 +1762,7 @@ async function fetchRows(range){
         <td data-key="cajas" class="mono">${esc(r.cajas==null?'':String(r.cajas))}</td>
         <td data-key="tarimas" class="mono">${esc(r.tarimas==null?'':String(r.tarimas))}</td>
         <td data-key="pallets" class="mono">${esc(r.pallets==null?'':String(r.pallets))}</td>
+        <td data-key="playos_utilizados" class="mono">${esc(r.playos_utilizados==null?'':String(r.playos_utilizados))}</td>
       </tr>
     `).join('');
 
@@ -4071,7 +4079,12 @@ const q = (el('q')?.value || '').trim();
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = !!st.present;
-      cb.addEventListener('change', ()=>_attTogglePerson(name, cb.checked));
+      cb.addEventListener('change', ()=>{
+        lab.textContent = cb.checked ? 'Sí' : '';
+        inp.disabled = !cb.checked;
+        if(cb.checked && !inp.value) inp.value = _attNowHHMM();
+        _attTogglePerson(name, cb.checked, inp.value);
+      });
 
       const lab = document.createElement('span');
       lab.className = 'muted';
@@ -4095,6 +4108,10 @@ const q = (el('q')?.value || '').trim();
       inp.value = st.arrival || '';
       inp.style.width = '130px';
       inp.disabled = !cb.checked;
+      let _tmr = null;
+      const _deb = ()=>{ clearTimeout(_tmr); _tmr = setTimeout(()=>_attSetArrival(name, inp.value), 350); };
+      inp.addEventListener('input', _deb);
+      inp.addEventListener('blur', ()=>_attSetArrival(name, inp.value));
       inp.addEventListener('change', ()=>_attSetArrival(name, inp.value));
 
       td2.appendChild(inp);
@@ -4106,6 +4123,112 @@ const q = (el('q')?.value || '').trim();
       tbody.appendChild(tr);
     });
   }
+
+
+  // ---- ASISTENCIA: Guardado completo (Plantilla) ----
+  // Guarda TODA la plantilla (presente + hora) leyendo el estado actual de la tabla de asistencia.
+  async function _attPersistPeopleFromUI(){
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    if(!cedis || !date) return;
+
+    const tbody = el('att_body');
+    if(!tbody) return;
+
+    const day = _attLoadLocalDay(cedis, date);
+    const prevPeople = {...(day.people||{})};
+
+    const payloads = [];
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    for(const tr of rows){
+      const nameEl = tr.querySelector('.att-name');
+      const cb = tr.querySelector('input[type="checkbox"]');
+      const ti = tr.querySelector('input[type="time"]');
+
+      const name = nameEl ? String(nameEl.textContent||'').trim() : '';
+      if(!name) continue;
+
+      const present = !!(cb && cb.checked);
+      const arrival = (present && ti && ti.value) ? String(ti.value).trim() : '';
+
+      const prev = prevPeople[name] || {present:false, arrival:''};
+
+      if(!!prev.present !== !!present){
+        _attPushLocalEvent(day, `${name}: presente ${prev.present?'Sí':'No'} → ${present?'Sí':'No'}`);
+        _attPersistEventCloud('present', name, prev.present?'Sí':'No', present?'Sí':'No');
+      }
+      if((prev.arrival||'') !== (arrival||'')){
+        _attPushLocalEvent(day, `${name}: hora ${prev.arrival||'-'} → ${arrival||'-'}`);
+        _attPersistEventCloud('arrival', name, prev.arrival||'', arrival||'');
+      }
+
+      day.people[name] = {present, arrival};
+
+      const arrival_at = (present && arrival) ? _attLocalDateTimeISO(date, arrival) : null;
+      payloads.push({
+        cedis, work_date: date, person: name,
+        present,
+        arrival_at,
+        updated_at: (nowLocalIso ? nowLocalIso() : (new Date()).toISOString()),
+        updated_by: (authUser && authUser.email) ? authUser.email : null
+      });
+    }
+
+    _attSaveLocalDay(cedis, date, day);
+    _attCurrent.day = day;
+
+    _attUpdateCount();
+    _attRenderAudit(day.events||[]);
+
+    // nube: upsert en lote
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(sb && payloads.length){
+        const r = await sb.from('attendance_entries').upsert(payloads, {onConflict:'cedis,work_date,person'});
+        if(r.error){
+          if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar asistencia: ${r.error.message||r.error}`);
+        }
+      }
+    }catch(_e){}
+
+    try{ refreshStaffKPIsDebounced(); }catch(_e){}
+  }
+
+  async function _attTogglePerson(name, isPresent, hhmm){
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    if(!cedis || !date) return;
+
+    const day = _attLoadLocalDay(cedis, date);
+    const prev = day.people[name] || {present:false, arrival:''};
+
+    // Si activan y no mandan hora, asigna hora actual
+    const nextArrival = (isPresent ? (hhmm || prev.arrival || _attNowHHMM()) : '');
+    const next = {present: !!isPresent, arrival: nextArrival};
+
+    await _attPersistPerson(name, prev, next);
+
+    try{ refreshStaffKPIsDebounced(); }catch(_e){}
+  }
+
+  async function _attSetArrival(name, hhmm){
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    if(!cedis || !date) return;
+
+    const day = _attLoadLocalDay(cedis, date);
+    const prev = day.people[name] || {present:false, arrival:''};
+
+    // Solo si está presente
+    if(!prev.present) return;
+
+    const next = {present:true, arrival:(hhmm||'').toString().trim()};
+    await _attPersistPerson(name, prev, next);
+
+    try{ refreshStaffKPIsDebounced(); }catch(_e){}
+  }
+
 
 
 async function _attPersistEventCloud(field, person, oldValue, newValue){
@@ -4174,6 +4297,7 @@ async function _attPersistEventCloud(field, person, oldValue, newValue){
         if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar asistencia: ${r.error.message||r.error}`);
       }
     }catch(_e){}
+    try{ refreshStaffKPIsDebounced(); }catch(_e){}
   }
 
   async function _attPersistManeuvers(){
@@ -4229,6 +4353,7 @@ async function _attPersistEventCloud(field, person, oldValue, newValue){
         if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar maniobras: ${r.error.message||r.error}`);
       }
     }catch(_e){}
+    try{ refreshStaffKPIsDebounced(); }catch(_e){}
   }
 
   async function _attReload(){
@@ -4491,6 +4616,18 @@ function initAttendanceUI(){
           _attReload();
         });
       }
+
+      const updBtn = el('att_update');
+      if(updBtn){
+        updBtn.addEventListener('click', async ()=>{
+          // Fuerza guardado completo: plantilla + maniobra
+          await _attPersistPeopleFromUI();
+          try{ await _attPersistManeuvers(); }catch(_e){}
+          toast('Asistencia actualizada.');
+          try{ refreshStaffKPIsDebounced(); }catch(_e){}
+        });
+      }
+
 
       const sel = el('att_cedis');
       if(sel){
