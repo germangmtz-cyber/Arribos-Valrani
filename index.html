@@ -3116,10 +3116,13 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       const raw = localStorage.getItem(lsKey);
       if(raw){
         const arr = JSON.parse(raw);
-        if(Array.isArray(arr) && arr.length) return arr;
+        if(Array.isArray(arr)){
+          if(arr.length && typeof arr[0]==='object' && arr[0] && 'key' in arr[0]) return arr.map(x=>x.key);
+          return arr;
+        }
       }
     }catch{}
-    localStorage.setItem(lsKey, JSON.stringify(defKeys));
+    try{ localStorage.setItem(lsKey, JSON.stringify(defKeys)); }catch{}
     return defKeys;
   }
 
@@ -3162,6 +3165,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
   function applyColsPorLlegar(){ _applyColsToTable('#porLlegarTable', '#tbodyPorLlegar', LS_COLS_PORLLEGAR, COLS_PORLLEGAR); }
   function applyColsHistorico(){ _applyColsToTable('#historicoTable', '#tbodyHistorico', LS_COLS_HISTORICO, COLS_HISTORICO); }
+  function applyColsSVA(){ _applyColsToTable('#svaTable', '#tbodySVA', LS_COLS_SVA, COLS_SVA); }
+  function applyColsLog(){ _applyColsToTable('#logTable', '#tbodyLog', LS_COLS_LOG, COLS_LOG); }
 
   let _porLlegarRows = [];
   let _historicoRows = [];
@@ -3304,8 +3309,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(el('colsPorLlegar')) _renderColsGeneric('colsPorLlegar', COLS_PORLLEGAR, LS_COLS_PORLLEGAR, applyColsPorLlegar);
     if(el('colsHistorico')) _renderColsGeneric('colsHistorico', COLS_HISTORICO, LS_COLS_HISTORICO, applyColsHistorico);
 
-    if(el('colsSVA')) _renderColsGeneric('colsSVA', COLS_SVA, LS_COLS_SVA, ()=>_applyColsToTable('svaTable', LS_COLS_SVA, COLS_SVA));
-    if(el('colsLog')) _renderColsGeneric('colsLog', COLS_LOG, LS_COLS_LOG, ()=>_applyColsToTable('logTable', LS_COLS_LOG, COLS_LOG));
+    if(el('colsSVA')) _renderColsGeneric('colsSVA', COLS_SVA, LS_COLS_SVA, applyColsSVA);
+    if(el('colsLog')) _renderColsGeneric('colsLog', COLS_LOG, LS_COLS_LOG, applyColsLog);
   }
 
 
@@ -3627,12 +3632,12 @@ function initStatusMulti(){
 
   function _initSvaCols(){
     _renderColsGeneric('colsSVA', COLS_SVA, LS_COLS_SVA, () => renderSVA());
-    _applyColsToTable('svaTable', LS_COLS_SVA, COLS_SVA);
+    applyColsSVA();
   }
 
   function _initLogCols(){
     _renderColsGeneric('colsLog', COLS_LOG, LS_COLS_LOG, () => renderLogistica());
-    _applyColsToTable('logTable', LS_COLS_LOG, COLS_LOG);
+    applyColsLog();
   }
 
   function _toggleCard(cardId){
@@ -3672,7 +3677,7 @@ function initStatusMulti(){
       if(el('svaProcTIHI')?.checked) sel.add('TI HI');
 
       let q = supa.from('shipments')
-        .select('id,cedis,cuenta,contenedor,indicacion,arribo_at,inicio_at,fin_at,estatus,cajas,pallets,tarimas')
+        .select('id,cedis,cuenta,contenedor,indicacion,arribo_at,asig_cortina_at,inicio_descarga_at,fin_descarga_at,estatus,cajas,pallets,tarimas')
         .gte('arribo_at', startIso).lte('arribo_at', endIso)
         .order('arribo_at', { ascending: true });
 
@@ -3766,7 +3771,7 @@ function initStatusMulti(){
     if(!el('tbodySVA')) return;
 
     const rows = svaMerged || [];
-    const visible = _loadColsGeneric(LS_COLS_SVA, COLS_SVA).map(c=>c.key);
+    const visible = _loadColsGeneric(LS_COLS_SVA, COLS_SVA.map(c=>c.key));
 
     const td = (key, inner) => `<td data-key="${key}">${inner}</td>`;
 
@@ -3820,7 +3825,7 @@ function initStatusMulti(){
     }
 
     el('tbodySVA').innerHTML = html || `<tr><td class="muted" colspan="20">Sin resultados.</td></tr>`;
-    _applyColsToTable('svaTable', LS_COLS_SVA, COLS_SVA);
+    applyColsSVA();
 
     // wire inputs (delegated)
     const body = el('tbodySVA');
@@ -3976,7 +3981,7 @@ function initStatusMulti(){
   function renderLogistica(){
     if(!el('tbodyLog')) return;
 
-    const visible = _loadColsGeneric(LS_COLS_LOG, COLS_LOG).map(c=>c.key);
+    const visible = _loadColsGeneric(LS_COLS_LOG, COLS_LOG.map(c=>c.key));
 
     const td = (key, inner) => `<td data-key="${key}">${inner}</td>`;
 
@@ -4015,7 +4020,7 @@ function initStatusMulti(){
     }
 
     el('tbodyLog').innerHTML = html || `<tr><td class="muted" colspan="20">Sin resultados.</td></tr>`;
-    _applyColsToTable('logTable', LS_COLS_LOG, COLS_LOG);
+    applyColsLog();
 
     const body = el('tbodyLog');
     body.oninput = (ev)=>{
