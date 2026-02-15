@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es">
-<head>
+<head>|
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones — req123 — backmenu+libdate</title>
@@ -1244,6 +1244,11 @@ function ymd(d=new Date()){
       }
     }
     return supa;
+  }
+
+  // Alias por compatibilidad (algunas vistas llaman ensureSupa)
+  async function ensureSupa(){
+    return ensureSupabase();
   }
 
   async function testConnection(){
