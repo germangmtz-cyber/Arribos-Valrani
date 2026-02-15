@@ -151,8 +151,16 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     }
     .compact{padding:10px;}
     .concepts-card #statusHelp{font-size:11px;line-height:1.35;max-height:230px;overflow:auto;padding-right:6px;}
-    .admin-session{padding:10px;}
+    .admin-session{padding:8px 10px !important;}
     .admin-row{padding:10px;margin-bottom:8px;}
+
+    /* Subvistas: Por llegar / Histórico */
+    .subview-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
+    .subview-head .h1{font-size:18px;font-weight:900;margin:0}
+    .subview-head .sub{font-size:12px;color:var(--muted);margin-top:2px}
+    .subview-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .filtersRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .colsCardSmall{padding:10px;margin-top:8px}
     .admin-row-top{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;}
     .admin-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .admin-controls select{min-width:220px;}
@@ -506,14 +514,16 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
     <section id="adminView" class="hidden">
 
-      <div class="card compact admin-session" style="margin-bottom:12px">
+      <div class="card compact admin-session" style="margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
           <div>
-            <div style="font-weight:900;margin-bottom:6px">Acceso administrador</div>
+            <div style="font-weight:900;margin-bottom:2px">Acceso administrador</div>
             <div class="muted" id="authState" style="font-size:12px">No conectado.</div>
-            <div class="muted" style="font-size:12px;margin-top:6px;line-height:1.35">Para <b>consulta</b> no necesitas iniciar sesión. Para <b>captura</b>, sí.</div>
+            <div class="muted" style="font-size:12px;margin-top:2px;line-height:1.2">Para <b>consulta</b> no necesitas iniciar sesión. Para <b>captura</b>, sí.</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn secondary" id="btnAdminPorLlegar" title="Ver/actualizar avisos">ARRIBOS POR LLEGAR</button>
+            <button class="btn secondary" id="btnAdminHistorico" title="Consultar histórico">ARRIBOS HISTÓRICO</button>
             <button class="btn secondary" id="btnShowAuth">Iniciar sesión</button>
             <button class="btn secondary hidden" id="btnLogout">Salir</button>
           </div>
@@ -704,6 +714,114 @@ MARIA LOPEZ
         <div id="audit"></div>
       </div>
     </section>
+
+
+    <section id="porLlegarView" class="hidden">
+      <div class="card compact" style="margin-bottom:12px">
+        <div class="subview-head">
+          <div>
+            <div class="h1">Arribos por llegar</div>
+            <div class="sub">Avisos / indicaciones (se actualiza desde Excel).</div>
+          </div>
+          <div class="subview-actions">
+            <button class="btn secondary" id="btnBackPorLlegar">Volver a ADMIN</button>
+            <button class="btn secondary" id="toggleColsPorLlegar">Columnas</button>
+            <button class="btn secondary" id="btnReloadPorLlegar">Actualizar</button>
+          </div>
+        </div>
+
+        <div class="filtersRow">
+          <input class="input" id="porLlegarSearch" placeholder="Buscar: contenedor / nave / destino / indicación" style="min-width:320px;flex:1" />
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="muted">Inicio</span><input class="input" id="porLlegarStart" type="date" style="min-width:160px" />
+            <span class="muted">Fin</span><input class="input" id="porLlegarEnd" type="date" style="min-width:160px" />
+          </div>
+          <button class="btn secondary" id="btnPorLlegarHoy">Hoy</button>
+        </div>
+
+        <div class="card colsCardSmall hidden" id="colsPorLlegarCard">
+          <div class="muted" style="font-size:12px;margin-bottom:8px">Selecciona columnas a mostrar (se guarda en este dispositivo).</div>
+          <div id="colsPorLlegar"></div>
+        </div>
+
+        <div class="muted" id="porLlegarMeta" style="margin-top:10px;font-size:12px"></div>
+      </div>
+
+      <div class="tableWrap">
+        <table class="table" id="porLlegarTable">
+          <thead>
+            <tr>
+              <th data-key="contenedor_norm">Contenedor</th>
+              <th data-key="fecha_arribo">Fecha arribo</th>
+              <th data-key="destino">Destino</th>
+              <th data-key="tipo_arribo">Tipo</th>
+              <th data-key="nave">Nave</th>
+              <th data-key="indicacion">Indicación</th>
+              <th data-key="cajas">Cajas</th>
+              <th data-key="piezas">Piezas</th>
+              <th data-key="observaciones">Observaciones</th>
+              <th data-key="descripcion">Descripción</th>
+              <th data-key="updated_at">Actualizado</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyPorLlegar"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="historicoView" class="hidden">
+      <div class="card compact" style="margin-bottom:12px">
+        <div class="subview-head">
+          <div>
+            <div class="h1">Arribos histórico</div>
+            <div class="sub">Consulta del histórico cargado (2025→2026).</div>
+          </div>
+          <div class="subview-actions">
+            <button class="btn secondary" id="btnBackHistorico">Volver a ADMIN</button>
+            <button class="btn secondary" id="toggleColsHistorico">Columnas</button>
+            <button class="btn secondary" id="btnReloadHistorico">Actualizar</button>
+          </div>
+        </div>
+
+        <div class="filtersRow">
+          <input class="input" id="historicoSearch" placeholder="Buscar: contenedor / estatus / indicación / cedis" style="min-width:320px;flex:1" />
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="muted">Inicio</span><input class="input" id="historicoStart" type="date" style="min-width:160px" />
+            <span class="muted">Fin</span><input class="input" id="historicoEnd" type="date" style="min-width:160px" />
+          </div>
+          <button class="btn secondary" id="btnHistoricoHoy">Hoy</button>
+        </div>
+
+        <div class="card colsCardSmall hidden" id="colsHistoricoCard">
+          <div class="muted" style="font-size:12px;margin-bottom:8px">Selecciona columnas a mostrar (se guarda en este dispositivo).</div>
+          <div id="colsHistorico"></div>
+        </div>
+
+        <div class="muted" id="historicoMeta" style="margin-top:10px;font-size:12px"></div>
+      </div>
+
+      <div class="tableWrap">
+        <table class="table" id="historicoTable">
+          <thead>
+            <tr>
+              <th data-key="fecha_reporte">Fecha reporte</th>
+              <th data-key="cedis">CEDIS</th>
+              <th data-key="contenedor_norm">Contenedor</th>
+              <th data-key="estatus">Estatus</th>
+              <th data-key="indicacion">Indicación</th>
+              <th data-key="cajas">Cajas</th>
+              <th data-key="tarimas">Tarimas</th>
+              <th data-key="reportado">Reportado</th>
+              <th data-key="source_sheet">Hoja</th>
+              <th data-key="created_at">Creado</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyHistorico"></tbody>
+        </table>
+      </div>
+    </section>
+
+
 
   </div>
 
@@ -1422,63 +1540,6 @@ function ymd(d=new Date()){
 
   // ------------------- Fetch principal -------------------
   
-
-  // =================== AVISOS (ARRIBOS POR LLEGAR) ===================
-  // Lee una tabla de avisos en la nube (Supabase) y usa su INDICACIÓN como fallback en TABLERO.
-  // Requisito BD: tabla 'arribos_por_llegar' con columnas:
-  //   contenedor_norm (text, PK), indicacion (text), fecha_arribo (date, opcional), updated_at (timestamptz)
-  function normContKey(v){
-    return String(v ?? '').toUpperCase().replace(/\s+/g,'').trim();
-  }
-
-  async function fetchAvisosIndicacionMapByConts(conts){
-    try{
-      const s = await ensureSupabase();
-      const uniq = Array.from(new Set((conts||[]).map(normContKey).filter(Boolean)));
-      if(!uniq.length) return {};
-      const out = {};
-      const chunk = 200;
-      for(let i=0;i<uniq.length;i+=chunk){
-        const part = uniq.slice(i,i+chunk);
-        const q = await s.from('arribos_por_llegar').select('contenedor_norm, indicacion').in('contenedor_norm', part);
-        if(q.error){
-          const msg = (q.error.message || '').toLowerCase();
-          // si no existe la tabla o no hay policy SELECT, no rompas el tablero
-          console.warn('Avisos: no se pudo leer arribos_por_llegar (continuo sin fallback).', q.error);
-          return {};
-        }
-        for(const r of (q.data||[])){
-          const k = normContKey(r.contenedor_norm);
-          if(!k) continue;
-          if(r.indicacion !== null && r.indicacion !== undefined && String(r.indicacion).trim() !== ''){
-            out[k] = String(r.indicacion).trim();
-          }
-        }
-      }
-      return out;
-    }catch(e){
-      console.warn('Avisos: error inesperado (se ignora).', e);
-      return {};
-    }
-  }
-
-  async function attachAvisosIndicacion(rows){
-    if(!Array.isArray(rows) || !rows.length) return rows;
-    const conts = rows.map(r=>r?.contenedor).filter(Boolean);
-    const map = await fetchAvisosIndicacionMapByConts(conts);
-
-    for(const r of rows){
-      const k = normContKey(r?.contenedor);
-      const aviso = map[k] || '';
-      r.indicacion_aviso = aviso;
-      // Solo aplica fallback si el registro NO trae indicación capturada
-      if((!r.indicacion || String(r.indicacion).trim()==='') && aviso){
-        r.indicacion = aviso;
-      }
-    }
-    return rows;
-  }
-
 async function fetchRows(range){
     const s = await ensureSupabase();
     const today = ymd();
@@ -1527,17 +1588,13 @@ async function fetchRows(range){
         }
       }
 
-      const outRows = Array.from(map.values());
-      await attachAvisosIndicacion(outRows);
-      return outRows;
+      return Array.from(map.values());
     }
 
     // Histórico / rango: solo por fecha de arribo (sin mezclar pendientes fuera del rango)
     const r = await s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
     if(r.error) throw r.error;
-    const outRows = (r.data||[]).map(dbToRow);
-    await attachAvisosIndicacion(outRows);
-    return outRows;
+    return (r.data||[]).map(dbToRow);
   }
 
   async function reloadData(force){
@@ -2854,20 +2911,251 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
   function closeAuthDialog(){
     el('authBackdrop').classList.add('hidden');
   }
+
+  // ------------------- Subvistas (ADMIN): Arribos por llegar / Histórico -------------------
+  const LS_COLS_PORLLEGAR = 'LS_COLS_PORLLEGAR_v1';
+  const COLS_PORLLEGAR = [
+    { key:'contenedor_norm', label:'Contenedor', locked:true },
+    { key:'fecha_arribo', label:'Fecha arribo' },
+    { key:'destino', label:'Destino' },
+    { key:'tipo_arribo', label:'Tipo' },
+    { key:'nave', label:'Nave' },
+    { key:'indicacion', label:'Indicación' },
+    { key:'cajas', label:'Cajas' },
+    { key:'piezas', label:'Piezas' },
+    { key:'observaciones', label:'Observaciones' },
+    { key:'descripcion', label:'Descripción' },
+    { key:'updated_at', label:'Actualizado' },
+  ];
+
+  const LS_COLS_HISTORICO = 'LS_COLS_HISTORICO_v1';
+  const COLS_HISTORICO = [
+    { key:'fecha_reporte', label:'Fecha reporte', locked:true },
+    { key:'cedis', label:'CEDIS' },
+    { key:'contenedor_norm', label:'Contenedor' },
+    { key:'estatus', label:'Estatus' },
+    { key:'indicacion', label:'Indicación' },
+    { key:'cajas', label:'Cajas' },
+    { key:'tarimas', label:'Tarimas' },
+    { key:'reportado', label:'Reportado' },
+    { key:'source_sheet', label:'Hoja' },
+    { key:'created_at', label:'Creado' },
+  ];
+
+  function _loadColsGeneric(lsKey, defKeys){
+    try{
+      const raw = localStorage.getItem(lsKey);
+      if(raw){
+        const arr = JSON.parse(raw);
+        if(Array.isArray(arr) && arr.length) return arr;
+      }
+    }catch{}
+    localStorage.setItem(lsKey, JSON.stringify(defKeys));
+    return defKeys;
+  }
+
+  function _renderColsGeneric(containerId, cols, lsKey, applyFn){
+    const selected = new Set(_loadColsGeneric(lsKey, cols.map(c=>c.key)));
+    el(containerId).innerHTML = cols.map(c=>{
+      const checked = selected.has(c.key) ? 'checked' : '';
+      const disabled = c.locked ? 'disabled' : '';
+      return `<label style="display:inline-flex;align-items:center;gap:8px;margin-right:14px;margin-bottom:8px;color:var(--muted);font-size:12px;"><input type="checkbox" data-colpick="${c.key}" ${checked} ${disabled}/> ${c.label}</label>`;
+    }).join('');
+
+    el(containerId).querySelectorAll('input[data-colpick]').forEach(chk=>{
+      chk.addEventListener('change', ()=>{
+        const sel = new Set(_loadColsGeneric(lsKey, cols.map(c=>c.key)));
+        const key = chk.dataset.colpick;
+        const locked = cols.find(x=>x.key===key)?.locked;
+        if(locked){ chk.checked = true; return; }
+        if(chk.checked) sel.add(key); else sel.delete(key);
+
+        // fuerza locked visibles
+        cols.filter(x=>x.locked).forEach(x=>sel.add(x.key));
+
+        localStorage.setItem(lsKey, JSON.stringify(Array.from(sel)));
+        applyFn();
+      });
+    });
+  }
+
+  function _applyColsToTable(tableSel, tbodySel, lsKey, cols){
+    const selected = new Set(_loadColsGeneric(lsKey, cols.map(c=>c.key)));
+    document.querySelectorAll(`${tableSel} thead th[data-key]`).forEach(th=>{
+      const key = th.dataset.key;
+      th.classList.toggle('hidden-col', !selected.has(key));
+    });
+    document.querySelectorAll(`${tbodySel} td[data-key]`).forEach(td=>{
+      const key = td.dataset.key;
+      td.classList.toggle('hidden-col', !selected.has(key));
+    });
+  }
+
+  function applyColsPorLlegar(){ _applyColsToTable('#porLlegarTable', '#tbodyPorLlegar', LS_COLS_PORLLEGAR, COLS_PORLLEGAR); }
+  function applyColsHistorico(){ _applyColsToTable('#historicoTable', '#tbodyHistorico', LS_COLS_HISTORICO, COLS_HISTORICO); }
+
+  let _porLlegarRows = [];
+  let _historicoRows = [];
+  let _porLlegarTimer = null;
+  let _historicoTimer = null;
+
+  function _fmtDT(iso){
+    if(!iso) return '';
+    try{
+      const d = new Date(iso);
+      return d.toLocaleString('es-MX',{hour12:false});
+    }catch{return String(iso)}
+  }
+
+  function _setDefaultSubRanges(){
+    try{
+      if(el('porLlegarStart') && !el('porLlegarStart').value){
+        const d1 = new Date(); d1.setDate(d1.getDate()-2);
+        const d2 = new Date(); d2.setDate(d2.getDate()+14);
+        el('porLlegarStart').value = ymd(d1);
+        el('porLlegarEnd').value = ymd(d2);
+      }
+      if(el('historicoStart') && !el('historicoStart').value){
+        const d1 = new Date(); d1.setDate(d1.getDate()-7);
+        const d2 = new Date();
+        el('historicoStart').value = ymd(d1);
+        el('historicoEnd').value = ymd(d2);
+      }
+    }catch{}
+  }
+
+  async function reloadPorLlegar(){
+    try{
+      _setDefaultSubRanges();
+      await ensureSupa();
+      const s = (el('porLlegarSearch')?.value || '').trim();
+      const d1 = el('porLlegarStart')?.value || '';
+      const d2 = el('porLlegarEnd')?.value || '';
+
+      let q = supa.from('arribos_por_llegar').select('*');
+
+      if(d1) q = q.gte('fecha_arribo', d1);
+      if(d2) q = q.lte('fecha_arribo', d2);
+
+      if(s){
+        const esc = s.replace(/%/g,'').replace(/,/g,' ');
+        q = q.or(`contenedor_norm.ilike.%${esc}%,contenedor_raw.ilike.%${esc}%,destino.ilike.%${esc}%,nave.ilike.%${esc}%,indicacion.ilike.%${esc}%`);
+      }
+
+      q = q.order('fecha_arribo', { ascending:true }).order('contenedor_norm', { ascending:true }).limit(5000);
+
+      const { data, error } = await q;
+      if(error) throw error;
+      _porLlegarRows = data || [];
+      renderPorLlegar();
+    }catch(e){
+      console.warn('reloadPorLlegar', e);
+      if(el('porLlegarMeta')) el('porLlegarMeta').textContent = `Error al cargar: ${e?.message || e}`;
+      if(el('tbodyPorLlegar')) el('tbodyPorLlegar').innerHTML = '';
+    }
+  }
+
+  function renderPorLlegar(){
+    const rows = _porLlegarRows || [];
+    el('tbodyPorLlegar').innerHTML = rows.map(r=>{
+      return `<tr>
+        <td data-key="contenedor_norm">${esc(r.contenedor_norm||'')}</td>
+        <td data-key="fecha_arribo">${esc(fmtYMD(r.fecha_arribo||''))}</td>
+        <td data-key="destino">${esc(r.destino||'')}</td>
+        <td data-key="tipo_arribo">${esc(r.tipo_arribo||'')}</td>
+        <td data-key="nave">${esc(r.nave||'')}</td>
+        <td data-key="indicacion">${esc(r.indicacion||'')}</td>
+        <td data-key="cajas">${(r.cajas??'')===null?'':esc(String(r.cajas??''))}</td>
+        <td data-key="piezas">${(r.piezas??'')===null?'':esc(String(r.piezas??''))}</td>
+        <td data-key="observaciones">${esc(r.observaciones||'')}</td>
+        <td data-key="descripcion">${esc(r.descripcion||'')}</td>
+        <td data-key="updated_at">${esc(_fmtDT(r.updated_at||''))}</td>
+      </tr>`;
+    }).join('');
+
+    applyColsPorLlegar();
+    el('porLlegarMeta').textContent = `Registros: ${rows.length}`;
+  }
+
+  async function reloadHistorico(){
+    try{
+      _setDefaultSubRanges();
+      await ensureSupa();
+      const s = (el('historicoSearch')?.value || '').trim();
+      const d1 = el('historicoStart')?.value || '';
+      const d2 = el('historicoEnd')?.value || '';
+
+      let q = supa.from('arribos_historico').select('*');
+
+      if(d1) q = q.gte('fecha_reporte', d1);
+      if(d2) q = q.lte('fecha_reporte', d2);
+
+      if(s){
+        const escq = s.replace(/%/g,'').replace(/,/g,' ');
+        q = q.or(`contenedor_norm.ilike.%${escq}%,cedis.ilike.%${escq}%,estatus.ilike.%${escq}%,indicacion.ilike.%${escq}%`);
+      }
+
+      q = q.order('fecha_reporte', { ascending:false }).order('cedis', { ascending:true }).limit(2000);
+
+      const { data, error } = await q;
+      if(error) throw error;
+      _historicoRows = data || [];
+      renderHistorico();
+    }catch(e){
+      console.warn('reloadHistorico', e);
+      if(el('historicoMeta')) el('historicoMeta').textContent = `Error al cargar: ${e?.message || e}`;
+      if(el('tbodyHistorico')) el('tbodyHistorico').innerHTML = '';
+    }
+  }
+
+  function renderHistorico(){
+    const rows = _historicoRows || [];
+    el('tbodyHistorico').innerHTML = rows.map(r=>{
+      return `<tr>
+        <td data-key="fecha_reporte">${esc(fmtYMD(r.fecha_reporte||''))}</td>
+        <td data-key="cedis">${esc(r.cedis||'')}</td>
+        <td data-key="contenedor_norm">${esc(r.contenedor_norm||'')}</td>
+        <td data-key="estatus">${esc(r.estatus||'')}</td>
+        <td data-key="indicacion">${esc(r.indicacion||'')}</td>
+        <td data-key="cajas">${(r.cajas??'')===null?'':esc(String(r.cajas??''))}</td>
+        <td data-key="tarimas">${esc(r.tarimas||'')}</td>
+        <td data-key="reportado">${esc(r.reportado||'')}</td>
+        <td data-key="source_sheet">${esc(r.source_sheet||'')}</td>
+        <td data-key="created_at">${esc(_fmtDT(r.created_at||''))}</td>
+      </tr>`;
+    }).join('');
+
+    applyColsHistorico();
+    el('historicoMeta').textContent = `Registros: ${rows.length} (máx 2000 por consulta)`;
+  }
+
+  function initSubViews(){
+    _setDefaultSubRanges();
+
+    if(el('colsPorLlegar')) _renderColsGeneric('colsPorLlegar', COLS_PORLLEGAR, LS_COLS_PORLLEGAR, applyColsPorLlegar);
+    if(el('colsHistorico')) _renderColsGeneric('colsHistorico', COLS_HISTORICO, LS_COLS_HISTORICO, applyColsHistorico);
+  }
+
+
 // ------------------- UI wiring -------------------
   
   function setTab(which){
     const isBoard = which==='board';
-    const isAdmin = which==='admin';
+    const isPorLlegar = which==='porllegar';
+    const isHistorico = which==='historico';
+    const isAdmin = (which==='admin') || isPorLlegar || isHistorico;
+    const showAdminView = which==='admin';
     const isScreen = which==='screen';
     const isSummary = which==='summary';
     const isDashboard = which==='dashboard';
 
     el('boardView').classList.toggle('hidden', !isBoard);
-    el('adminView').classList.toggle('hidden', !isAdmin);
+    el('adminView').classList.toggle('hidden', !showAdminView);
     el('screenView').classList.toggle('hidden', !isScreen);
     if(el('summaryView')) el('summaryView').classList.toggle('hidden', !isSummary);
     if(el('dashboardView')) el('dashboardView').classList.toggle('hidden', !isDashboard);
+    if(el('porLlegarView')) el('porLlegarView').classList.toggle('hidden', !isPorLlegar);
+    if(el('historicoView')) el('historicoView').classList.toggle('hidden', !isHistorico);
 
     el('tabBoard').classList.toggle('active', isBoard);
     el('tabAdmin').classList.toggle('active', isAdmin);
@@ -2875,19 +3163,28 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(el('tabSummary')) el('tabSummary').classList.toggle('active', isSummary);
     if(el('tabDashboard')) el('tabDashboard').classList.toggle('active', isDashboard);
 
-    el('chipMode').textContent = `Modo: ${isBoard ? 'Tablero' : (isAdmin ? 'Admin' : (isSummary ? 'Resumen' : (isDashboard ? 'Dashboard' : 'Pantalla')))}`;
+    const modeLabel = isBoard ? 'Tablero'
+      : (isPorLlegar ? 'Admin · Por llegar'
+      : (isHistorico ? 'Admin · Histórico'
+      : (isAdmin ? 'Admin'
+      : (isSummary ? 'Resumen'
+      : (isDashboard ? 'Dashboard' : 'Pantalla')))));
+    el('chipMode').textContent = `Modo: ${modeLabel}`;
 
     if(isBoard) closeAuthDialog();
 
     if(!isScreen) stopScreen();
     if(isScreen){ startScreen(); }
 
-    if(isAdmin){ renderAudit(); }
+    if(showAdminView){ renderAudit(); }
     if(isBoard){ renderBoard(); }
     if(isSummary){ renderSummary(); }
     if(isDashboard){ renderDashboard(); setTimeout(dashResize, 60); }
-  }
 
+    // Carga de subvistas
+    if(isPorLlegar){ reloadPorLlegar(); }
+    if(isHistorico){ reloadHistorico(); }
+  }
 
   
 function renderFilters(){
@@ -3054,6 +3351,42 @@ function initStatusMulti(){
   if(el('tabSummary')) el('tabSummary').addEventListener('click', ()=>setTab('summary'));
   if(el('tabDashboard')) el('tabDashboard').addEventListener('click', ()=>setTab('dashboard'));
   el('toScreen').addEventListener('click', ()=>setTab('screen'));
+
+  // Subvistas: botones en ADMIN
+  if(el('btnAdminPorLlegar')) el('btnAdminPorLlegar').addEventListener('click', ()=>{ initSubViews(); setTab('porllegar'); });
+  if(el('btnAdminHistorico')) el('btnAdminHistorico').addEventListener('click', ()=>{ initSubViews(); setTab('historico'); });
+
+  if(el('btnBackPorLlegar')) el('btnBackPorLlegar').addEventListener('click', ()=>setTab('admin'));
+  if(el('btnBackHistorico')) el('btnBackHistorico').addEventListener('click', ()=>setTab('admin'));
+
+  if(el('toggleColsPorLlegar')) el('toggleColsPorLlegar').addEventListener('click', ()=>{ el('colsPorLlegarCard').classList.toggle('hidden'); });
+  if(el('toggleColsHistorico')) el('toggleColsHistorico').addEventListener('click', ()=>{ el('colsHistoricoCard').classList.toggle('hidden'); });
+
+  if(el('btnReloadPorLlegar')) el('btnReloadPorLlegar').addEventListener('click', reloadPorLlegar);
+  if(el('btnReloadHistorico')) el('btnReloadHistorico').addEventListener('click', reloadHistorico);
+
+  // filtros Por llegar
+  if(el('btnPorLlegarHoy')) el('btnPorLlegarHoy').addEventListener('click', ()=>{ 
+    const t = ymd(); el('porLlegarStart').value = t; el('porLlegarEnd').value = t; reloadPorLlegar();
+  });
+  if(el('porLlegarSearch')){
+    el('porLlegarSearch').addEventListener('input', ()=>{ clearTimeout(_porLlegarTimer); _porLlegarTimer = setTimeout(reloadPorLlegar, 250); });
+    el('porLlegarSearch').addEventListener('blur', ()=>{ clearTimeout(_porLlegarTimer); _porLlegarTimer = setTimeout(reloadPorLlegar, 10); });
+  }
+  if(el('porLlegarStart')) el('porLlegarStart').addEventListener('change', ()=>{ clearTimeout(_porLlegarTimer); _porLlegarTimer = setTimeout(reloadPorLlegar, 50); });
+  if(el('porLlegarEnd')) el('porLlegarEnd').addEventListener('change', ()=>{ clearTimeout(_porLlegarTimer); _porLlegarTimer = setTimeout(reloadPorLlegar, 50); });
+
+  // filtros Histórico
+  if(el('btnHistoricoHoy')) el('btnHistoricoHoy').addEventListener('click', ()=>{ 
+    const t = ymd(); el('historicoStart').value = t; el('historicoEnd').value = t; reloadHistorico();
+  });
+  if(el('historicoSearch')){
+    el('historicoSearch').addEventListener('input', ()=>{ clearTimeout(_historicoTimer); _historicoTimer = setTimeout(reloadHistorico, 250); });
+    el('historicoSearch').addEventListener('blur', ()=>{ clearTimeout(_historicoTimer); _historicoTimer = setTimeout(reloadHistorico, 10); });
+  }
+  if(el('historicoStart')) el('historicoStart').addEventListener('change', ()=>{ clearTimeout(_historicoTimer); _historicoTimer = setTimeout(reloadHistorico, 50); });
+  if(el('historicoEnd')) el('historicoEnd').addEventListener('change', ()=>{ clearTimeout(_historicoTimer); _historicoTimer = setTimeout(reloadHistorico, 50); });
+
 
   el('q').addEventListener('input', ()=>renderBoard());
   // CEDIS multi-select handled by initCedisMulti()
@@ -4779,6 +5112,10 @@ function initAttendanceUI(){
       console.warn('initAttendanceUI error', e);
     }
   }
+
+
+  // Inicializa subvistas (Por llegar / Histórico)
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', initSubViews); } else { initSubViews(); }
 
 
   // Inicializa Asistencia (ADMIN)
