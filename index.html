@@ -58,6 +58,16 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .kpis .chip b{color:var(--fg)}
 
         .tableWrap{width:100%;border:1px solid var(--line);border-radius:14px;overflow:visible;background:rgba(17,24,38,0.6);}
+
+    /* SVA: tabla a ancho completo del navegador (full-bleed) */
+    #svaView .tableWrap{
+      overflow:auto;
+      width: calc(100vw - 32px);
+      margin-left: calc(50% - 50vw + 16px);
+      margin-right: calc(50% - 50vw + 16px);
+    }
+    #svaView .table{ min-width: 1400px; }
+
     .table{width:100%;border-collapse:separate;border-spacing:0;overflow:visible;border-radius:0;border:0;background:transparent;}
     .table thead th{
       position:sticky;top:0;
@@ -1148,10 +1158,6 @@ MARIA LOPEZ
     }[c]));
   }
 
-  // Alias para compat: algunos renders usan escapeHtml()
-  function escapeHtml(s){ return esc(s); }
-
-
   
   // -------- INDICACIÓN en 2 renglones + ancho proporcional --------
   function splitIndicacion2(s){
@@ -1661,8 +1667,7 @@ function ymd(d=new Date()){
       arribo_at: d.arribo_at ?? '',
       asignacion_at: d.asig_cortina_at ?? '',
       inicio_at: d.inicio_descarga_at ?? '',
-      fin_at: (d.fin_descarga_at ?? d.fin_at ?? ''),
-      fin_descarga_at: (d.fin_descarga_at ?? d.fin_at ?? ''),
+      fin_at: d.fin_descarga_at ?? '',
       created_at: d.created_at ?? '',
       updated_at: d.updated_at ?? '',
       arribo_ymd: arrDate,
@@ -3122,8 +3127,15 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       if(raw){
         const arr = JSON.parse(raw);
         if(Array.isArray(arr)){
-          if(arr.length && typeof arr[0]==='object' && arr[0] && 'key' in arr[0]) return arr.map(x=>x.key);
-          return arr;
+          let keys = (arr.length && typeof arr[0]==='object' && arr[0] && 'key' in arr[0]) ? arr.map(x=>x.key) : arr;
+          // migra: agrega columnas nuevas si no existen en el localStorage
+          try{
+            const set = new Set(keys);
+            let changed = false;
+            for(const k of defKeys){ if(!set.has(k)){ keys.push(k); changed = true; } }
+            if(changed) localStorage.setItem(lsKey, JSON.stringify(keys));
+          }catch{}
+          return keys;
         }
       }
     }catch{}
@@ -3657,15 +3669,6 @@ function initStatusMulti(){
     if(el(endId)) el(endId).value = t;
   }
 
-  function _setTodayPlusRange(startId, endId, days=30){
-    const d0 = new Date();
-    const d1 = new Date(d0);
-    d1.setDate(d1.getDate() + (Number(days)||0));
-    if(el(startId)) el(startId).value = ymd(d0);
-    if(el(endId)) el(endId).value = ymd(d1);
-  }
-
-
   async function reloadSVA(){
     try{
       if(!el('svaStart') || !el('svaEnd')) return;
@@ -3701,15 +3704,13 @@ function initStatusMulti(){
 
       let items = [];
       for(const sh of ships){
-        // Compat: algunos esquemas guardan fin en fin_descarga_at, otros en fin_at
-        sh.fin_at = sh.fin_descarga_at || sh.fin_at || sh.fin || '';
-
         const procs = _detectSvaProcesos(sh.indicacion||'');
         if(!procs.length) continue;
 
         for(const p of procs){
           if(!sel.has(p)) continue;
-          if(!includeDesc && !sh.fin_at) continue;
+          const finDesc = sh.fin_descarga_at || sh.fin_at || null;
+          if(!includeDesc && !finDesc) continue;
 
           const cont = _normCont(sh.contenedor);
           const fecha = _isoToYMDLocal(sh.arribo_at);
@@ -3737,7 +3738,8 @@ function initStatusMulti(){
         const rec = recMap.get(it.key) || {};
         const sh = it.sh;
 
-        const estatus_sva = rec.estatus_sva || (sh.fin_at ? 'PENDIENTE' : '');
+        const finDesc = sh.fin_descarga_at || sh.fin_at || null;
+        const estatus_sva = rec.estatus_sva || (finDesc ? 'PENDIENTE' : '');
         const inicio_proc = rec.inicio_proc || null;
         const fin_proc = rec.fin_proc || null;
 
@@ -3758,7 +3760,9 @@ function initStatusMulti(){
           fin_proc,
           tiempo_proc: tproc,
           personal_maquila: rec.personal_maquila || '',
+          updated_at: rec.updated_at || null,
           indicacion: sh.indicacion || '',
+          desc_concluida: !!(sh.fin_descarga_at || sh.fin_at),
           sh
         };
       });
@@ -3794,7 +3798,7 @@ function initStatusMulti(){
 
     let html = '';
     for(const r of rows){
-      const disabled = (!r.sh.fin_at) ? 'disabled' : '';
+      const disabled = (!r.desc_concluida) ? 'disabled' : '';
       const statusSel = `<select class="input" data-sva="estatus_sva" data-key="${r.key}" ${disabled}>
           <option value="PENDIENTE" ${r.estatus_sva==='PENDIENTE'?'selected':''}>PENDIENTE</option>
           <option value="EN PROCESO" ${r.estatus_sva==='EN PROCESO'?'selected':''}>EN PROCESO</option>
@@ -3807,6 +3811,7 @@ function initStatusMulti(){
 
       const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
       const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
+      const updTxt = r.updated_at ? `${_isoToYMDLocal(r.updated_at)} ${_isoToHM(r.updated_at)}` : '';
 
       const btnStart = `<button class="btn secondary" data-sva-act="start" data-key="${r.key}" ${disabled || r.estatus_sva!=='PENDIENTE'?'disabled':''}>Iniciar</button>`;
       const btnEnd = `<button class="btn secondary" data-sva-act="end" data-key="${r.key}" ${disabled || r.estatus_sva!=='EN PROCESO'?'disabled':''}>Terminar</button>`;
@@ -3828,11 +3833,12 @@ function initStatusMulti(){
         ['tiempo_proc', escapeHtml(r.tiempo_proc||'')],
         ['personal_maquila', persIn],
         ['indicacion', `<span class="muted">${escapeHtml(r.indicacion||'')}</span>`],
+        ['updated_at', `<span class="muted">${escapeHtml(updTxt||'')}</span>`],
         ['acciones', acciones]
       ];
 
       // Build row respecting visible cols
-      let tr = '<tr>';
+      let tr = `<tr data-row-key="${escapeHtml(r.key)}">`;
       for(const [k,v] of rowCells){
         if(!visible.includes(k)) continue;
         tr += td(k, String(v));
@@ -3876,17 +3882,17 @@ function initStatusMulti(){
     // debounce
     const prev = _svaSaveTimers.get(key);
     if(prev) clearTimeout(prev);
-    const timer = setTimeout(()=>_saveSvaPatch(key, patch), 500);
+    const timer = setTimeout(()=>_saveSvaPatch(key, patch, 'autosave'), 1200);
     _svaSaveTimers.set(key, timer);
   }
 
   async function _saveSvaNow(key){
     const row = _findSvaRow(key);
     if(!row) return;
-    await _saveSvaPatch(key, {}); // read inputs from DOM
+    await _saveSvaPatch(key, {}, 'manual'); // read inputs from DOM
   }
 
-  async function _saveSvaPatch(key, patch){
+  async function _saveSvaPatch(key, patch, action){
     try{
       await ensureSupa();
       if(!supa) return;
@@ -3923,8 +3929,90 @@ function initStatusMulti(){
 
       if(resp.error) throw resp.error;
 
-      // refresh row view quickly
-      await reloadSVA();
+      // === SVA AUDIT LOG (hora de cambios) ===
+      try{
+        const before = {
+          estatus_sva: row.estatus_sva || '',
+          maquilas: row.maquilas || '',
+          personal_maquila: row.personal_maquila || '',
+          avance_pct: (row.avance_pct==='' || row.avance_pct==null) ? null : Number(row.avance_pct),
+          inicio_proc: row.inicio_proc || null,
+          fin_proc: row.fin_proc || null,
+        };
+
+        const after = {
+          estatus_sva: payload.estatus_sva ?? before.estatus_sva,
+          maquilas: payload.maquilas ?? before.maquilas,
+          personal_maquila: payload.personal_maquila ?? before.personal_maquila,
+          avance_pct: (payload.avance_pct==='' || payload.avance_pct==null) ? null : Number(payload.avance_pct),
+          inicio_proc: (patch && patch.inicio_proc!=null) ? patch.inicio_proc : before.inicio_proc,
+          fin_proc: (patch && patch.fin_proc!=null) ? patch.fin_proc : before.fin_proc,
+        };
+
+        const nowIso = new Date().toISOString();
+        const who = authUser?.id || null;
+        const act = action || (
+          (patch && patch.inicio_proc && after.estatus_sva==='EN PROCESO') ? 'start' :
+          (patch && patch.fin_proc && after.estatus_sva==='TERMINADO') ? 'end' :
+          'save'
+        );
+
+        const _eq = (a,b)=> String(a??'').trim()===String(b??'').trim();
+        const changes = [];
+        const push = (field, a, b)=>{
+          if(field==='avance_pct'){
+            const aa = (a==null || a==='') ? null : Number(a);
+            const bb = (b==null || b==='') ? null : Number(b);
+            if(aa===bb) return;
+          }else if(_eq(a,b)) return;
+
+          changes.push({
+            contenedor_norm: row.contenedor_norm,
+            arribo_ymd: row.fecha,
+            proceso: row.proceso,
+            field,
+            old_value: (a==null ? null : String(a)),
+            new_value: (b==null ? null : String(b)),
+            action: act,
+            changed_at: nowIso,
+            changed_by: who
+          });
+        };
+
+        push('estatus_sva', before.estatus_sva, after.estatus_sva);
+        push('maquilas', before.maquilas, after.maquilas);
+        push('personal_maquila', before.personal_maquila, after.personal_maquila);
+        push('avance_pct', before.avance_pct, after.avance_pct);
+        push('inicio_proc', before.inicio_proc, after.inicio_proc);
+        push('fin_proc', before.fin_proc, after.fin_proc);
+
+        if(changes.length){
+          const ins = await supa.from('sva_reprocesos_log').insert(changes);
+          if(ins.error) console.warn('SVA log insert failed:', ins.error);
+        }
+      }catch(e){ console.warn('SVA audit log error:', e); }
+
+      // refresh view (evita re-render en autosave para no 'brincar' el cursor)
+      if(action==='autosave'){
+        // actualiza en memoria y en la celda ULT CAMBIO
+        const saved = (resp.data && resp.data[0]) ? resp.data[0] : null;
+        if(saved){
+          row.estatus_sva = saved.estatus_sva ?? row.estatus_sva;
+          row.maquilas = saved.maquilas ?? row.maquilas;
+          row.personal_maquila = saved.personal_maquila ?? row.personal_maquila;
+          row.avance_pct = (saved.avance_pct ?? row.avance_pct);
+          row.inicio_proc = saved.inicio_proc ?? row.inicio_proc;
+          row.fin_proc = saved.fin_proc ?? row.fin_proc;
+          row.updated_at = saved.updated_at ?? new Date().toISOString();
+          const tr = document.querySelector(`tr[data-row-key="${CSS.escape(key)}"]`);
+          if(tr){
+            const tdUpd = tr.querySelector('td[data-key="updated_at"]');
+            if(tdUpd) tdUpd.innerHTML = `<span class="muted">${escapeHtml(`${_isoToYMDLocal(row.updated_at)} ${_isoToHM(row.updated_at)}`)}</span>`;
+          }
+        }
+      }else{
+        await reloadSVA();
+      }
     }catch(err){
       console.error(err);
       alert(`Error al guardar SVA: ${err?.message||err}`);
@@ -3938,7 +4026,7 @@ function initStatusMulti(){
       estatus_sva: 'EN PROCESO',
       inicio_proc: row.inicio_proc || new Date().toISOString(),
       avance_pct: (row.avance_pct==='' || row.avance_pct==null) ? 0 : row.avance_pct
-    });
+    }, 'start');
   }
 
   async function _endSva(key){
@@ -3948,13 +4036,13 @@ function initStatusMulti(){
       estatus_sva: 'TERMINADO',
       fin_proc: new Date().toISOString(),
       avance_pct: 100
-    });
+    }, 'end');
   }
 
   async function reloadLogistica(){
     try{
       if(!el('logStart') || !el('logEnd')) return;
-      if(!el('logStart').value || !el('logEnd').value){ _setTodayPlusRange('logStart','logEnd', 30); }
+      if(!el('logStart').value || !el('logEnd').value){ _setTodayRange('logStart','logEnd'); }
       await ensureSupa();
       if(!supa){
         el('logMeta').textContent = 'Nube no conectada.';
@@ -4003,45 +4091,16 @@ function initStatusMulti(){
     const td = (key, inner) => `<td data-key="${key}">${inner}</td>`;
 
     let html = '';
-    let rowsToRender = (logRows||[]);
-    let _showExample = false;
-    if(!rowsToRender.length){
-      _showExample = true;
-      const sampleYmd = (el('logStart')?.value) || ymd(new Date());
-      rowsToRender = [{
-        id: '__example__',
-        __example__: true,
-        cita_ymd: sampleYmd,
-        hora_cita: '08:00',
-        anden: 'Z06',
-        contenedor_norm: 'MRKU7608568',
-        tarimas: 24,
-        upcs: '012345678901, 009876543210',
-        cantidades: '12, 8',
-        estatus: 'PROGRAMADO',
-        notas: 'EJEMPLO (no se guarda)',
-      }];
-    }
-
-    for(const r of rowsToRender){
+    for(const r of (logRows||[])){
       const id = r.id;
-      const isEx = !!r.__example__;
-      const inText = (field, val, ph='') => isEx
-        ? `<input class="input" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}" disabled>`
-        : `<input class="input" data-log="${field}" data-id="${id}" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}">`;
-      const inNum = (field, val) => isEx
-        ? `<input class="input" type="number" min="0" step="1" style="max-width:120px" value="${val??''}" disabled>`
-        : `<input class="input" type="number" min="0" step="1" style="max-width:120px" data-log="${field}" data-id="${id}" value="${val??''}">`;
+      const inText = (field, val, ph='') => `<input class="input" data-log="${field}" data-id="${id}" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}">`;
+      const inNum = (field, val) => `<input class="input" type="number" min="0" step="1" style="max-width:120px" data-log="${field}" data-id="${id}" value="${val??''}">`;
 
-      const estSel = isEx
-        ? `<select class="input" disabled>
-          ${['PROGRAMADO','EN_CARGA','EMBARCADO','CANCELADO'].map(op=>`<option value="${op}" ${r.estatus===op?'selected':''}>${op.replace('_',' ')}</option>`).join('')}
-        </select>`
-        : `<select class="input" data-log="estatus" data-id="${id}">
+      const estSel = `<select class="input" data-log="estatus" data-id="${id}">
           ${['PROGRAMADO','EN_CARGA','EMBARCADO','CANCELADO'].map(op=>`<option value="${op}" ${r.estatus===op?'selected':''}>${op.replace('_',' ')}</option>`).join('')}
         </select>`;
 
-      const btnSave = isEx ? `<span class="muted">EJEMPLO</span>` : `<button class="btn" data-log-act="save" data-id="${id}">Guardar</button>`;
+      const btnSave = `<button class="btn" data-log-act="save" data-id="${id}">Guardar</button>`;
 
       const rowCells = [
         ['cita_ymd', escapeHtml(r.cita_ymd||'')],
@@ -4056,7 +4115,7 @@ function initStatusMulti(){
         ['acciones', btnSave]
       ];
 
-      let tr = '<tr>';
+      let tr = `<tr data-row-key="${escapeHtml(r.key)}">`;
       for(const [k,v] of rowCells){
         if(!visible.includes(k)) continue;
         tr += td(k, String(v));
@@ -4165,13 +4224,6 @@ function initStatusMulti(){
       const r = await supa.from('logistica_embarques').insert(payload);
       if(r.error) throw r.error;
 
-      // Si la fecha agregada cae fuera del rango actual, ajusta el filtro para que se vea al recargar
-      const d1 = el('logStart')?.value || '';
-      const d2 = el('logEnd')?.value || '';
-      if(d1 && fecha < d1) el('logStart').value = fecha;
-      if(d2 && fecha > d2) el('logEnd').value = fecha;
-      if(!d1 || !d2){ _setTodayPlusRange('logStart','logEnd', 30); }
-
       // limpiar
       el('logAddHora').value = '';
       el('logAddAnden').value = '';
@@ -4247,7 +4299,7 @@ function initStatusMulti(){
   // filtros LOGÍSTICA
   if(el('toggleColsLog')) el('toggleColsLog').addEventListener('click', ()=>_toggleCard('colsLogCard'));
   if(el('btnReloadLog')) el('btnReloadLog').addEventListener('click', reloadLogistica);
-  if(el('btnLogHoy')) el('btnLogHoy').addEventListener('click', ()=>{ _setTodayPlusRange('logStart','logEnd', 30); reloadLogistica(); });
+  if(el('btnLogHoy')) el('btnLogHoy').addEventListener('click', ()=>{ const t = ymd(); el('logStart').value = t; el('logEnd').value = t; reloadLogistica(); });
   if(el('logSearch')) el('logSearch').addEventListener('input', ()=>{ clearTimeout(_logTimer); _logTimer = setTimeout(reloadLogistica, 80); });
   if(el('logStart')) el('logStart').addEventListener('change', ()=>reloadLogistica());
   if(el('logEnd')) el('logEnd').addEventListener('change', ()=>reloadLogistica());
