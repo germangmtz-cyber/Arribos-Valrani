@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones — req123 — backmenu+libdate</title>
+  <title>Arribos a Cedis — v3.5 — SVA producción por hora</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -298,6 +298,33 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     #attendanceCard .att-audit-item{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(17,24,38,0.35);margin-bottom:8px;}
     #attendanceCard .att-audit-item .when{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-size:12px;opacity:.9;min-width:132px}
     #attendanceCard .att-audit-item .msg{font-size:12px;line-height:1.35}
+
+/* --- SVA: ancho completo + modales + tablas mini --- */
+#svaView .tableWrap{ overflow:auto !important; scrollbar-width:auto !important; -ms-overflow-style:auto !important; padding-bottom:10px; }
+#svaView .tableWrap::-webkit-scrollbar{ height:12px !important; width:12px !important; display:block !important; }
+#svaView #svaTable{ width:max-content !important; min-width:100% !important; }
+#svaView #svaTable thead th, #svaView #svaTable tbody td{ white-space:nowrap; }
+
+.svaCellCol{ display:flex; flex-direction:column; gap:6px; min-width:220px; }
+.svaMiniBtns{ display:flex; gap:6px; flex-wrap:wrap; }
+.badge{ display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border:1px solid rgba(255,255,255,.14); border-radius:999px; font-size:12px; background:rgba(255,255,255,.04); color:var(--fg); }
+.badge strong{ font-weight:700; }
+.badge .muted{ font-size:12px; }
+
+.modalOverlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:9999; padding:18px; }
+.modalOverlay.open{ display:flex; }
+.modal{ width:min(1100px,96vw); max-height:88vh; overflow:auto; background:var(--panel); border:1px solid rgba(255,255,255,.12); border-radius:16px; box-shadow:0 16px 40px rgba(0,0,0,.45); }
+.modalHead{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.08); }
+.modalHead .h2{ font-size:16px; font-weight:800; }
+.modalBody{ padding:14px 16px; }
+.modalTabs{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.modalTabs .tab2{ padding:8px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.03); color:var(--fg); cursor:pointer; }
+.modalTabs .tab2.active{ border-color:rgba(255,138,0,.6); box-shadow:0 0 0 2px rgba(255,138,0,.16) inset; }
+.tblMini{ width:100%; border-collapse:collapse; }
+.tblMini th,.tblMini td{ border:1px solid rgba(255,255,255,.12); padding:8px; font-size:13px; }
+.tblMini th{ background:rgba(255,255,255,.06); text-align:left; }
+.input.sm{ padding:6px 8px; font-size:13px; }
+
 </style>
 </head>
 <body>
@@ -1145,12 +1172,11 @@ MARIA LOPEZ
   function esc(s){
     return String(s ?? '').replace(/[&<>"']/g, c=>({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-    }[c]));
-  }
-
-  // Alias para compat: algunos renders usan escapeHtml()
+    }
+  // Alias esperado por SVA
   function escapeHtml(s){ return esc(s); }
-
+[c]));
+  }
 
   
   // -------- INDICACIÓN en 2 renglones + ancho proporcional --------
@@ -1661,8 +1687,7 @@ function ymd(d=new Date()){
       arribo_at: d.arribo_at ?? '',
       asignacion_at: d.asig_cortina_at ?? '',
       inicio_at: d.inicio_descarga_at ?? '',
-      fin_at: (d.fin_descarga_at ?? d.fin_at ?? ''),
-      fin_descarga_at: (d.fin_descarga_at ?? d.fin_at ?? ''),
+      fin_at: d.fin_descarga_at ?? '',
       created_at: d.created_at ?? '',
       updated_at: d.updated_at ?? '',
       arribo_ymd: arrDate,
@@ -3657,15 +3682,6 @@ function initStatusMulti(){
     if(el(endId)) el(endId).value = t;
   }
 
-  function _setTodayPlusRange(startId, endId, days=30){
-    const d0 = new Date();
-    const d1 = new Date(d0);
-    d1.setDate(d1.getDate() + (Number(days)||0));
-    if(el(startId)) el(startId).value = ymd(d0);
-    if(el(endId)) el(endId).value = ymd(d1);
-  }
-
-
   async function reloadSVA(){
     try{
       if(!el('svaStart') || !el('svaEnd')) return;
@@ -3701,15 +3717,13 @@ function initStatusMulti(){
 
       let items = [];
       for(const sh of ships){
-        // Compat: algunos esquemas guardan fin en fin_descarga_at, otros en fin_at
-        sh.fin_at = sh.fin_descarga_at || sh.fin_at || sh.fin || '';
-
         const procs = _detectSvaProcesos(sh.indicacion||'');
         if(!procs.length) continue;
 
         for(const p of procs){
           if(!sel.has(p)) continue;
-          if(!includeDesc && !sh.fin_at) continue;
+          const descarga_ok = !!(sh.fin_descarga_at || sh.fin_at);
+          if(!includeDesc && !descarga_ok) continue;
 
           const cont = _normCont(sh.contenedor);
           const fecha = _isoToYMDLocal(sh.arribo_at);
@@ -3733,15 +3747,80 @@ function initStatusMulti(){
         });
       }
 
-      svaMerged = items.map((it, i)=>{
+      
+      // --- SVA extras: maquilas múltiples + producción por hora (si existen las tablas) ---
+      const mqByKey = new Map();      // key -> [{maquila, personal}]
+      const prodByKey = new Map();    // key -> { total:int, byMaquila: Map<string,int> }
+
+      async function _tryFetchMaquilas(){
+        try{
+          const rMq = await supa.from('sva_reprocesos_maquilas')
+            .select('contenedor_norm,arribo_ymd,proceso,maquila,personal')
+            .in('contenedor_norm', conts)
+            .gte('arribo_ymd', d1).lte('arribo_ymd', d2);
+          if(rMq.error) throw rMq.error;
+          for(const m of (rMq.data||[])){
+            const k = `${m.contenedor_norm}|${m.arribo_ymd}|${m.proceso||''}`;
+            if(!mqByKey.has(k)) mqByKey.set(k, []);
+            mqByKey.get(k).push({ maquila: m.maquila, personal: m.personal ?? null });
+          }
+        }catch(e){
+          // tabla puede no existir aún; no rompe SVA
+          console.warn('SVA maquilas: ', e?.message||e);
+        }
+      }
+
+      async function _tryFetchProd(){
+        try{
+          const rP = await supa.from('sva_prod_hora')
+            .select('contenedor_norm,arribo_ymd,proceso,maquila,cajas')
+            .in('contenedor_norm', conts)
+            .gte('arribo_ymd', d1).lte('arribo_ymd', d2);
+          if(rP.error) throw rP.error;
+          for(const p of (rP.data||[])){
+            const k = `${p.contenedor_norm}|${p.arribo_ymd}|${p.proceso||''}`;
+            if(!prodByKey.has(k)) prodByKey.set(k, { total:0, byMaquila: new Map() });
+            const box = Number(p.cajas||0) || 0;
+            const agg = prodByKey.get(k);
+            agg.total += box;
+            const prev = agg.byMaquila.get(p.maquila) || 0;
+            agg.byMaquila.set(p.maquila, prev + box);
+          }
+        }catch(e){
+          console.warn('SVA prod/hora: ', e?.message||e);
+        }
+      }
+
+      if(conts.length){
+        await Promise.all([_tryFetchMaquilas(), _tryFetchProd()]);
+      }
+
+svaMerged = items.map((it, i)=>{
         const rec = recMap.get(it.key) || {};
         const sh = it.sh;
 
-        const estatus_sva = rec.estatus_sva || (sh.fin_at ? 'PENDIENTE' : '');
+        const descarga_ok = !!(sh.fin_descarga_at || sh.fin_at);
+        const cajas_total = Number(sh.cajas||0) || 0;
+
+        const estatus_sva = rec.estatus_sva || (descarga_ok ? 'PENDIENTE' : '');
         const inicio_proc = rec.inicio_proc || null;
         const fin_proc = rec.fin_proc || null;
 
         const tproc = (inicio_proc && fin_proc) ? _fmtDur(new Date(fin_proc) - new Date(inicio_proc)) : '';
+
+        const mqList = mqByKey.get(it.key) || [];
+        const prodAgg = prodByKey.get(it.key) || { total:0, byMaquila: new Map() };
+        const prod_total = prodAgg.total || 0;
+        const avance_calc = (cajas_total > 0 && prod_total > 0) ? Math.min(100, Math.round((prod_total / cajas_total) * 100)) : null;
+
+        // textos resumen para columna (compatibilidad con campos existentes)
+        const maqSummary = mqList.length
+          ? mqList.map(m=>`${m.maquila}${(m.personal!=null && m.personal!=='')?` (${m.personal})`:''}`).join(', ')
+          : (rec.maquilas || '');
+
+        const persSummary = mqList.length
+          ? mqList.map(m=>`${m.maquila}:${(m.personal!=null && m.personal!=='')?m.personal:''}`).join(', ')
+          : (rec.personal_maquila || '');
 
         return {
           no: i+1,
@@ -3752,12 +3831,19 @@ function initStatusMulti(){
           fecha: it.arribo_ymd || '',
           proceso: it.proceso,
           estatus_sva,
-          maquilas: rec.maquilas || '',
+          maquilas: maqSummary || '',
+          maquilas_det: mqList,
+          prod_by_maquila: prodAgg.byMaquila,
+          prod_total,
+          cajas_total,
+          avance_calc,
+          descarga_ok,
+
           avance_pct: (rec.avance_pct ?? ''),
           inicio_proc,
           fin_proc,
           tiempo_proc: tproc,
-          personal_maquila: rec.personal_maquila || '',
+          personal_maquila: persSummary || '',
           indicacion: sh.indicacion || '',
           sh
         };
@@ -3794,16 +3880,30 @@ function initStatusMulti(){
 
     let html = '';
     for(const r of rows){
-      const disabled = (!r.sh.fin_at) ? 'disabled' : '';
+      const disabled = (!r.descarga_ok) ? 'disabled' : '';
       const statusSel = `<select class="input" data-sva="estatus_sva" data-key="${r.key}" ${disabled}>
           <option value="PENDIENTE" ${r.estatus_sva==='PENDIENTE'?'selected':''}>PENDIENTE</option>
           <option value="EN PROCESO" ${r.estatus_sva==='EN PROCESO'?'selected':''}>EN PROCESO</option>
           <option value="TERMINADO" ${r.estatus_sva==='TERMINADO'?'selected':''}>TERMINADO</option>
         </select>`;
 
-      const maquilasIn = `<input class="input" data-sva="maquilas" data-key="${r.key}" value="${escapeHtml(r.maquilas||'')}" placeholder="Maquila(s)" ${disabled}>`;
-      const avanceIn = `<input class="input" style="max-width:110px" type="number" min="0" max="100" step="1" data-sva="avance_pct" data-key="${r.key}" value="${(r.avance_pct!=='' && r.avance_pct!=null)?escapeHtml(String(r.avance_pct)):''}" placeholder="0-100" ${disabled}>`;
-      const persIn = `<input class="input" data-sva="personal_maquila" data-key="${r.key}" value="${escapeHtml(r.personal_maquila||'')}" placeholder="UVA:10, TIHI:8" ${disabled}>`;
+      
+      const btnDetalle = `<button class="btn secondary" data-sva-act="detail" data-key="${r.key}" ${disabled}>Detalle</button>`;
+      const maquilasIn = `<div class="svaCellCol">
+          <input class="input" data-sva="maquilas" data-key="${r.key}" value="${escapeHtml(r.maquilas||'')}" placeholder="Maquila(s)" ${disabled} readonly title="Se administra en Detalle">
+          <div class="svaMiniBtns">${btnDetalle}</div>
+        </div>`;
+
+      const avVal = (r.avance_calc!=null) ? r.avance_calc : (r.avance_pct==='' || r.avance_pct==null ? '' : r.avance_pct);
+      const avHint = (r.avance_calc!=null && r.cajas_total>0) ? `${r.avance_calc}% (${r.prod_total}/${r.cajas_total})` : '';
+      const avanceIn = `<div class="svaCellCol">
+          <input class="input" style="max-width:140px" type="text" data-sva="avance_pct" data-key="${r.key}" value="${escapeHtml(String(avVal??''))}" placeholder="0-100" ${disabled} ${(r.avance_calc!=null)?'readonly':''} title="${escapeHtml(avHint||'')}">
+          ${(r.avance_calc!=null && r.cajas_total>0)?`<span class="muted" style="font-size:12px">${escapeHtml(avHint)}</span>`:''}
+        </div>`;
+
+      const persIn = `<div class="svaCellCol">
+          <input class="input" data-sva="personal_maquila" data-key="${r.key}" value="${escapeHtml(r.personal_maquila||'')}" placeholder="UVA:10, TIHI:8" ${disabled} readonly title="Se administra en Detalle">
+        </div>`;
 
       const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
       const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
@@ -3812,7 +3912,7 @@ function initStatusMulti(){
       const btnEnd = `<button class="btn secondary" data-sva-act="end" data-key="${r.key}" ${disabled || r.estatus_sva!=='EN PROCESO'?'disabled':''}>Terminar</button>`;
       const btnSave = `<button class="btn" data-sva-act="save" data-key="${r.key}" ${disabled}>Guardar</button>`;
 
-      const acciones = `<div style="display:flex;gap:6px;flex-wrap:wrap">${btnStart}${btnEnd}${btnSave}</div>`;
+      const acciones = `<div style="display:flex;gap:6px;flex-wrap:wrap">${btnStart}${btnEnd}${btnSave}<button class="btn secondary" data-sva-act="detail" data-key="${r.key}" ${disabled}>Detalle</button><button class="btn secondary" data-sva-act="huella" data-key="${r.key}" ${disabled}>Huella</button></div>`;
 
       const rowCells = [
         ['no', r.no],
@@ -3865,6 +3965,9 @@ function initStatusMulti(){
       if(act==='save'){ _saveSvaNow(key); }
       if(act==='start'){ _startSva(key); }
       if(act==='end'){ _endSva(key); }
+      if(act==='detail'){ _openSvaDetail(key); }
+      if(act==='huella'){ _openSvaHuella(key); }
+
     };
   }
 
@@ -3951,10 +4054,407 @@ function initStatusMulti(){
     });
   }
 
-  async function reloadLogistica(){
+  
+  // =========================
+  // SVA Detalle: maquilas múltiples + producción por hora + huella
+  // =========================
+  const SVA_HOURS = Array.from({length:12}, (_,i)=>8+i); // 08..19
+  let _svaModalKey = null;
+  let _svaModalRow = null;
+  let _svaMaquilas = [];  // [{maquila, personal}]
+  let _svaProd = new Map(); // hour_start -> { cajas:int, nota:string }
+  let _svaProdMaquila = '';
+  let _svaProdDate = '';
+
+  function _openOverlay(id){
+    const o = el(id);
+    if(!o) return;
+    o.classList.add('open');
+    o.setAttribute('aria-hidden','false');
+  }
+  function _closeOverlay(id){
+    const o = el(id);
+    if(!o) return;
+    o.classList.remove('open');
+    o.setAttribute('aria-hidden','true');
+  }
+
+  function _setSvaModalTab(tab){
+    for(const b of document.querySelectorAll('#svaModalOverlay [data-sva-modal-tab]')){
+      b.classList.toggle('active', b.dataset.svaModalTab===tab);
+    }
+    el('svaModalMaquilas').classList.toggle('hidden', tab!=='maquilas');
+    el('svaModalProd').classList.toggle('hidden', tab!=='prod');
+    el('svaModalHuella').classList.toggle('hidden', tab!=='huella');
+  }
+
+  function _keyToParts(key){
+    const [contenedor_norm, arribo_ymd, proceso] = key.split('|');
+    return { contenedor_norm, arribo_ymd, proceso };
+  }
+
+  async function _svaLog(key, action, field, oldVal, newVal){
+    try{
+      await ensureSupa();
+      if(!supa || !authUser) return;
+      const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
+      await supa.from('sva_reprocesos_log').insert({
+        contenedor_norm, arribo_ymd, proceso,
+        action,
+        field: field || null,
+        old_value: (oldVal==null ? null : String(oldVal)),
+        new_value: (newVal==null ? null : String(newVal)),
+        changed_at: new Date().toISOString(),
+        changed_by: authUser?.email || null
+      });
+    }catch(e){
+      // tabla puede no existir; no rompe UI
+      console.warn('SVA log:', e?.message||e);
+    }
+  }
+
+  async function _fetchMaquilas(key){
+    _svaMaquilas = [];
+    try{
+      await ensureSupa();
+      if(!supa) return;
+      const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
+      const r = await supa.from('sva_reprocesos_maquilas')
+        .select('maquila,personal')
+        .eq('contenedor_norm', contenedor_norm)
+        .eq('arribo_ymd', arribo_ymd)
+        .eq('proceso', proceso)
+        .order('maquila', { ascending:true });
+      if(r.error) throw r.error;
+      _svaMaquilas = (r.data||[]).map(x=>({ maquila:x.maquila, personal:x.personal ?? null }));
+    }catch(e){
+      console.warn('fetchMaquilas:', e?.message||e);
+      // fallback: parse from resumen string
+      const row = _findSvaRow(key);
+      if(row?.maquilas){
+        _svaMaquilas = row.maquilas.split(',').map(s=>s.trim()).filter(Boolean).map(m=>({maquila:m, personal:null}));
+      }
+    }
+  }
+
+  async function _saveMaquilas(key){
+    await ensureSupa();
+    if(!supa) return;
+    if(!authUser){ alert('Para guardar SVA necesitas iniciar sesión (ADMIN).'); return; }
+
+    const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
+
+    // Upsert maquilas
+    for(const m of _svaMaquilas){
+      if(!m.maquila) continue;
+      const payload = { contenedor_norm, arribo_ymd, proceso, maquila: m.maquila, personal: (m.personal===''? null : m.personal) , updated_at:new Date().toISOString() };
+      const r = await supa.from('sva_reprocesos_maquilas').upsert(payload, { onConflict:'contenedor_norm,arribo_ymd,proceso,maquila' });
+      if(r.error) throw r.error;
+    }
+
+    // Actualiza resumen en sva_reprocesos (compatibilidad)
+    const maqSummary = _svaMaquilas.map(m=>`${m.maquila}${(m.personal!=null && m.personal!=='')?` (${m.personal})`:''}`).join(', ');
+    const persSummary = _svaMaquilas.map(m=>`${m.maquila}:${(m.personal!=null && m.personal!=='')?m.personal:''}`).join(', ');
+    await _svaLog(key, 'SAVE_MAQUILAS', 'maquilas', null, maqSummary);
+    await _saveSvaPatch(key, { maquilas: maqSummary, personal_maquila: persSummary });
+  }
+
+  async function _fetchProd(key, maquila, work_ymd){
+    _svaProd = new Map();
+    try{
+      await ensureSupa();
+      if(!supa) return;
+      const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
+      const r = await supa.from('sva_prod_hora')
+        .select('hour_start,cajas,nota')
+        .eq('contenedor_norm', contenedor_norm)
+        .eq('arribo_ymd', arribo_ymd)
+        .eq('proceso', proceso)
+        .eq('maquila', maquila)
+        .eq('work_ymd', work_ymd)
+        .order('hour_start', { ascending:true });
+      if(r.error) throw r.error;
+      for(const x of (r.data||[])){
+        _svaProd.set(Number(x.hour_start), { cajas: Number(x.cajas||0)||0, nota: x.nota||'' });
+      }
+    }catch(e){
+      console.warn('fetchProd:', e?.message||e);
+    }
+  }
+
+  async function _upsertProdCell(key, maquila, work_ymd, hour_start, cajas, nota){
+    await ensureSupa();
+    if(!supa) return;
+    if(!authUser){ alert('Para guardar SVA necesitas iniciar sesión (ADMIN).'); return; }
+    const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
+
+    const payload = {
+      contenedor_norm, arribo_ymd, proceso, maquila,
+      work_ymd, hour_start,
+      cajas: (cajas==='' || cajas==null) ? 0 : Number(cajas),
+      nota: nota || null,
+      updated_at: new Date().toISOString()
+    };
+    const r = await supa.from('sva_prod_hora').upsert(payload, {
+      onConflict: 'contenedor_norm,arribo_ymd,proceso,maquila,work_ymd,hour_start'
+    });
+    if(r.error) throw r.error;
+
+    await _svaLog(key, 'PROD_HORA', `prod_${maquila}_${work_ymd}_${hour_start}`, null, payload.cajas);
+  }
+
+  function _renderMqTable(){
+    const row = _svaModalRow;
+    const totalCajas = row?.cajas_total || 0;
+
+    // calcula producción por maquila (sumando todos los días capturados para ese contenedor/proceso)
+    const prodAgg = row?.prod_by_maquila || new Map();
+    let totalProd = row?.prod_total || 0;
+    el('svaTotalCajas').textContent = totalCajas ? String(totalCajas) : '—';
+    el('svaTotalProd').textContent = String(totalProd||0);
+    el('svaAvanceCalc').textContent = (totalCajas>0) ? `${Math.min(100, Math.round((totalProd/totalCajas)*100))}%` : '—';
+
+    let html = '';
+    _svaMaquilas.forEach((m, idx)=>{
+      const boxes = prodAgg.get(m.maquila) || 0;
+      const pct = (totalCajas>0) ? Math.min(100, Math.round((boxes/totalCajas)*100)) : 0;
+      html += `<tr data-mq-idx="${idx}">
+        <td><input class="input sm" data-mq="name" value="${escapeHtml(m.maquila||'')}" placeholder="Ej. VALRANI"></td>
+        <td><input class="input sm" data-mq="pers" type="number" min="0" step="1" value="${(m.personal==null?'':escapeHtml(String(m.personal)))}" placeholder="0"></td>
+        <td>${boxes}</td>
+        <td>${totalCajas>0 ? pct+'%' : '—'}</td>
+        <td style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn secondary" data-mq-act="prod">Producción</button>
+          <button class="btn secondary" data-mq-act="del">Eliminar</button>
+        </td>
+      </tr>`;
+    });
+    el('svaMqBody').innerHTML = html || `<tr><td colspan="5" class="muted">Sin maquilas. Agrega una para capturar producción por hora.</td></tr>`;
+
+    // rellenar dropdown de producción
+    const sel = el('svaProdMaquila');
+    if(sel){
+      const opts = _svaMaquilas.map(m=>m.maquila).filter(Boolean);
+      sel.innerHTML = opts.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+      if(opts.length){
+        if(!_svaProdMaquila || !opts.includes(_svaProdMaquila)) _svaProdMaquila = opts[0];
+        sel.value = _svaProdMaquila;
+      }
+    }
+  }
+
+  function _renderProdTable(){
+    const body = el('svaProdBody');
+    if(!body) return;
+    let acc = 0;
+    let html = '';
+    for(const h of SVA_HOURS){
+      const h2 = h+1;
+      const it = _svaProd.get(h) || { cajas:0, nota:'' };
+      const val = Number(it.cajas||0)||0;
+      acc += val;
+      html += `<tr data-hour="${h}">
+        <td>${String(h).padStart(2,'0')}:00 - ${String(h2).padStart(2,'0')}:00</td>
+        <td><input class="input sm" data-prod="cajas" type="number" min="0" step="1" value="${escapeHtml(String(val||0))}"></td>
+        <td>${acc}</td>
+        <td><input class="input sm" data-prod="nota" value="${escapeHtml(it.nota||'')}" placeholder="Opcional"></td>
+      </tr>`;
+    }
+    body.innerHTML = html;
+  }
+
+  async function _loadHuella(key){
+    try{
+      await ensureSupa();
+      if(!supa) return;
+      const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
+      const r = await supa.from('sva_reprocesos_log')
+        .select('changed_at,action,field,old_value,new_value,changed_by')
+        .eq('contenedor_norm', contenedor_norm)
+        .eq('arribo_ymd', arribo_ymd)
+        .eq('proceso', proceso)
+        .order('changed_at', { ascending:false })
+        .limit(120);
+      if(r.error) throw r.error;
+      const rows = r.data || [];
+      el('svaLogBody').innerHTML = rows.map(x=>`<tr>
+        <td>${escapeHtml(_isoToYMDLocal(x.changed_at))} ${escapeHtml(_isoToHM(x.changed_at))}</td>
+        <td>${escapeHtml(x.action||'')}</td>
+        <td>${escapeHtml(x.field||'')}</td>
+        <td>${escapeHtml(x.old_value||'')}</td>
+        <td>${escapeHtml(x.new_value||'')}</td>
+        <td>${escapeHtml(x.changed_by||'')}</td>
+      </tr>`).join('') || `<tr><td colspan="6" class="muted">Sin movimientos.</td></tr>`;
+    }catch(e){
+      console.warn('huella:', e?.message||e);
+      el('svaLogBody').innerHTML = `<tr><td colspan="6" class="muted">No disponible (falta tabla/policies). Ejecuta el SQL de huella.</td></tr>`;
+    }
+  }
+
+  async function _openSvaDetail(key){
+    try{
+      await ensureSupa();
+      if(!supa){ alert('Nube no conectada.'); return; }
+      if(!authUser){ alert('Para guardar SVA necesitas iniciar sesión (ADMIN).'); }
+
+      _svaModalKey = key;
+      _svaModalRow = _findSvaRow(key);
+      const r = _svaModalRow;
+      el('svaModalTitle').textContent = `SVA · ${r?.contenedor||''} · ${r?.proceso||''}`;
+      el('svaModalSub').textContent = `CEDIS: ${r?.cedis||''} · Fecha: ${r?.fecha||''}`;
+
+      _openOverlay('svaModalOverlay');
+      _setSvaModalTab('maquilas');
+
+      await _refreshSvaModal();
+    }catch(e){
+      console.error(e);
+      alert(`Error al abrir detalle SVA: ${e?.message||e}`);
+    }
+  }
+
+  async function _openSvaHuella(key){
+    await _openSvaDetail(key);
+    _setSvaModalTab('huella');
+    await _loadHuella(key);
+  }
+
+  async function _refreshSvaModal(){
+    const key = _svaModalKey;
+    if(!key) return;
+
+    // refresca SVA en background para traer últimos totales (y no romper)
+    await reloadSVA();
+    _svaModalRow = _findSvaRow(key);
+
+    await _fetchMaquilas(key);
+    _renderMqTable();
+
+    // producción
+    _svaProdDate = el('svaProdDate')?.value || ymd(new Date());
+    el('svaProdDate').value = _svaProdDate;
+    _svaProdMaquila = el('svaProdMaquila')?.value || _svaProdMaquila || (_svaMaquilas[0]?.maquila||'');
+    if(el('svaProdMaquila')) el('svaProdMaquila').value = _svaProdMaquila;
+
+    if(_svaProdMaquila){
+      await _fetchProd(key, _svaProdMaquila, _svaProdDate);
+    }
+    _renderProdTable();
+
+    // huella
+    await _loadHuella(key);
+  }
+
+  // Modal wiring
+  document.addEventListener('click', (ev)=>{
+    const t = ev.target;
+    if(!t) return;
+
+    if(t.id==='btnSvaModalClose'){ _closeOverlay('svaModalOverlay'); }
+    if(t.id==='btnSvaModalRefresh'){ _refreshSvaModal(); }
+
+    if(t.matches && t.matches('#svaModalOverlay')){ _closeOverlay('svaModalOverlay'); }
+
+    if(t.dataset?.svaModalTab){
+      _setSvaModalTab(t.dataset.svaModalTab);
+    }
+
+    // maquilas table actions
+    if(t.dataset?.mqAct){
+      const tr = t.closest('tr[data-mq-idx]');
+      const idx = tr ? Number(tr.dataset.mqIdx) : -1;
+      if(idx<0) return;
+      if(t.dataset.mqAct==='del'){
+        const old = _svaMaquilas[idx]?.maquila;
+        _svaMaquilas.splice(idx,1);
+        _renderMqTable();
+        _svaLog(_svaModalKey, 'DEL_MAQUILA', 'maquila', old, null);
+      }
+      if(t.dataset.mqAct==='prod'){
+        const name = _svaMaquilas[idx]?.maquila || '';
+        if(name){
+          _setSvaModalTab('prod');
+          _svaProdMaquila = name;
+          if(el('svaProdMaquila')) el('svaProdMaquila').value = name;
+          _refreshSvaModal();
+        }
+      }
+    }
+
+    if(t.id==='btnSvaAddMaquila'){
+      _svaMaquilas.push({ maquila:'', personal:null });
+      _renderMqTable();
+    }
+
+    if(t.id==='btnSvaSaveMaquilas'){
+      // pull values from table
+      for(const tr of document.querySelectorAll('#svaMqBody tr[data-mq-idx]')){
+        const idx = Number(tr.dataset.mqIdx);
+        const name = tr.querySelector('[data-mq="name"]')?.value?.trim() || '';
+        const persRaw = tr.querySelector('[data-mq="pers"]')?.value;
+        const pers = (persRaw==='' || persRaw==null) ? null : Number(persRaw);
+        _svaMaquilas[idx] = { maquila:name, personal:isNaN(pers)?null:pers };
+      }
+      _saveMaquilas(_svaModalKey).catch(e=>alert(`Error guardando maquilas: ${e?.message||e}`));
+    }
+
+    if(t.id==='btnSvaProdHoy'){
+      el('svaProdDate').value = ymd(new Date());
+      _refreshSvaModal();
+    }
+  });
+
+  // producción input wiring (delegated)
+  document.addEventListener('input', (ev)=>{
+    const t = ev.target;
+    if(!t) return;
+    if(!t.closest || !t.closest('#svaProdBody')) return;
+
+    const tr = t.closest('tr[data-hour]');
+    if(!tr) return;
+    const hour = Number(tr.dataset.hour);
+    const key = _svaModalKey;
+    const maquila = el('svaProdMaquila')?.value || _svaProdMaquila;
+    const work_ymd = el('svaProdDate')?.value || ymd(new Date());
+    if(!key || !maquila || !work_ymd) return;
+
+    const cajas = tr.querySelector('[data-prod="cajas"]')?.value;
+    const nota = tr.querySelector('[data-prod="nota"]')?.value || '';
+
+    // local update
+    _svaProd.set(hour, { cajas: Number(cajas||0)||0, nota });
+    _renderProdTable();
+
+    // debounce upsert
+    clearTimeout(tr._svatimer);
+    tr._svatimer = setTimeout(async ()=>{
+      try{
+        await _upsertProdCell(key, maquila, work_ymd, hour, cajas, nota);
+        // recalcula y refresca la vista principal
+        await reloadSVA();
+        _svaModalRow = _findSvaRow(key);
+        _renderMqTable();
+      }catch(e){
+        console.error(e);
+        alert(`Error guardando producción: ${e?.message||e}`);
+      }
+    }, 450);
+  });
+
+  // cambios de select maquila/fecha
+  document.addEventListener('change', (ev)=>{
+    const t = ev.target;
+    if(!t) return;
+    if(t.id==='svaProdMaquila' || t.id==='svaProdDate'){
+      _refreshSvaModal();
+    }
+  });
+
+
+async function reloadLogistica(){
     try{
       if(!el('logStart') || !el('logEnd')) return;
-      if(!el('logStart').value || !el('logEnd').value){ _setTodayPlusRange('logStart','logEnd', 30); }
+      if(!el('logStart').value || !el('logEnd').value){ _setTodayRange('logStart','logEnd'); }
       await ensureSupa();
       if(!supa){
         el('logMeta').textContent = 'Nube no conectada.';
@@ -4003,45 +4503,16 @@ function initStatusMulti(){
     const td = (key, inner) => `<td data-key="${key}">${inner}</td>`;
 
     let html = '';
-    let rowsToRender = (logRows||[]);
-    let _showExample = false;
-    if(!rowsToRender.length){
-      _showExample = true;
-      const sampleYmd = (el('logStart')?.value) || ymd(new Date());
-      rowsToRender = [{
-        id: '__example__',
-        __example__: true,
-        cita_ymd: sampleYmd,
-        hora_cita: '08:00',
-        anden: 'Z06',
-        contenedor_norm: 'MRKU7608568',
-        tarimas: 24,
-        upcs: '012345678901, 009876543210',
-        cantidades: '12, 8',
-        estatus: 'PROGRAMADO',
-        notas: 'EJEMPLO (no se guarda)',
-      }];
-    }
-
-    for(const r of rowsToRender){
+    for(const r of (logRows||[])){
       const id = r.id;
-      const isEx = !!r.__example__;
-      const inText = (field, val, ph='') => isEx
-        ? `<input class="input" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}" disabled>`
-        : `<input class="input" data-log="${field}" data-id="${id}" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}">`;
-      const inNum = (field, val) => isEx
-        ? `<input class="input" type="number" min="0" step="1" style="max-width:120px" value="${val??''}" disabled>`
-        : `<input class="input" type="number" min="0" step="1" style="max-width:120px" data-log="${field}" data-id="${id}" value="${val??''}">`;
+      const inText = (field, val, ph='') => `<input class="input" data-log="${field}" data-id="${id}" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}">`;
+      const inNum = (field, val) => `<input class="input" type="number" min="0" step="1" style="max-width:120px" data-log="${field}" data-id="${id}" value="${val??''}">`;
 
-      const estSel = isEx
-        ? `<select class="input" disabled>
-          ${['PROGRAMADO','EN_CARGA','EMBARCADO','CANCELADO'].map(op=>`<option value="${op}" ${r.estatus===op?'selected':''}>${op.replace('_',' ')}</option>`).join('')}
-        </select>`
-        : `<select class="input" data-log="estatus" data-id="${id}">
+      const estSel = `<select class="input" data-log="estatus" data-id="${id}">
           ${['PROGRAMADO','EN_CARGA','EMBARCADO','CANCELADO'].map(op=>`<option value="${op}" ${r.estatus===op?'selected':''}>${op.replace('_',' ')}</option>`).join('')}
         </select>`;
 
-      const btnSave = isEx ? `<span class="muted">EJEMPLO</span>` : `<button class="btn" data-log-act="save" data-id="${id}">Guardar</button>`;
+      const btnSave = `<button class="btn" data-log-act="save" data-id="${id}">Guardar</button>`;
 
       const rowCells = [
         ['cita_ymd', escapeHtml(r.cita_ymd||'')],
@@ -4165,13 +4636,6 @@ function initStatusMulti(){
       const r = await supa.from('logistica_embarques').insert(payload);
       if(r.error) throw r.error;
 
-      // Si la fecha agregada cae fuera del rango actual, ajusta el filtro para que se vea al recargar
-      const d1 = el('logStart')?.value || '';
-      const d2 = el('logEnd')?.value || '';
-      if(d1 && fecha < d1) el('logStart').value = fecha;
-      if(d2 && fecha > d2) el('logEnd').value = fecha;
-      if(!d1 || !d2){ _setTodayPlusRange('logStart','logEnd', 30); }
-
       // limpiar
       el('logAddHora').value = '';
       el('logAddAnden').value = '';
@@ -4247,7 +4711,7 @@ function initStatusMulti(){
   // filtros LOGÍSTICA
   if(el('toggleColsLog')) el('toggleColsLog').addEventListener('click', ()=>_toggleCard('colsLogCard'));
   if(el('btnReloadLog')) el('btnReloadLog').addEventListener('click', reloadLogistica);
-  if(el('btnLogHoy')) el('btnLogHoy').addEventListener('click', ()=>{ _setTodayPlusRange('logStart','logEnd', 30); reloadLogistica(); });
+  if(el('btnLogHoy')) el('btnLogHoy').addEventListener('click', ()=>{ const t = ymd(); el('logStart').value = t; el('logEnd').value = t; reloadLogistica(); });
   if(el('logSearch')) el('logSearch').addEventListener('input', ()=>{ clearTimeout(_logTimer); _logTimer = setTimeout(reloadLogistica, 80); });
   if(el('logStart')) el('logStart').addEventListener('change', ()=>reloadLogistica());
   if(el('logEnd')) el('logEnd').addEventListener('change', ()=>reloadLogistica());
@@ -4923,6 +5387,104 @@ const q = (el('q')?.value || '').trim();
     ${data.map(r=>`<tr>${r.map(c=>`<td>${escXml(c)}</td>`).join('')}</tr>`).join('')}
   </tbody>
 </table>
+
+  <!-- SVA Modal: Maquilas + Producción por hora + Huella -->
+  <div class="modalOverlay" id="svaModalOverlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="svaModalTitle">
+      <div class="modalHead">
+        <div>
+          <div class="h2" id="svaModalTitle">SVA · Detalle</div>
+          <div class="muted" id="svaModalSub" style="margin-top:2px"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn secondary" id="btnSvaModalRefresh">Actualizar</button>
+          <button class="btn" id="btnSvaModalClose">Cerrar</button>
+        </div>
+      </div>
+      <div class="modalBody">
+        <div class="modalTabs">
+          <button class="tab2 active" data-sva-modal-tab="maquilas">Maquilas</button>
+          <button class="tab2" data-sva-modal-tab="prod">Producción por hora</button>
+          <button class="tab2" data-sva-modal-tab="huella">Huella</button>
+        </div>
+
+        <div id="svaModalMaquilas">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+            <span class="badge"><strong>Total cajas:</strong> <span id="svaTotalCajas">—</span></span>
+            <span class="badge"><strong>Producidas:</strong> <span id="svaTotalProd">—</span></span>
+            <span class="badge"><strong>Avance:</strong> <span id="svaAvanceCalc">—</span></span>
+          </div>
+
+          <div class="muted" style="margin-bottom:8px">
+            Agrega maquilas al proceso y su personal. La producción por hora se captura en la pestaña <b>Producción por hora</b>.
+          </div>
+
+          <table class="tblMini">
+            <thead>
+              <tr>
+                <th style="width:260px">Maquila</th>
+                <th style="width:140px">Personal</th>
+                <th style="width:160px">Cajas producidas</th>
+                <th style="width:140px">Avance %</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="svaMqBody"></tbody>
+          </table>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <button class="btn secondary" id="btnSvaAddMaquila">Agregar maquila</button>
+            <button class="btn" id="btnSvaSaveMaquilas">Guardar maquilas</button>
+          </div>
+        </div>
+
+        <div id="svaModalProd" class="hidden">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+            <span class="muted">Maquila</span>
+            <select class="input" id="svaProdMaquila" style="min-width:260px"></select>
+            <span class="muted">Fecha</span>
+            <input class="input" id="svaProdDate" type="date" style="min-width:170px" />
+            <button class="btn secondary" id="btnSvaProdHoy">Hoy</button>
+          </div>
+
+          <table class="tblMini">
+            <thead>
+              <tr>
+                <th style="width:140px">Periodo</th>
+                <th style="width:200px">Producción por hora (cajas)</th>
+                <th style="width:160px">Acumulada</th>
+                <th>Firma supervisor (nota)</th>
+              </tr>
+            </thead>
+            <tbody id="svaProdBody"></tbody>
+          </table>
+
+          <div class="muted" style="margin-top:10px">
+            Nota: el avance general se calcula con <b>(cajas producidas totales / cajas del contenedor)</b>.
+          </div>
+        </div>
+
+        <div id="svaModalHuella" class="hidden">
+          <div class="muted" style="margin-bottom:8px">Últimos movimientos (hora exacta). </div>
+          <table class="tblMini">
+            <thead>
+              <tr>
+                <th style="width:170px">Hora</th>
+                <th style="width:140px">Acción</th>
+                <th style="width:220px">Campo</th>
+                <th>Antes</th>
+                <th>Después</th>
+                <th style="width:220px">Usuario</th>
+              </tr>
+            </thead>
+            <tbody id="svaLogBody"></tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
 </body></html>`;
 
     const blob = new Blob([html], {type:'application/vnd.ms-excel;charset=utf-8'});
