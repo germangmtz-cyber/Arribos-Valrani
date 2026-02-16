@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones — req123 — backmenu+libdate</title>
+  <title>Arribos a Cedis — v3.3 — SVA escapeHtml+fin_descarga fix</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -47,6 +47,13 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .clock{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;white-space:nowrap;}
 
     .wrap{max-width:1600px;margin:0 auto;padding:14px 16px;}
+    /* SVA: tabla a ancho completo del navegador */
+    #svaView .tableWrap{
+      width: calc(100vw - 32px);
+      margin-left: calc(50% - 50vw + 16px);
+      margin-right: calc(50% - 50vw + 16px);
+    }
+
 
     .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
     .input, select{background:var(--panel);border:1px solid var(--line);color:var(--fg);padding:9px 10px;border-radius:12px;outline:none;}
@@ -58,16 +65,6 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .kpis .chip b{color:var(--fg)}
 
         .tableWrap{width:100%;border:1px solid var(--line);border-radius:14px;overflow:visible;background:rgba(17,24,38,0.6);}
-
-    /* SVA: tabla a ancho completo del navegador (full-bleed) */
-    #svaView .tableWrap{
-      overflow:auto;
-      width: calc(100vw - 32px);
-      margin-left: calc(50% - 50vw + 16px);
-      margin-right: calc(50% - 50vw + 16px);
-    }
-    #svaView .table{ min-width: 1400px; }
-
     .table{width:100%;border-collapse:separate;border-spacing:0;overflow:visible;border-radius:0;border:0;background:transparent;}
     .table thead th{
       position:sticky;top:0;
@@ -1158,7 +1155,8 @@ MARIA LOPEZ
     }[c]));
   }
 
-  
+  function escapeHtml(s){ return esc(s); }
+
   // -------- INDICACIÓN en 2 renglones + ancho proporcional --------
   function splitIndicacion2(s){
     s = String(s ?? '').trim().replace(/\s+/g,' ');
@@ -3127,15 +3125,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       if(raw){
         const arr = JSON.parse(raw);
         if(Array.isArray(arr)){
-          let keys = (arr.length && typeof arr[0]==='object' && arr[0] && 'key' in arr[0]) ? arr.map(x=>x.key) : arr;
-          // migra: agrega columnas nuevas si no existen en el localStorage
-          try{
-            const set = new Set(keys);
-            let changed = false;
-            for(const k of defKeys){ if(!set.has(k)){ keys.push(k); changed = true; } }
-            if(changed) localStorage.setItem(lsKey, JSON.stringify(keys));
-          }catch{}
-          return keys;
+          if(arr.length && typeof arr[0]==='object' && arr[0] && 'key' in arr[0]) return arr.map(x=>x.key);
+          return arr;
         }
       }
     }catch{}
@@ -3738,8 +3729,7 @@ function initStatusMulti(){
         const rec = recMap.get(it.key) || {};
         const sh = it.sh;
 
-        const finDesc = sh.fin_descarga_at || sh.fin_at || null;
-        const estatus_sva = rec.estatus_sva || (finDesc ? 'PENDIENTE' : '');
+        const estatus_sva = rec.estatus_sva || ((sh.fin_descarga_at || sh.fin_at) ? 'PENDIENTE' : '');
         const inicio_proc = rec.inicio_proc || null;
         const fin_proc = rec.fin_proc || null;
 
@@ -3760,9 +3750,7 @@ function initStatusMulti(){
           fin_proc,
           tiempo_proc: tproc,
           personal_maquila: rec.personal_maquila || '',
-          updated_at: rec.updated_at || null,
           indicacion: sh.indicacion || '',
-          desc_concluida: !!(sh.fin_descarga_at || sh.fin_at),
           sh
         };
       });
@@ -3798,7 +3786,7 @@ function initStatusMulti(){
 
     let html = '';
     for(const r of rows){
-      const disabled = (!r.desc_concluida) ? 'disabled' : '';
+      const disabled = (!r.sh.fin_at) ? 'disabled' : '';
       const statusSel = `<select class="input" data-sva="estatus_sva" data-key="${r.key}" ${disabled}>
           <option value="PENDIENTE" ${r.estatus_sva==='PENDIENTE'?'selected':''}>PENDIENTE</option>
           <option value="EN PROCESO" ${r.estatus_sva==='EN PROCESO'?'selected':''}>EN PROCESO</option>
@@ -3811,7 +3799,6 @@ function initStatusMulti(){
 
       const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
       const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
-      const updTxt = r.updated_at ? `${_isoToYMDLocal(r.updated_at)} ${_isoToHM(r.updated_at)}` : '';
 
       const btnStart = `<button class="btn secondary" data-sva-act="start" data-key="${r.key}" ${disabled || r.estatus_sva!=='PENDIENTE'?'disabled':''}>Iniciar</button>`;
       const btnEnd = `<button class="btn secondary" data-sva-act="end" data-key="${r.key}" ${disabled || r.estatus_sva!=='EN PROCESO'?'disabled':''}>Terminar</button>`;
@@ -3833,12 +3820,11 @@ function initStatusMulti(){
         ['tiempo_proc', escapeHtml(r.tiempo_proc||'')],
         ['personal_maquila', persIn],
         ['indicacion', `<span class="muted">${escapeHtml(r.indicacion||'')}</span>`],
-        ['updated_at', `<span class="muted">${escapeHtml(updTxt||'')}</span>`],
         ['acciones', acciones]
       ];
 
       // Build row respecting visible cols
-      let tr = `<tr data-row-key="${escapeHtml(r.key)}">`;
+      let tr = '<tr>';
       for(const [k,v] of rowCells){
         if(!visible.includes(k)) continue;
         tr += td(k, String(v));
@@ -3882,17 +3868,17 @@ function initStatusMulti(){
     // debounce
     const prev = _svaSaveTimers.get(key);
     if(prev) clearTimeout(prev);
-    const timer = setTimeout(()=>_saveSvaPatch(key, patch, 'autosave'), 1200);
+    const timer = setTimeout(()=>_saveSvaPatch(key, patch), 500);
     _svaSaveTimers.set(key, timer);
   }
 
   async function _saveSvaNow(key){
     const row = _findSvaRow(key);
     if(!row) return;
-    await _saveSvaPatch(key, {}, 'manual'); // read inputs from DOM
+    await _saveSvaPatch(key, {}); // read inputs from DOM
   }
 
-  async function _saveSvaPatch(key, patch, action){
+  async function _saveSvaPatch(key, patch){
     try{
       await ensureSupa();
       if(!supa) return;
@@ -3929,90 +3915,8 @@ function initStatusMulti(){
 
       if(resp.error) throw resp.error;
 
-      // === SVA AUDIT LOG (hora de cambios) ===
-      try{
-        const before = {
-          estatus_sva: row.estatus_sva || '',
-          maquilas: row.maquilas || '',
-          personal_maquila: row.personal_maquila || '',
-          avance_pct: (row.avance_pct==='' || row.avance_pct==null) ? null : Number(row.avance_pct),
-          inicio_proc: row.inicio_proc || null,
-          fin_proc: row.fin_proc || null,
-        };
-
-        const after = {
-          estatus_sva: payload.estatus_sva ?? before.estatus_sva,
-          maquilas: payload.maquilas ?? before.maquilas,
-          personal_maquila: payload.personal_maquila ?? before.personal_maquila,
-          avance_pct: (payload.avance_pct==='' || payload.avance_pct==null) ? null : Number(payload.avance_pct),
-          inicio_proc: (patch && patch.inicio_proc!=null) ? patch.inicio_proc : before.inicio_proc,
-          fin_proc: (patch && patch.fin_proc!=null) ? patch.fin_proc : before.fin_proc,
-        };
-
-        const nowIso = new Date().toISOString();
-        const who = authUser?.id || null;
-        const act = action || (
-          (patch && patch.inicio_proc && after.estatus_sva==='EN PROCESO') ? 'start' :
-          (patch && patch.fin_proc && after.estatus_sva==='TERMINADO') ? 'end' :
-          'save'
-        );
-
-        const _eq = (a,b)=> String(a??'').trim()===String(b??'').trim();
-        const changes = [];
-        const push = (field, a, b)=>{
-          if(field==='avance_pct'){
-            const aa = (a==null || a==='') ? null : Number(a);
-            const bb = (b==null || b==='') ? null : Number(b);
-            if(aa===bb) return;
-          }else if(_eq(a,b)) return;
-
-          changes.push({
-            contenedor_norm: row.contenedor_norm,
-            arribo_ymd: row.fecha,
-            proceso: row.proceso,
-            field,
-            old_value: (a==null ? null : String(a)),
-            new_value: (b==null ? null : String(b)),
-            action: act,
-            changed_at: nowIso,
-            changed_by: who
-          });
-        };
-
-        push('estatus_sva', before.estatus_sva, after.estatus_sva);
-        push('maquilas', before.maquilas, after.maquilas);
-        push('personal_maquila', before.personal_maquila, after.personal_maquila);
-        push('avance_pct', before.avance_pct, after.avance_pct);
-        push('inicio_proc', before.inicio_proc, after.inicio_proc);
-        push('fin_proc', before.fin_proc, after.fin_proc);
-
-        if(changes.length){
-          const ins = await supa.from('sva_reprocesos_log').insert(changes);
-          if(ins.error) console.warn('SVA log insert failed:', ins.error);
-        }
-      }catch(e){ console.warn('SVA audit log error:', e); }
-
-      // refresh view (evita re-render en autosave para no 'brincar' el cursor)
-      if(action==='autosave'){
-        // actualiza en memoria y en la celda ULT CAMBIO
-        const saved = (resp.data && resp.data[0]) ? resp.data[0] : null;
-        if(saved){
-          row.estatus_sva = saved.estatus_sva ?? row.estatus_sva;
-          row.maquilas = saved.maquilas ?? row.maquilas;
-          row.personal_maquila = saved.personal_maquila ?? row.personal_maquila;
-          row.avance_pct = (saved.avance_pct ?? row.avance_pct);
-          row.inicio_proc = saved.inicio_proc ?? row.inicio_proc;
-          row.fin_proc = saved.fin_proc ?? row.fin_proc;
-          row.updated_at = saved.updated_at ?? new Date().toISOString();
-          const tr = document.querySelector(`tr[data-row-key="${CSS.escape(key)}"]`);
-          if(tr){
-            const tdUpd = tr.querySelector('td[data-key="updated_at"]');
-            if(tdUpd) tdUpd.innerHTML = `<span class="muted">${escapeHtml(`${_isoToYMDLocal(row.updated_at)} ${_isoToHM(row.updated_at)}`)}</span>`;
-          }
-        }
-      }else{
-        await reloadSVA();
-      }
+      // refresh row view quickly
+      await reloadSVA();
     }catch(err){
       console.error(err);
       alert(`Error al guardar SVA: ${err?.message||err}`);
@@ -4026,7 +3930,7 @@ function initStatusMulti(){
       estatus_sva: 'EN PROCESO',
       inicio_proc: row.inicio_proc || new Date().toISOString(),
       avance_pct: (row.avance_pct==='' || row.avance_pct==null) ? 0 : row.avance_pct
-    }, 'start');
+    });
   }
 
   async function _endSva(key){
@@ -4036,7 +3940,7 @@ function initStatusMulti(){
       estatus_sva: 'TERMINADO',
       fin_proc: new Date().toISOString(),
       avance_pct: 100
-    }, 'end');
+    });
   }
 
   async function reloadLogistica(){
@@ -4115,7 +4019,7 @@ function initStatusMulti(){
         ['acciones', btnSave]
       ];
 
-      let tr = `<tr data-row-key="${escapeHtml(r.key)}">`;
+      let tr = '<tr>';
       for(const [k,v] of rowCells){
         if(!visible.includes(k)) continue;
         tr += td(k, String(v));
