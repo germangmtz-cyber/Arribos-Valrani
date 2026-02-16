@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — v3.3 — SVA escapeHtml+fin_descarga fix</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones — req123 — backmenu+libdate</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -47,13 +47,6 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .clock{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;white-space:nowrap;}
 
     .wrap{max-width:1600px;margin:0 auto;padding:14px 16px;}
-    /* SVA: tabla a ancho completo del navegador */
-    #svaView .tableWrap{
-      width: calc(100vw - 32px);
-      margin-left: calc(50% - 50vw + 16px);
-      margin-right: calc(50% - 50vw + 16px);
-    }
-
 
     .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
     .input, select{background:var(--panel);border:1px solid var(--line);color:var(--fg);padding:9px 10px;border-radius:12px;outline:none;}
@@ -1155,8 +1148,11 @@ MARIA LOPEZ
     }[c]));
   }
 
+  // Alias para compat: algunos renders usan escapeHtml()
   function escapeHtml(s){ return esc(s); }
 
+
+  
   // -------- INDICACIÓN en 2 renglones + ancho proporcional --------
   function splitIndicacion2(s){
     s = String(s ?? '').trim().replace(/\s+/g,' ');
@@ -1665,7 +1661,8 @@ function ymd(d=new Date()){
       arribo_at: d.arribo_at ?? '',
       asignacion_at: d.asig_cortina_at ?? '',
       inicio_at: d.inicio_descarga_at ?? '',
-      fin_at: d.fin_descarga_at ?? '',
+      fin_at: (d.fin_descarga_at ?? d.fin_at ?? ''),
+      fin_descarga_at: (d.fin_descarga_at ?? d.fin_at ?? ''),
       created_at: d.created_at ?? '',
       updated_at: d.updated_at ?? '',
       arribo_ymd: arrDate,
@@ -3572,8 +3569,6 @@ function initStatusMulti(){
 
   let svaMerged = [];
   let logRows = [];
-  let svaMaquilasMap = new Map();
-  let svaMaquilasFeature = false; // se habilita si existe tabla sva_reprocesos_maquilas
   let _svaTimer = null;
   let _logTimer = null;
   const _svaSaveTimers = new Map();
@@ -3631,51 +3626,6 @@ function initStatusMulti(){
       .subscribe();
   }
 
-
-  async function _loadSvaMaquilas(conts, d1, d2){
-    svaMaquilasMap = new Map();
-    svaMaquilasFeature = false;
-    if(!supa || !conts || !conts.length) return false;
-    try{
-      let rq = supa.from('sva_reprocesos_maquilas').select('*').in('contenedor_norm', conts);
-      if(d1) rq = rq.gte('arribo_ymd', d1);
-      if(d2) rq = rq.lte('arribo_ymd', d2);
-      const rr = await rq;
-      if(rr.error){
-        // si la tabla no existe o no hay permisos, no truena el tablero
-        console.warn('SVA maquilas detalle no disponible:', rr.error?.message || rr.error);
-        return false;
-      }
-      svaMaquilasFeature = true;
-      for(const it of (rr.data||[])){
-        const k = `${it.contenedor_norm}|${it.arribo_ymd}|${it.proceso||''}`;
-        if(!svaMaquilasMap.has(k)) svaMaquilasMap.set(k, []);
-        svaMaquilasMap.get(k).push(it);
-      }
-      for(const arr of svaMaquilasMap.values()){
-        arr.sort((a,b)=> new Date(a.created_at||a.updated_at||0) - new Date(b.created_at||b.updated_at||0));
-      }
-      return true;
-    }catch(e){
-      console.warn('SVA maquilas detalle no disponible:', e?.message||e);
-      return false;
-    }
-  }
-
-  async function _insertSvaLog(entries){
-    if(!entries || !entries.length) return;
-    try{
-      await ensureSupa();
-      if(!supa || !authUser) return;
-      const resp = await supa.from('sva_reprocesos_log').insert(entries);
-      if(resp.error){
-        console.warn('No se pudo escribir bitácora SVA:', resp.error?.message||resp.error);
-      }
-    }catch(e){
-      console.warn('No se pudo escribir bitácora SVA:', e?.message||e);
-    }
-  }
-
   function _ensureRealtimeLOG(){
     if(!supa || realtimeLog) return;
     realtimeLog = supa.channel('logistica_embarques_live')
@@ -3706,6 +3656,15 @@ function initStatusMulti(){
     if(el(startId)) el(startId).value = t;
     if(el(endId)) el(endId).value = t;
   }
+
+  function _setTodayPlusRange(startId, endId, days=30){
+    const d0 = new Date();
+    const d1 = new Date(d0);
+    d1.setDate(d1.getDate() + (Number(days)||0));
+    if(el(startId)) el(startId).value = ymd(d0);
+    if(el(endId)) el(endId).value = ymd(d1);
+  }
+
 
   async function reloadSVA(){
     try{
@@ -3742,13 +3701,15 @@ function initStatusMulti(){
 
       let items = [];
       for(const sh of ships){
+        // Compat: algunos esquemas guardan fin en fin_descarga_at, otros en fin_at
+        sh.fin_at = sh.fin_descarga_at || sh.fin_at || sh.fin || '';
+
         const procs = _detectSvaProcesos(sh.indicacion||'');
         if(!procs.length) continue;
 
         for(const p of procs){
           if(!sel.has(p)) continue;
-          const finDesc = sh.fin_descarga_at || sh.fin_at || null;
-          if(!includeDesc && !finDesc) continue;
+          if(!includeDesc && !sh.fin_at) continue;
 
           const cont = _normCont(sh.contenedor);
           const fecha = _isoToYMDLocal(sh.arribo_at);
@@ -3772,19 +3733,11 @@ function initStatusMulti(){
         });
       }
 
-      await _loadSvaMaquilas(conts, d1, d2);
-
       svaMerged = items.map((it, i)=>{
         const rec = recMap.get(it.key) || {};
         const sh = it.sh;
 
-        const mx = (svaMaquilasMap.get(it.key) || []);
-        const mxNames = mx.map(m=>m.maquila).filter(Boolean).join(', ');
-        const mxPers = mx.map(m=>`${m.maquila}:${(m.personal??'')}`).join(', ');
-        const mxAv = mx.map(m=>`${m.maquila}:${(m.avance??'')}`).join(', ');
-        const mxAvMax = mx.length ? Math.max(...mx.map(m=> (m.avance==null || m.avance==='' ? 0 : Number(m.avance))) ) : null;
-
-        const estatus_sva = rec.estatus_sva || ((sh.fin_descarga_at || sh.fin_at) ? 'PENDIENTE' : '');
+        const estatus_sva = rec.estatus_sva || (sh.fin_at ? 'PENDIENTE' : '');
         const inicio_proc = rec.inicio_proc || null;
         const fin_proc = rec.fin_proc || null;
 
@@ -3799,14 +3752,12 @@ function initStatusMulti(){
           fecha: it.arribo_ymd || '',
           proceso: it.proceso,
           estatus_sva,
-          maquilas: (mxNames || rec.maquilas || ''),
-          avance_pct: (mxAvMax!=null ? mxAvMax : (rec.avance_pct ?? '')),
+          maquilas: rec.maquilas || '',
+          avance_pct: (rec.avance_pct ?? ''),
           inicio_proc,
           fin_proc,
           tiempo_proc: tproc,
-          personal_maquila: (mxPers || rec.personal_maquila || ''),
-          maquilas_items: mx,
-          maquilas_avance_detalle: mxAv,
+          personal_maquila: rec.personal_maquila || '',
           indicacion: sh.indicacion || '',
           sh
         };
@@ -3843,35 +3794,16 @@ function initStatusMulti(){
 
     let html = '';
     for(const r of rows){
-      const canEdit = !!(r.sh.fin_descarga_at || r.sh.fin_at);
-      const disabled = (!canEdit) ? 'disabled' : '';
+      const disabled = (!r.sh.fin_at) ? 'disabled' : '';
       const statusSel = `<select class="input" data-sva="estatus_sva" data-key="${r.key}" ${disabled}>
           <option value="PENDIENTE" ${r.estatus_sva==='PENDIENTE'?'selected':''}>PENDIENTE</option>
           <option value="EN PROCESO" ${r.estatus_sva==='EN PROCESO'?'selected':''}>EN PROCESO</option>
           <option value="TERMINADO" ${r.estatus_sva==='TERMINADO'?'selected':''}>TERMINADO</option>
         </select>`;
 
-      let maquilasIn = `<input class="input" data-sva="maquilas" data-key="${r.key}" value="${escapeHtml(r.maquilas||'')}" placeholder="Maquila(s) (ej. VALRANI, OTRA)" ${disabled}>`;
+      const maquilasIn = `<input class="input" data-sva="maquilas" data-key="${r.key}" value="${escapeHtml(r.maquilas||'')}" placeholder="Maquila(s)" ${disabled}>`;
       const avanceIn = `<input class="input" style="max-width:110px" type="number" min="0" max="100" step="1" data-sva="avance_pct" data-key="${r.key}" value="${(r.avance_pct!=='' && r.avance_pct!=null)?escapeHtml(String(r.avance_pct)):''}" placeholder="0-100" ${disabled}>`;
-      let persIn = `<input class="input" data-sva="personal_maquila" data-key="${r.key}" value="${escapeHtml(r.personal_maquila||'')}" placeholder="Personal por maquila (ej. VALRANI:9, OTRA:5)" ${disabled}>`;
-
-      if(svaMaquilasFeature){
-        const items = (r.maquilas_items || []);
-        const chips = items.map(it=>{
-          const mq = escapeHtml(it.maquila||'');
-          const p = (it.personal==null||it.personal==='') ? '' : `P${escapeHtml(String(it.personal))}`;
-          const a = (it.avance==null||it.avance==='') ? '' : `${escapeHtml(String(it.avance))}%`;
-          const txt = [mq, p, a].filter(Boolean).join(' · ');
-          return `<span class="chip" style="background:rgba(255,255,255,.08)">${txt||'—'}</span>`;
-        }).join('');
-        maquilasIn = `
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            ${chips || '<span class="muted">—</span>'}
-            <button class="btn secondary tiny" data-sva-act="maquilas" data-key="${r.key}" ${disabled}>Editar</button>
-          </div>`;
-        const persTxt = items.map(it=>`${it.maquila}:${(it.personal??'')}${(it.avance!=null && it.avance!==''?(' · '+it.avance+'%'):'')}`).join(', ');
-        persIn = `<div class="muted" style="font-size:12px">${escapeHtml(persTxt||'')}</div>`;
-      }
+      const persIn = `<input class="input" data-sva="personal_maquila" data-key="${r.key}" value="${escapeHtml(r.personal_maquila||'')}" placeholder="UVA:10, TIHI:8" ${disabled}>`;
 
       const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
       const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
@@ -3933,219 +3865,12 @@ function initStatusMulti(){
       if(act==='save'){ _saveSvaNow(key); }
       if(act==='start'){ _startSva(key); }
       if(act==='end'){ _endSva(key); }
-      if(act==='maquilas'){ _openSvaMaquilasModal(key); }
     };
   }
 
   function _findSvaRow(key){
     return (svaMerged||[]).find(x=>x.key===key);
   }
-
-
-  function _openSvaMaquilasModal(key){
-    const row = _findSvaRow(key);
-    if(!row) return;
-    if(!authUser){
-      alert('Para editar maquilas necesitas iniciar sesión (ADMIN).');
-      return;
-    }
-    const items = (row.maquilas_items && Array.isArray(row.maquilas_items)) ? row.maquilas_items.map(x=>({maquila:x.maquila||'', personal:x.personal??'', avance:x.avance??''})) : [];
-    if(!items.length) items.push({maquila:'', personal:'', avance:''});
-
-    el('modalTitle').textContent = `Maquilas · ${row.contenedor} · ${row.proceso}`;
-    el('modalBody').innerHTML = `
-      <div class="muted" style="font-size:12px;margin-bottom:10px">
-        Una fila por maquila. Se guarda con hora (bitácora) y actualiza el resumen del proceso.
-      </div>
-      <div class="tableWrap" style="width:100%;margin:0">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>MAQUILA</th>
-              <th style="width:140px">PERSONAL</th>
-              <th style="width:140px">AVANCE %</th>
-              <th style="width:110px">ACCIONES</th>
-            </tr>
-          </thead>
-          <tbody id="svaMxTbody"></tbody>
-        </table>
-      </div>
-
-      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:10px">
-        <button class="btn secondary" id="svaMxAdd">Agregar fila</button>
-        <button class="btn" id="svaMxSave">Guardar</button>
-      </div>
-      <div class="muted" id="svaMxMsg" style="margin-top:8px"></div>
-    `;
-    el('modalBackdrop').classList.remove('hidden');
-
-    const tbody = el('svaMxTbody');
-    const render = ()=>{
-      tbody.innerHTML = items.map((it, idx)=>`
-        <tr data-i="${idx}">
-          <td><input class="input" data-mx="maquila" value="${escapeHtml(it.maquila)}" placeholder="Ej. VALRANI"></td>
-          <td><input class="input" type="number" min="0" step="1" data-mx="personal" value="${escapeHtml(String(it.personal??''))}" placeholder="0"></td>
-          <td><input class="input" type="number" min="0" max="100" step="1" data-mx="avance" value="${escapeHtml(String(it.avance??''))}" placeholder="0-100"></td>
-          <td><button class="btn danger tiny" data-mx-act="del">Quitar</button></td>
-        </tr>
-      `).join('');
-    };
-    render();
-
-    tbody.oninput = (ev)=>{
-      const tr = ev.target.closest('tr');
-      if(!tr) return;
-      const idx = Number(tr.dataset.i);
-      const field = ev.target.dataset.mx;
-      if(!field || !items[idx]) return;
-      items[idx][field] = ev.target.value;
-    };
-    tbody.onclick = (ev)=>{
-      const btn = ev.target.closest('[data-mx-act]');
-      if(!btn) return;
-      const tr = btn.closest('tr');
-      if(!tr) return;
-      const idx = Number(tr.dataset.i);
-      if(btn.dataset.mxAct==='del'){
-        items.splice(idx,1);
-        if(!items.length) items.push({maquila:'', personal:'', avance:''});
-        render();
-      }
-    };
-
-    el('svaMxAdd').onclick = ()=>{ items.push({maquila:'', personal:'', avance:''}); render(); };
-
-    el('svaMxSave').onclick = async ()=>{
-      el('svaMxMsg').textContent = '';
-      // normaliza/valida
-      const cleaned = [];
-      const seen = new Set();
-      for(const it of items){
-        const maquila = (it.maquila||'').trim();
-        if(!maquila) continue;
-        const keyMq = maquila.toUpperCase();
-        if(seen.has(keyMq)){
-          el('svaMxMsg').textContent = `Maquila repetida: ${maquila}`;
-          return;
-        }
-        seen.add(keyMq);
-        const personal = (it.personal==='' || it.personal==null) ? null : Number(it.personal);
-        const avance = (it.avance==='' || it.avance==null) ? null : Number(it.avance);
-        if(personal!=null && (!Number.isFinite(personal) || personal<0)){
-          el('svaMxMsg').textContent = `Personal inválido en ${maquila}`;
-          return;
-        }
-        if(avance!=null && (!Number.isFinite(avance) || avance<0 || avance>100)){
-          el('svaMxMsg').textContent = `Avance inválido (0-100) en ${maquila}`;
-          return;
-        }
-        cleaned.push({maquila: keyMq, personal, avance});
-      }
-      await _saveSvaMaquilas(key, cleaned);
-    };
-  }
-
-  async function _saveSvaMaquilas(key, items){
-    const row = _findSvaRow(key);
-    if(!row) return;
-    try{
-      await ensureSupa();
-      if(!supa) return;
-      if(!authUser){
-        alert('Para guardar SVA necesitas iniciar sesión (ADMIN).');
-        return;
-      }
-
-      // lee existentes para detectar altas/bajas/cambios (y dejar huella)
-      let existing = [];
-      const exResp = await supa.from('sva_reprocesos_maquilas')
-        .select('*')
-        .eq('contenedor_norm', row.contenedor_norm)
-        .eq('arribo_ymd', row.fecha)
-        .eq('proceso', row.proceso);
-      if(exResp.error){
-        // tabla no existe / sin permisos
-        alert('No está habilitada la tabla de detalle (sva_reprocesos_maquilas). Ejecuta el SQL de habilitación en Supabase.');
-        console.warn(exResp.error);
-        return;
-      }
-      existing = exResp.data || [];
-
-      const nowIso = new Date().toISOString();
-      const payload = (items||[]).map(it=>({
-        contenedor_norm: row.contenedor_norm,
-        arribo_ymd: row.fecha,
-        proceso: row.proceso,
-        maquila: it.maquila,
-        personal: it.personal,
-        avance: it.avance,
-        updated_at: nowIso
-      }));
-
-      if(payload.length){
-        const up = await supa.from('sva_reprocesos_maquilas')
-          .upsert(payload, { onConflict: 'contenedor_norm,arribo_ymd,proceso,maquila' });
-        if(up.error) throw up.error;
-      }
-
-      // borrar maquilas eliminadas
-      const keep = new Set(payload.map(x=>x.maquila));
-      const delList = existing.map(x=>x.maquila).filter(mq=>mq && !keep.has(mq));
-      if(delList.length){
-        const del = await supa.from('sva_reprocesos_maquilas')
-          .delete()
-          .match({ contenedor_norm: row.contenedor_norm, arribo_ymd: row.fecha, proceso: row.proceso })
-          .in('maquila', delList);
-        if(del.error) throw del.error;
-      }
-
-      // actualizar resumen en tabla principal
-      const mxNames = payload.map(x=>x.maquila).join(', ');
-      const mxPers = payload.map(x=>`${x.maquila}:${(x.personal??'')}`).join(', ');
-      const mxMax = payload.length ? Math.max(...payload.map(x=> (x.avance==null?0:Number(x.avance)) )) : null;
-
-      const upMain = await supa.from('sva_reprocesos')
-        .upsert({
-          contenedor_norm: row.contenedor_norm,
-          arribo_ymd: row.fecha,
-          proceso: row.proceso,
-          maquilas: mxNames,
-          personal_maquila: mxPers,
-          avance_pct: (mxMax!=null ? mxMax : null),
-          updated_at: nowIso
-        }, { onConflict: 'contenedor_norm,arribo_ymd,proceso' });
-      if(upMain.error) throw upMain.error;
-
-      // bitácora: altas/bajas/cambios
-      const exMap = new Map(existing.map(x=>[x.maquila, x]));
-      const logs = [];
-      const by = authUser?.email || authUser?.id || '';
-      for(const p of payload){
-        const old = exMap.get(p.maquila);
-        if(!old){
-          logs.push({ contenedor_norm: row.contenedor_norm, arribo_ymd: row.fecha, proceso: row.proceso, action:'MAQUILA_ADD', field:'maquila', old_value:null, new_value: JSON.stringify(p), changed_by: by });
-        }else{
-          const before = JSON.stringify({personal: old.personal??null, avance: old.avance??null});
-          const after = JSON.stringify({personal: p.personal??null, avance: p.avance??null});
-          if(before !== after){
-            logs.push({ contenedor_norm: row.contenedor_norm, arribo_ymd: row.fecha, proceso: row.proceso, action:'MAQUILA_UPDATE', field:p.maquila, old_value: before, new_value: after, changed_by: by });
-          }
-        }
-      }
-      for(const mq of delList){
-        logs.push({ contenedor_norm: row.contenedor_norm, arribo_ymd: row.fecha, proceso: row.proceso, action:'MAQUILA_DELETE', field:mq, old_value:'', new_value:'', changed_by: by });
-      }
-      await _insertSvaLog(logs);
-
-      // refresca vista y cierra modal
-      await reloadSVA();
-      closeDetail();
-    }catch(err){
-      console.error(err);
-      alert(`Error al guardar maquilas: ${err?.message||err}`);
-    }
-  }
-
 
   function _queueSaveSva(key, patch){
     // debounce
@@ -4192,49 +3917,11 @@ function initStatusMulti(){
         ...patch,
       };
 
-      // bitácora (huella) por cambios en campos principales
-      const by = authUser?.email || authUser?.id || '';
-      const before = {
-        estatus_sva: row.estatus_sva ?? null,
-        maquilas: row.maquilas ?? null,
-        avance_pct: row.avance_pct ?? null,
-        personal_maquila: row.personal_maquila ?? null,
-        inicio_proc: row.inicio_proc ?? null,
-        fin_proc: row.fin_proc ?? null
-      };
-      const after = {
-        estatus_sva: payload.estatus_sva ?? null,
-        maquilas: payload.maquilas ?? null,
-        avance_pct: payload.avance_pct ?? null,
-        personal_maquila: payload.personal_maquila ?? null,
-        inicio_proc: payload.inicio_proc ?? null,
-        fin_proc: payload.fin_proc ?? null
-      };
-      const logs = [];
-      for(const k of Object.keys(after)){
-        const a = after[k];
-        const b = before[k];
-        if(JSON.stringify(a) !== JSON.stringify(b)){
-          logs.push({
-            contenedor_norm: row.contenedor_norm,
-            arribo_ymd: row.fecha,
-            proceso: row.proceso,
-            action: 'FIELD_UPDATE',
-            field: k,
-            old_value: (b==null?'':String(b)),
-            new_value: (a==null?'':String(a)),
-            changed_by: by
-          });
-        }
-      }
-
-      const resp = await supa.from('sva_reprocesos'
+      const resp = await supa.from('sva_reprocesos')
         .upsert(payload, { onConflict: 'contenedor_norm,arribo_ymd,proceso' })
         .select();
 
       if(resp.error) throw resp.error;
-
-      await _insertSvaLog(logs);
 
       // refresh row view quickly
       await reloadSVA();
@@ -4267,7 +3954,7 @@ function initStatusMulti(){
   async function reloadLogistica(){
     try{
       if(!el('logStart') || !el('logEnd')) return;
-      if(!el('logStart').value || !el('logEnd').value){ _setTodayRange('logStart','logEnd'); }
+      if(!el('logStart').value || !el('logEnd').value){ _setTodayPlusRange('logStart','logEnd', 30); }
       await ensureSupa();
       if(!supa){
         el('logMeta').textContent = 'Nube no conectada.';
@@ -4316,16 +4003,45 @@ function initStatusMulti(){
     const td = (key, inner) => `<td data-key="${key}">${inner}</td>`;
 
     let html = '';
-    for(const r of (logRows||[])){
-      const id = r.id;
-      const inText = (field, val, ph='') => `<input class="input" data-log="${field}" data-id="${id}" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}">`;
-      const inNum = (field, val) => `<input class="input" type="number" min="0" step="1" style="max-width:120px" data-log="${field}" data-id="${id}" value="${val??''}">`;
+    let rowsToRender = (logRows||[]);
+    let _showExample = false;
+    if(!rowsToRender.length){
+      _showExample = true;
+      const sampleYmd = (el('logStart')?.value) || ymd(new Date());
+      rowsToRender = [{
+        id: '__example__',
+        __example__: true,
+        cita_ymd: sampleYmd,
+        hora_cita: '08:00',
+        anden: 'Z06',
+        contenedor_norm: 'MRKU7608568',
+        tarimas: 24,
+        upcs: '012345678901, 009876543210',
+        cantidades: '12, 8',
+        estatus: 'PROGRAMADO',
+        notas: 'EJEMPLO (no se guarda)',
+      }];
+    }
 
-      const estSel = `<select class="input" data-log="estatus" data-id="${id}">
+    for(const r of rowsToRender){
+      const id = r.id;
+      const isEx = !!r.__example__;
+      const inText = (field, val, ph='') => isEx
+        ? `<input class="input" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}" disabled>`
+        : `<input class="input" data-log="${field}" data-id="${id}" value="${escapeHtml(val??'')}" placeholder="${escapeHtml(ph)}">`;
+      const inNum = (field, val) => isEx
+        ? `<input class="input" type="number" min="0" step="1" style="max-width:120px" value="${val??''}" disabled>`
+        : `<input class="input" type="number" min="0" step="1" style="max-width:120px" data-log="${field}" data-id="${id}" value="${val??''}">`;
+
+      const estSel = isEx
+        ? `<select class="input" disabled>
+          ${['PROGRAMADO','EN_CARGA','EMBARCADO','CANCELADO'].map(op=>`<option value="${op}" ${r.estatus===op?'selected':''}>${op.replace('_',' ')}</option>`).join('')}
+        </select>`
+        : `<select class="input" data-log="estatus" data-id="${id}">
           ${['PROGRAMADO','EN_CARGA','EMBARCADO','CANCELADO'].map(op=>`<option value="${op}" ${r.estatus===op?'selected':''}>${op.replace('_',' ')}</option>`).join('')}
         </select>`;
 
-      const btnSave = `<button class="btn" data-log-act="save" data-id="${id}">Guardar</button>`;
+      const btnSave = isEx ? `<span class="muted">EJEMPLO</span>` : `<button class="btn" data-log-act="save" data-id="${id}">Guardar</button>`;
 
       const rowCells = [
         ['cita_ymd', escapeHtml(r.cita_ymd||'')],
@@ -4449,6 +4165,13 @@ function initStatusMulti(){
       const r = await supa.from('logistica_embarques').insert(payload);
       if(r.error) throw r.error;
 
+      // Si la fecha agregada cae fuera del rango actual, ajusta el filtro para que se vea al recargar
+      const d1 = el('logStart')?.value || '';
+      const d2 = el('logEnd')?.value || '';
+      if(d1 && fecha < d1) el('logStart').value = fecha;
+      if(d2 && fecha > d2) el('logEnd').value = fecha;
+      if(!d1 || !d2){ _setTodayPlusRange('logStart','logEnd', 30); }
+
       // limpiar
       el('logAddHora').value = '';
       el('logAddAnden').value = '';
@@ -4524,7 +4247,7 @@ function initStatusMulti(){
   // filtros LOGÍSTICA
   if(el('toggleColsLog')) el('toggleColsLog').addEventListener('click', ()=>_toggleCard('colsLogCard'));
   if(el('btnReloadLog')) el('btnReloadLog').addEventListener('click', reloadLogistica);
-  if(el('btnLogHoy')) el('btnLogHoy').addEventListener('click', ()=>{ const t = ymd(); el('logStart').value = t; el('logEnd').value = t; reloadLogistica(); });
+  if(el('btnLogHoy')) el('btnLogHoy').addEventListener('click', ()=>{ _setTodayPlusRange('logStart','logEnd', 30); reloadLogistica(); });
   if(el('logSearch')) el('logSearch').addEventListener('input', ()=>{ clearTimeout(_logTimer); _logTimer = setTimeout(reloadLogistica, 80); });
   if(el('logStart')) el('logStart').addEventListener('change', ()=>reloadLogistica());
   if(el('logEnd')) el('logEnd').addEventListener('change', ()=>reloadLogistica());
