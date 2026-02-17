@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arribos a Cedis — v3.5 — SVA producción por hora</title>
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed — cajas/tarimas — cajas/tarimas v3.2 — admin-orden-fit — admin-desc-fix — tablero-detalle-acciones — req123 — backmenu+libdate</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -299,33 +299,11 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     #attendanceCard .att-audit-item .when{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-size:12px;opacity:.9;min-width:132px}
     #attendanceCard .att-audit-item .msg{font-size:12px;line-height:1.35}
 
-/* --- SVA: ancho completo + modales + tablas mini --- */
-#svaView .tableWrap{ overflow:auto !important; scrollbar-width:auto !important; -ms-overflow-style:auto !important; padding-bottom:10px; }
-#svaView .tableWrap::-webkit-scrollbar{ height:12px !important; width:12px !important; display:block !important; }
-#svaView #svaTable{ width:max-content !important; min-width:100% !important; }
-#svaView #svaTable thead th, #svaView #svaTable tbody td{ white-space:nowrap; }
+    /* SVA: tabla a ancho completo */
+    #wrapSVA{overflow-x:auto;}
+    #wrapSVA .table{width:100%;}
 
-.svaCellCol{ display:flex; flex-direction:column; gap:6px; min-width:220px; }
-.svaMiniBtns{ display:flex; gap:6px; flex-wrap:wrap; }
-.badge{ display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border:1px solid rgba(255,255,255,.14); border-radius:999px; font-size:12px; background:rgba(255,255,255,.04); color:var(--fg); }
-.badge strong{ font-weight:700; }
-.badge .muted{ font-size:12px; }
-
-.modalOverlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:9999; padding:18px; }
-.modalOverlay.open{ display:flex; }
-.modal{ width:min(1100px,96vw); max-height:88vh; overflow:auto; background:var(--panel); border:1px solid rgba(255,255,255,.12); border-radius:16px; box-shadow:0 16px 40px rgba(0,0,0,.45); }
-.modalHead{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.08); }
-.modalHead .h2{ font-size:16px; font-weight:800; }
-.modalBody{ padding:14px 16px; }
-.modalTabs{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-.modalTabs .tab2{ padding:8px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.03); color:var(--fg); cursor:pointer; }
-.modalTabs .tab2.active{ border-color:rgba(255,138,0,.6); box-shadow:0 0 0 2px rgba(255,138,0,.16) inset; }
-.tblMini{ width:100%; border-collapse:collapse; }
-.tblMini th,.tblMini td{ border:1px solid rgba(255,255,255,.12); padding:8px; font-size:13px; }
-.tblMini th{ background:rgba(255,255,255,.06); text-align:left; }
-.input.sm{ padding:6px 8px; font-size:13px; }
-
-</style>
+  </style>
 </head>
 <body>
   <div class="topbar" id="topbar">
@@ -1172,11 +1150,12 @@ MARIA LOPEZ
   function esc(s){
     return String(s ?? '').replace(/[&<>"']/g, c=>({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-    }
-  // Alias esperado por SVA
-  function escapeHtml(s){ return esc(s); }
-[c]));
+    }[c]));
   }
+
+  // Alias requerido por SVA (compatibilidad)
+  function escapeHtml(s){ return esc(s); }
+
 
   
   // -------- INDICACIÓN en 2 renglones + ancho proporcional --------
@@ -3722,8 +3701,7 @@ function initStatusMulti(){
 
         for(const p of procs){
           if(!sel.has(p)) continue;
-          const descarga_ok = !!(sh.fin_descarga_at || sh.fin_at);
-          if(!includeDesc && !descarga_ok) continue;
+          if(!includeDesc && !sh.fin_descarga_at) continue;
 
           const cont = _normCont(sh.contenedor);
           const fecha = _isoToYMDLocal(sh.arribo_at);
@@ -3747,80 +3725,15 @@ function initStatusMulti(){
         });
       }
 
-      
-      // --- SVA extras: maquilas múltiples + producción por hora (si existen las tablas) ---
-      const mqByKey = new Map();      // key -> [{maquila, personal}]
-      const prodByKey = new Map();    // key -> { total:int, byMaquila: Map<string,int> }
-
-      async function _tryFetchMaquilas(){
-        try{
-          const rMq = await supa.from('sva_reprocesos_maquilas')
-            .select('contenedor_norm,arribo_ymd,proceso,maquila,personal')
-            .in('contenedor_norm', conts)
-            .gte('arribo_ymd', d1).lte('arribo_ymd', d2);
-          if(rMq.error) throw rMq.error;
-          for(const m of (rMq.data||[])){
-            const k = `${m.contenedor_norm}|${m.arribo_ymd}|${m.proceso||''}`;
-            if(!mqByKey.has(k)) mqByKey.set(k, []);
-            mqByKey.get(k).push({ maquila: m.maquila, personal: m.personal ?? null });
-          }
-        }catch(e){
-          // tabla puede no existir aún; no rompe SVA
-          console.warn('SVA maquilas: ', e?.message||e);
-        }
-      }
-
-      async function _tryFetchProd(){
-        try{
-          const rP = await supa.from('sva_prod_hora')
-            .select('contenedor_norm,arribo_ymd,proceso,maquila,cajas')
-            .in('contenedor_norm', conts)
-            .gte('arribo_ymd', d1).lte('arribo_ymd', d2);
-          if(rP.error) throw rP.error;
-          for(const p of (rP.data||[])){
-            const k = `${p.contenedor_norm}|${p.arribo_ymd}|${p.proceso||''}`;
-            if(!prodByKey.has(k)) prodByKey.set(k, { total:0, byMaquila: new Map() });
-            const box = Number(p.cajas||0) || 0;
-            const agg = prodByKey.get(k);
-            agg.total += box;
-            const prev = agg.byMaquila.get(p.maquila) || 0;
-            agg.byMaquila.set(p.maquila, prev + box);
-          }
-        }catch(e){
-          console.warn('SVA prod/hora: ', e?.message||e);
-        }
-      }
-
-      if(conts.length){
-        await Promise.all([_tryFetchMaquilas(), _tryFetchProd()]);
-      }
-
-svaMerged = items.map((it, i)=>{
+      svaMerged = items.map((it, i)=>{
         const rec = recMap.get(it.key) || {};
         const sh = it.sh;
 
-        const descarga_ok = !!(sh.fin_descarga_at || sh.fin_at);
-        const cajas_total = Number(sh.cajas||0) || 0;
-
-        const estatus_sva = rec.estatus_sva || (descarga_ok ? 'PENDIENTE' : '');
+        const estatus_sva = rec.estatus_sva || (sh.fin_descarga_at ? 'PENDIENTE' : '');
         const inicio_proc = rec.inicio_proc || null;
         const fin_proc = rec.fin_proc || null;
 
         const tproc = (inicio_proc && fin_proc) ? _fmtDur(new Date(fin_proc) - new Date(inicio_proc)) : '';
-
-        const mqList = mqByKey.get(it.key) || [];
-        const prodAgg = prodByKey.get(it.key) || { total:0, byMaquila: new Map() };
-        const prod_total = prodAgg.total || 0;
-        const avance_calc = (cajas_total > 0 && prod_total > 0) ? Math.min(100, Math.round((prod_total / cajas_total) * 100)) : null;
-
-        // textos resumen para columna (compatibilidad con campos existentes)
-        const maqSummary = mqList.length
-          ? mqList.map(m=>`${m.maquila}${(m.personal!=null && m.personal!=='')?` (${m.personal})`:''}`).join(', ')
-          : (rec.maquilas || '');
-
-        const persSummary = mqList.length
-          ? mqList.map(m=>`${m.maquila}:${(m.personal!=null && m.personal!=='')?m.personal:''}`).join(', ')
-          : (rec.personal_maquila || '');
 
         return {
           no: i+1,
@@ -3831,19 +3744,12 @@ svaMerged = items.map((it, i)=>{
           fecha: it.arribo_ymd || '',
           proceso: it.proceso,
           estatus_sva,
-          maquilas: maqSummary || '',
-          maquilas_det: mqList,
-          prod_by_maquila: prodAgg.byMaquila,
-          prod_total,
-          cajas_total,
-          avance_calc,
-          descarga_ok,
-
+          maquilas: rec.maquilas || '',
           avance_pct: (rec.avance_pct ?? ''),
           inicio_proc,
           fin_proc,
           tiempo_proc: tproc,
-          personal_maquila: persSummary || '',
+          personal_maquila: rec.personal_maquila || '',
           indicacion: sh.indicacion || '',
           sh
         };
@@ -3880,30 +3786,16 @@ svaMerged = items.map((it, i)=>{
 
     let html = '';
     for(const r of rows){
-      const disabled = (!r.descarga_ok) ? 'disabled' : '';
+      const disabled = (!r.sh.fin_descarga_at) ? 'disabled' : '';
       const statusSel = `<select class="input" data-sva="estatus_sva" data-key="${r.key}" ${disabled}>
           <option value="PENDIENTE" ${r.estatus_sva==='PENDIENTE'?'selected':''}>PENDIENTE</option>
           <option value="EN PROCESO" ${r.estatus_sva==='EN PROCESO'?'selected':''}>EN PROCESO</option>
           <option value="TERMINADO" ${r.estatus_sva==='TERMINADO'?'selected':''}>TERMINADO</option>
         </select>`;
 
-      
-      const btnDetalle = `<button class="btn secondary" data-sva-act="detail" data-key="${r.key}" ${disabled}>Detalle</button>`;
-      const maquilasIn = `<div class="svaCellCol">
-          <input class="input" data-sva="maquilas" data-key="${r.key}" value="${escapeHtml(r.maquilas||'')}" placeholder="Maquila(s)" ${disabled} readonly title="Se administra en Detalle">
-          <div class="svaMiniBtns">${btnDetalle}</div>
-        </div>`;
-
-      const avVal = (r.avance_calc!=null) ? r.avance_calc : (r.avance_pct==='' || r.avance_pct==null ? '' : r.avance_pct);
-      const avHint = (r.avance_calc!=null && r.cajas_total>0) ? `${r.avance_calc}% (${r.prod_total}/${r.cajas_total})` : '';
-      const avanceIn = `<div class="svaCellCol">
-          <input class="input" style="max-width:140px" type="text" data-sva="avance_pct" data-key="${r.key}" value="${escapeHtml(String(avVal??''))}" placeholder="0-100" ${disabled} ${(r.avance_calc!=null)?'readonly':''} title="${escapeHtml(avHint||'')}">
-          ${(r.avance_calc!=null && r.cajas_total>0)?`<span class="muted" style="font-size:12px">${escapeHtml(avHint)}</span>`:''}
-        </div>`;
-
-      const persIn = `<div class="svaCellCol">
-          <input class="input" data-sva="personal_maquila" data-key="${r.key}" value="${escapeHtml(r.personal_maquila||'')}" placeholder="UVA:10, TIHI:8" ${disabled} readonly title="Se administra en Detalle">
-        </div>`;
+      const maquilasIn = `<input class="input" data-sva="maquilas" data-key="${r.key}" value="${escapeHtml(r.maquilas||'')}" placeholder="Maquila(s)" ${disabled}>`;
+      const avanceIn = `<input class="input" style="max-width:110px" type="number" min="0" max="100" step="1" data-sva="avance_pct" data-key="${r.key}" value="${(r.avance_pct!=='' && r.avance_pct!=null)?escapeHtml(String(r.avance_pct)):''}" placeholder="0-100" ${disabled}>`;
+      const persIn = `<input class="input" data-sva="personal_maquila" data-key="${r.key}" value="${escapeHtml(r.personal_maquila||'')}" placeholder="UVA:10, TIHI:8" ${disabled}>`;
 
       const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
       const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
@@ -3911,8 +3803,9 @@ svaMerged = items.map((it, i)=>{
       const btnStart = `<button class="btn secondary" data-sva-act="start" data-key="${r.key}" ${disabled || r.estatus_sva!=='PENDIENTE'?'disabled':''}>Iniciar</button>`;
       const btnEnd = `<button class="btn secondary" data-sva-act="end" data-key="${r.key}" ${disabled || r.estatus_sva!=='EN PROCESO'?'disabled':''}>Terminar</button>`;
       const btnSave = `<button class="btn" data-sva-act="save" data-key="${r.key}" ${disabled}>Guardar</button>`;
+      const btnDet  = `<button class="btn secondary" data-sva-act="detail" data-key="${r.key}" ${disabled}>Detalle</button>`;
 
-      const acciones = `<div style="display:flex;gap:6px;flex-wrap:wrap">${btnStart}${btnEnd}${btnSave}<button class="btn secondary" data-sva-act="detail" data-key="${r.key}" ${disabled}>Detalle</button><button class="btn secondary" data-sva-act="huella" data-key="${r.key}" ${disabled}>Huella</button></div>`;
+      const acciones = `<div style="display:flex;gap:6px;flex-wrap:wrap">${btnStart}${btnEnd}${btnSave}${btnDet}</div>`;
 
       const rowCells = [
         ['no', r.no],
@@ -3965,9 +3858,7 @@ svaMerged = items.map((it, i)=>{
       if(act==='save'){ _saveSvaNow(key); }
       if(act==='start'){ _startSva(key); }
       if(act==='end'){ _endSva(key); }
-      if(act==='detail'){ _openSvaDetail(key); }
-      if(act==='huella'){ _openSvaHuella(key); }
-
+      if(act==='detail'){ openSvaDetail(key); }
     };
   }
 
@@ -4026,6 +3917,27 @@ svaMerged = items.map((it, i)=>{
 
       if(resp.error) throw resp.error;
 
+      // huella (log) — no bloquea
+      try{
+        await supa.from('sva_reprocesos_log').insert([{
+          contenedor_norm: payload.contenedor_norm,
+          arribo_ymd: payload.arribo_ymd,
+          proceso: payload.proceso,
+          action: (patch && Object.keys(patch||{}).length) ? 'PATCH_ROW' : 'SAVE_ROW',
+          field: 'row',
+          old_value: null,
+          new_value: JSON.stringify({
+            estatus_sva: payload.estatus_sva,
+            avance_pct: payload.avance_pct,
+            maquilas: payload.maquilas,
+            personal_maquila: payload.personal_maquila,
+            inicio_proc: payload.inicio_proc || null,
+            fin_proc: payload.fin_proc || null,
+          }),
+          changed_by: authUser?.id || null
+        }]);
+      }catch(e){ console.warn(e); }
+
       // refresh row view quickly
       await reloadSVA();
     }catch(err){
@@ -4054,404 +3966,7 @@ svaMerged = items.map((it, i)=>{
     });
   }
 
-  
-  // =========================
-  // SVA Detalle: maquilas múltiples + producción por hora + huella
-  // =========================
-  const SVA_HOURS = Array.from({length:12}, (_,i)=>8+i); // 08..19
-  let _svaModalKey = null;
-  let _svaModalRow = null;
-  let _svaMaquilas = [];  // [{maquila, personal}]
-  let _svaProd = new Map(); // hour_start -> { cajas:int, nota:string }
-  let _svaProdMaquila = '';
-  let _svaProdDate = '';
-
-  function _openOverlay(id){
-    const o = el(id);
-    if(!o) return;
-    o.classList.add('open');
-    o.setAttribute('aria-hidden','false');
-  }
-  function _closeOverlay(id){
-    const o = el(id);
-    if(!o) return;
-    o.classList.remove('open');
-    o.setAttribute('aria-hidden','true');
-  }
-
-  function _setSvaModalTab(tab){
-    for(const b of document.querySelectorAll('#svaModalOverlay [data-sva-modal-tab]')){
-      b.classList.toggle('active', b.dataset.svaModalTab===tab);
-    }
-    el('svaModalMaquilas').classList.toggle('hidden', tab!=='maquilas');
-    el('svaModalProd').classList.toggle('hidden', tab!=='prod');
-    el('svaModalHuella').classList.toggle('hidden', tab!=='huella');
-  }
-
-  function _keyToParts(key){
-    const [contenedor_norm, arribo_ymd, proceso] = key.split('|');
-    return { contenedor_norm, arribo_ymd, proceso };
-  }
-
-  async function _svaLog(key, action, field, oldVal, newVal){
-    try{
-      await ensureSupa();
-      if(!supa || !authUser) return;
-      const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
-      await supa.from('sva_reprocesos_log').insert({
-        contenedor_norm, arribo_ymd, proceso,
-        action,
-        field: field || null,
-        old_value: (oldVal==null ? null : String(oldVal)),
-        new_value: (newVal==null ? null : String(newVal)),
-        changed_at: new Date().toISOString(),
-        changed_by: authUser?.email || null
-      });
-    }catch(e){
-      // tabla puede no existir; no rompe UI
-      console.warn('SVA log:', e?.message||e);
-    }
-  }
-
-  async function _fetchMaquilas(key){
-    _svaMaquilas = [];
-    try{
-      await ensureSupa();
-      if(!supa) return;
-      const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
-      const r = await supa.from('sva_reprocesos_maquilas')
-        .select('maquila,personal')
-        .eq('contenedor_norm', contenedor_norm)
-        .eq('arribo_ymd', arribo_ymd)
-        .eq('proceso', proceso)
-        .order('maquila', { ascending:true });
-      if(r.error) throw r.error;
-      _svaMaquilas = (r.data||[]).map(x=>({ maquila:x.maquila, personal:x.personal ?? null }));
-    }catch(e){
-      console.warn('fetchMaquilas:', e?.message||e);
-      // fallback: parse from resumen string
-      const row = _findSvaRow(key);
-      if(row?.maquilas){
-        _svaMaquilas = row.maquilas.split(',').map(s=>s.trim()).filter(Boolean).map(m=>({maquila:m, personal:null}));
-      }
-    }
-  }
-
-  async function _saveMaquilas(key){
-    await ensureSupa();
-    if(!supa) return;
-    if(!authUser){ alert('Para guardar SVA necesitas iniciar sesión (ADMIN).'); return; }
-
-    const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
-
-    // Upsert maquilas
-    for(const m of _svaMaquilas){
-      if(!m.maquila) continue;
-      const payload = { contenedor_norm, arribo_ymd, proceso, maquila: m.maquila, personal: (m.personal===''? null : m.personal) , updated_at:new Date().toISOString() };
-      const r = await supa.from('sva_reprocesos_maquilas').upsert(payload, { onConflict:'contenedor_norm,arribo_ymd,proceso,maquila' });
-      if(r.error) throw r.error;
-    }
-
-    // Actualiza resumen en sva_reprocesos (compatibilidad)
-    const maqSummary = _svaMaquilas.map(m=>`${m.maquila}${(m.personal!=null && m.personal!=='')?` (${m.personal})`:''}`).join(', ');
-    const persSummary = _svaMaquilas.map(m=>`${m.maquila}:${(m.personal!=null && m.personal!=='')?m.personal:''}`).join(', ');
-    await _svaLog(key, 'SAVE_MAQUILAS', 'maquilas', null, maqSummary);
-    await _saveSvaPatch(key, { maquilas: maqSummary, personal_maquila: persSummary });
-  }
-
-  async function _fetchProd(key, maquila, work_ymd){
-    _svaProd = new Map();
-    try{
-      await ensureSupa();
-      if(!supa) return;
-      const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
-      const r = await supa.from('sva_prod_hora')
-        .select('hour_start,cajas,nota')
-        .eq('contenedor_norm', contenedor_norm)
-        .eq('arribo_ymd', arribo_ymd)
-        .eq('proceso', proceso)
-        .eq('maquila', maquila)
-        .eq('work_ymd', work_ymd)
-        .order('hour_start', { ascending:true });
-      if(r.error) throw r.error;
-      for(const x of (r.data||[])){
-        _svaProd.set(Number(x.hour_start), { cajas: Number(x.cajas||0)||0, nota: x.nota||'' });
-      }
-    }catch(e){
-      console.warn('fetchProd:', e?.message||e);
-    }
-  }
-
-  async function _upsertProdCell(key, maquila, work_ymd, hour_start, cajas, nota){
-    await ensureSupa();
-    if(!supa) return;
-    if(!authUser){ alert('Para guardar SVA necesitas iniciar sesión (ADMIN).'); return; }
-    const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
-
-    const payload = {
-      contenedor_norm, arribo_ymd, proceso, maquila,
-      work_ymd, hour_start,
-      cajas: (cajas==='' || cajas==null) ? 0 : Number(cajas),
-      nota: nota || null,
-      updated_at: new Date().toISOString()
-    };
-    const r = await supa.from('sva_prod_hora').upsert(payload, {
-      onConflict: 'contenedor_norm,arribo_ymd,proceso,maquila,work_ymd,hour_start'
-    });
-    if(r.error) throw r.error;
-
-    await _svaLog(key, 'PROD_HORA', `prod_${maquila}_${work_ymd}_${hour_start}`, null, payload.cajas);
-  }
-
-  function _renderMqTable(){
-    const row = _svaModalRow;
-    const totalCajas = row?.cajas_total || 0;
-
-    // calcula producción por maquila (sumando todos los días capturados para ese contenedor/proceso)
-    const prodAgg = row?.prod_by_maquila || new Map();
-    let totalProd = row?.prod_total || 0;
-    el('svaTotalCajas').textContent = totalCajas ? String(totalCajas) : '—';
-    el('svaTotalProd').textContent = String(totalProd||0);
-    el('svaAvanceCalc').textContent = (totalCajas>0) ? `${Math.min(100, Math.round((totalProd/totalCajas)*100))}%` : '—';
-
-    let html = '';
-    _svaMaquilas.forEach((m, idx)=>{
-      const boxes = prodAgg.get(m.maquila) || 0;
-      const pct = (totalCajas>0) ? Math.min(100, Math.round((boxes/totalCajas)*100)) : 0;
-      html += `<tr data-mq-idx="${idx}">
-        <td><input class="input sm" data-mq="name" value="${escapeHtml(m.maquila||'')}" placeholder="Ej. VALRANI"></td>
-        <td><input class="input sm" data-mq="pers" type="number" min="0" step="1" value="${(m.personal==null?'':escapeHtml(String(m.personal)))}" placeholder="0"></td>
-        <td>${boxes}</td>
-        <td>${totalCajas>0 ? pct+'%' : '—'}</td>
-        <td style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn secondary" data-mq-act="prod">Producción</button>
-          <button class="btn secondary" data-mq-act="del">Eliminar</button>
-        </td>
-      </tr>`;
-    });
-    el('svaMqBody').innerHTML = html || `<tr><td colspan="5" class="muted">Sin maquilas. Agrega una para capturar producción por hora.</td></tr>`;
-
-    // rellenar dropdown de producción
-    const sel = el('svaProdMaquila');
-    if(sel){
-      const opts = _svaMaquilas.map(m=>m.maquila).filter(Boolean);
-      sel.innerHTML = opts.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
-      if(opts.length){
-        if(!_svaProdMaquila || !opts.includes(_svaProdMaquila)) _svaProdMaquila = opts[0];
-        sel.value = _svaProdMaquila;
-      }
-    }
-  }
-
-  function _renderProdTable(){
-    const body = el('svaProdBody');
-    if(!body) return;
-    let acc = 0;
-    let html = '';
-    for(const h of SVA_HOURS){
-      const h2 = h+1;
-      const it = _svaProd.get(h) || { cajas:0, nota:'' };
-      const val = Number(it.cajas||0)||0;
-      acc += val;
-      html += `<tr data-hour="${h}">
-        <td>${String(h).padStart(2,'0')}:00 - ${String(h2).padStart(2,'0')}:00</td>
-        <td><input class="input sm" data-prod="cajas" type="number" min="0" step="1" value="${escapeHtml(String(val||0))}"></td>
-        <td>${acc}</td>
-        <td><input class="input sm" data-prod="nota" value="${escapeHtml(it.nota||'')}" placeholder="Opcional"></td>
-      </tr>`;
-    }
-    body.innerHTML = html;
-  }
-
-  async function _loadHuella(key){
-    try{
-      await ensureSupa();
-      if(!supa) return;
-      const { contenedor_norm, arribo_ymd, proceso } = _keyToParts(key);
-      const r = await supa.from('sva_reprocesos_log')
-        .select('changed_at,action,field,old_value,new_value,changed_by')
-        .eq('contenedor_norm', contenedor_norm)
-        .eq('arribo_ymd', arribo_ymd)
-        .eq('proceso', proceso)
-        .order('changed_at', { ascending:false })
-        .limit(120);
-      if(r.error) throw r.error;
-      const rows = r.data || [];
-      el('svaLogBody').innerHTML = rows.map(x=>`<tr>
-        <td>${escapeHtml(_isoToYMDLocal(x.changed_at))} ${escapeHtml(_isoToHM(x.changed_at))}</td>
-        <td>${escapeHtml(x.action||'')}</td>
-        <td>${escapeHtml(x.field||'')}</td>
-        <td>${escapeHtml(x.old_value||'')}</td>
-        <td>${escapeHtml(x.new_value||'')}</td>
-        <td>${escapeHtml(x.changed_by||'')}</td>
-      </tr>`).join('') || `<tr><td colspan="6" class="muted">Sin movimientos.</td></tr>`;
-    }catch(e){
-      console.warn('huella:', e?.message||e);
-      el('svaLogBody').innerHTML = `<tr><td colspan="6" class="muted">No disponible (falta tabla/policies). Ejecuta el SQL de huella.</td></tr>`;
-    }
-  }
-
-  async function _openSvaDetail(key){
-    try{
-      await ensureSupa();
-      if(!supa){ alert('Nube no conectada.'); return; }
-      if(!authUser){ alert('Para guardar SVA necesitas iniciar sesión (ADMIN).'); }
-
-      _svaModalKey = key;
-      _svaModalRow = _findSvaRow(key);
-      const r = _svaModalRow;
-      el('svaModalTitle').textContent = `SVA · ${r?.contenedor||''} · ${r?.proceso||''}`;
-      el('svaModalSub').textContent = `CEDIS: ${r?.cedis||''} · Fecha: ${r?.fecha||''}`;
-
-      _openOverlay('svaModalOverlay');
-      _setSvaModalTab('maquilas');
-
-      await _refreshSvaModal();
-    }catch(e){
-      console.error(e);
-      alert(`Error al abrir detalle SVA: ${e?.message||e}`);
-    }
-  }
-
-  async function _openSvaHuella(key){
-    await _openSvaDetail(key);
-    _setSvaModalTab('huella');
-    await _loadHuella(key);
-  }
-
-  async function _refreshSvaModal(){
-    const key = _svaModalKey;
-    if(!key) return;
-
-    // refresca SVA en background para traer últimos totales (y no romper)
-    await reloadSVA();
-    _svaModalRow = _findSvaRow(key);
-
-    await _fetchMaquilas(key);
-    _renderMqTable();
-
-    // producción
-    _svaProdDate = el('svaProdDate')?.value || ymd(new Date());
-    el('svaProdDate').value = _svaProdDate;
-    _svaProdMaquila = el('svaProdMaquila')?.value || _svaProdMaquila || (_svaMaquilas[0]?.maquila||'');
-    if(el('svaProdMaquila')) el('svaProdMaquila').value = _svaProdMaquila;
-
-    if(_svaProdMaquila){
-      await _fetchProd(key, _svaProdMaquila, _svaProdDate);
-    }
-    _renderProdTable();
-
-    // huella
-    await _loadHuella(key);
-  }
-
-  // Modal wiring
-  document.addEventListener('click', (ev)=>{
-    const t = ev.target;
-    if(!t) return;
-
-    if(t.id==='btnSvaModalClose'){ _closeOverlay('svaModalOverlay'); }
-    if(t.id==='btnSvaModalRefresh'){ _refreshSvaModal(); }
-
-    if(t.matches && t.matches('#svaModalOverlay')){ _closeOverlay('svaModalOverlay'); }
-
-    if(t.dataset?.svaModalTab){
-      _setSvaModalTab(t.dataset.svaModalTab);
-    }
-
-    // maquilas table actions
-    if(t.dataset?.mqAct){
-      const tr = t.closest('tr[data-mq-idx]');
-      const idx = tr ? Number(tr.dataset.mqIdx) : -1;
-      if(idx<0) return;
-      if(t.dataset.mqAct==='del'){
-        const old = _svaMaquilas[idx]?.maquila;
-        _svaMaquilas.splice(idx,1);
-        _renderMqTable();
-        _svaLog(_svaModalKey, 'DEL_MAQUILA', 'maquila', old, null);
-      }
-      if(t.dataset.mqAct==='prod'){
-        const name = _svaMaquilas[idx]?.maquila || '';
-        if(name){
-          _setSvaModalTab('prod');
-          _svaProdMaquila = name;
-          if(el('svaProdMaquila')) el('svaProdMaquila').value = name;
-          _refreshSvaModal();
-        }
-      }
-    }
-
-    if(t.id==='btnSvaAddMaquila'){
-      _svaMaquilas.push({ maquila:'', personal:null });
-      _renderMqTable();
-    }
-
-    if(t.id==='btnSvaSaveMaquilas'){
-      // pull values from table
-      for(const tr of document.querySelectorAll('#svaMqBody tr[data-mq-idx]')){
-        const idx = Number(tr.dataset.mqIdx);
-        const name = tr.querySelector('[data-mq="name"]')?.value?.trim() || '';
-        const persRaw = tr.querySelector('[data-mq="pers"]')?.value;
-        const pers = (persRaw==='' || persRaw==null) ? null : Number(persRaw);
-        _svaMaquilas[idx] = { maquila:name, personal:isNaN(pers)?null:pers };
-      }
-      _saveMaquilas(_svaModalKey).catch(e=>alert(`Error guardando maquilas: ${e?.message||e}`));
-    }
-
-    if(t.id==='btnSvaProdHoy'){
-      el('svaProdDate').value = ymd(new Date());
-      _refreshSvaModal();
-    }
-  });
-
-  // producción input wiring (delegated)
-  document.addEventListener('input', (ev)=>{
-    const t = ev.target;
-    if(!t) return;
-    if(!t.closest || !t.closest('#svaProdBody')) return;
-
-    const tr = t.closest('tr[data-hour]');
-    if(!tr) return;
-    const hour = Number(tr.dataset.hour);
-    const key = _svaModalKey;
-    const maquila = el('svaProdMaquila')?.value || _svaProdMaquila;
-    const work_ymd = el('svaProdDate')?.value || ymd(new Date());
-    if(!key || !maquila || !work_ymd) return;
-
-    const cajas = tr.querySelector('[data-prod="cajas"]')?.value;
-    const nota = tr.querySelector('[data-prod="nota"]')?.value || '';
-
-    // local update
-    _svaProd.set(hour, { cajas: Number(cajas||0)||0, nota });
-    _renderProdTable();
-
-    // debounce upsert
-    clearTimeout(tr._svatimer);
-    tr._svatimer = setTimeout(async ()=>{
-      try{
-        await _upsertProdCell(key, maquila, work_ymd, hour, cajas, nota);
-        // recalcula y refresca la vista principal
-        await reloadSVA();
-        _svaModalRow = _findSvaRow(key);
-        _renderMqTable();
-      }catch(e){
-        console.error(e);
-        alert(`Error guardando producción: ${e?.message||e}`);
-      }
-    }, 450);
-  });
-
-  // cambios de select maquila/fecha
-  document.addEventListener('change', (ev)=>{
-    const t = ev.target;
-    if(!t) return;
-    if(t.id==='svaProdMaquila' || t.id==='svaProdDate'){
-      _refreshSvaModal();
-    }
-  });
-
-
-async function reloadLogistica(){
+  async function reloadLogistica(){
     try{
       if(!el('logStart') || !el('logEnd')) return;
       if(!el('logStart').value || !el('logEnd').value){ _setTodayRange('logStart','logEnd'); }
@@ -5387,104 +4902,6 @@ const q = (el('q')?.value || '').trim();
     ${data.map(r=>`<tr>${r.map(c=>`<td>${escXml(c)}</td>`).join('')}</tr>`).join('')}
   </tbody>
 </table>
-
-  <!-- SVA Modal: Maquilas + Producción por hora + Huella -->
-  <div class="modalOverlay" id="svaModalOverlay" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="svaModalTitle">
-      <div class="modalHead">
-        <div>
-          <div class="h2" id="svaModalTitle">SVA · Detalle</div>
-          <div class="muted" id="svaModalSub" style="margin-top:2px"></div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn secondary" id="btnSvaModalRefresh">Actualizar</button>
-          <button class="btn" id="btnSvaModalClose">Cerrar</button>
-        </div>
-      </div>
-      <div class="modalBody">
-        <div class="modalTabs">
-          <button class="tab2 active" data-sva-modal-tab="maquilas">Maquilas</button>
-          <button class="tab2" data-sva-modal-tab="prod">Producción por hora</button>
-          <button class="tab2" data-sva-modal-tab="huella">Huella</button>
-        </div>
-
-        <div id="svaModalMaquilas">
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-            <span class="badge"><strong>Total cajas:</strong> <span id="svaTotalCajas">—</span></span>
-            <span class="badge"><strong>Producidas:</strong> <span id="svaTotalProd">—</span></span>
-            <span class="badge"><strong>Avance:</strong> <span id="svaAvanceCalc">—</span></span>
-          </div>
-
-          <div class="muted" style="margin-bottom:8px">
-            Agrega maquilas al proceso y su personal. La producción por hora se captura en la pestaña <b>Producción por hora</b>.
-          </div>
-
-          <table class="tblMini">
-            <thead>
-              <tr>
-                <th style="width:260px">Maquila</th>
-                <th style="width:140px">Personal</th>
-                <th style="width:160px">Cajas producidas</th>
-                <th style="width:140px">Avance %</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody id="svaMqBody"></tbody>
-          </table>
-
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-            <button class="btn secondary" id="btnSvaAddMaquila">Agregar maquila</button>
-            <button class="btn" id="btnSvaSaveMaquilas">Guardar maquilas</button>
-          </div>
-        </div>
-
-        <div id="svaModalProd" class="hidden">
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-            <span class="muted">Maquila</span>
-            <select class="input" id="svaProdMaquila" style="min-width:260px"></select>
-            <span class="muted">Fecha</span>
-            <input class="input" id="svaProdDate" type="date" style="min-width:170px" />
-            <button class="btn secondary" id="btnSvaProdHoy">Hoy</button>
-          </div>
-
-          <table class="tblMini">
-            <thead>
-              <tr>
-                <th style="width:140px">Periodo</th>
-                <th style="width:200px">Producción por hora (cajas)</th>
-                <th style="width:160px">Acumulada</th>
-                <th>Firma supervisor (nota)</th>
-              </tr>
-            </thead>
-            <tbody id="svaProdBody"></tbody>
-          </table>
-
-          <div class="muted" style="margin-top:10px">
-            Nota: el avance general se calcula con <b>(cajas producidas totales / cajas del contenedor)</b>.
-          </div>
-        </div>
-
-        <div id="svaModalHuella" class="hidden">
-          <div class="muted" style="margin-bottom:8px">Últimos movimientos (hora exacta). </div>
-          <table class="tblMini">
-            <thead>
-              <tr>
-                <th style="width:170px">Hora</th>
-                <th style="width:140px">Acción</th>
-                <th style="width:220px">Campo</th>
-                <th>Antes</th>
-                <th>Después</th>
-                <th style="width:220px">Usuario</th>
-              </tr>
-            </thead>
-            <tbody id="svaLogBody"></tbody>
-          </table>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
 </body></html>`;
 
     const blob = new Blob([html], {type:'application/vnd.ms-excel;charset=utf-8'});
@@ -6555,6 +5972,426 @@ function initAttendanceUI(){
 
   // Inicializa Asistencia (ADMIN)
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', initAttendanceUI); } else { initAttendanceUI(); }
+
+
+
+  // =================== SVA DETALLE: maquilas múltiples + producción por hora ===================
+  const SVA_HOUR_START = 8;  // 08:00
+  const SVA_HOUR_END   = 20; // 20:00 (último periodo inicia 19:00)
+  function _svaHours(){
+    const a=[];
+    for(let h=SVA_HOUR_START; h<SVA_HOUR_END; h++) a.push(h);
+    return a;
+  }
+
+  function _svaKeyParts(key){
+    const [contenedor_norm, arribo_ymd, proceso] = String(key||'').split('|');
+    return { contenedor_norm, arribo_ymd, proceso };
+  }
+
+  function _svaTotalCajasFromShipment(sh){
+    const candidates = [sh?.cajas, sh?.cajas_total, sh?.total_cajas, sh?.cajas_totales, sh?.cajasTotales];
+    for(const v of candidates){
+      const n = Number(v);
+      if(Number.isFinite(n) && n>0) return n;
+    }
+    return 0;
+  }
+
+  async function openSvaDetail(key){
+    try{
+      await ensureSupa();
+      const r = _findSvaRow(key);
+      if(!r){ toastErr('No se encontró el renglón SVA.'); return; }
+      if(!supa){ toastErr('Nube no conectada.'); return; }
+
+      const { contenedor_norm, arribo_ymd, proceso } = _svaKeyParts(key);
+      const totalCajas = _svaTotalCajasFromShipment(r.sh);
+
+      el('modalTitle').textContent = `SVA · ${contenedor_norm} · ${proceso}`;
+      const today = _todayYMD();
+      const workYmd = (el('svaDetWorkDate')?.value) || today;
+
+      // UI base
+      el('modalBody').innerHTML = `
+        <div class="row"><div class="k">Contenedor</div><div class="v">${esc(contenedor_norm||'')}</div></div>
+        <div class="row"><div class="k">Proceso</div><div class="v">${esc(proceso||'')}</div></div>
+        <div class="row"><div class="k">Arribo</div><div class="v">${esc(arribo_ymd||'')}</div></div>
+        <div class="row"><div class="k">Total cajas</div><div class="v"><b id="svaDetTotalCajas">${totalCajas||0}</b></div></div>
+        <div class="row"><div class="k">Avance general</div><div class="v"><b id="svaDetPct">—</b> <span class="muted" id="svaDetProdMeta" style="font-size:12px"></span></div></div>
+
+        <div class="sep" style="margin:10px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+          <div style="min-width:220px">
+            <div class="muted" style="font-size:12px;margin-bottom:6px">Día de producción</div>
+            <input type="date" class="input" id="svaDetWorkDate" value="${esc(workYmd)}">
+          </div>
+
+          <div style="flex:1;min-width:260px">
+            <div class="muted" style="font-size:12px;margin-bottom:6px">Agregar maquila</div>
+            <div style="display:flex;gap:8px">
+              <input class="input" id="svaDetNewMaq" placeholder="Ej. VALRANI">
+              <input class="input" id="svaDetNewPers" type="number" min="0" step="1" placeholder="Personal" style="max-width:140px">
+              <button class="btn secondary" id="svaDetAddMaq">Agregar</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px">
+            <button class="btn" id="svaDetSave" ${authUser?'':'disabled'}>Guardar</button>
+            <button class="btn secondary" id="svaDetReload">Recargar</button>
+          </div>
+        </div>
+
+        ${authUser ? '' : '<div class="muted" style="margin-top:8px;font-size:12px">Inicia sesión en <b>ADMIN</b> para capturar y guardar producción.</div>'}
+
+        <div class="sep" style="margin:12px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
+
+        <div id="svaDetMaqWrap"></div>
+
+        <div class="sep" style="margin:12px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:900">Huella (últimos 20 movimientos)</div>
+            <div class="muted" style="font-size:12px">Cada cambio guarda hora y usuario.</div>
+          </div>
+          <button class="btn secondary" id="svaDetLoadLog">Actualizar huella</button>
+        </div>
+        <div id="svaDetLog" style="margin-top:10px"></div>
+      `;
+
+      el('modalBackdrop').classList.remove('hidden');
+
+      const state = { key, contenedor_norm, arribo_ymd, proceso, totalCajas, workYmd, maquilas: [], prod: new Map() };
+
+      // bind
+      el('svaDetWorkDate').onchange = async ()=>{
+        state.workYmd = el('svaDetWorkDate').value || _todayYMD();
+        await _svaDetLoad(state);
+      };
+      el('svaDetAddMaq').onclick = async ()=>{
+        const m = (el('svaDetNewMaq').value||'').trim().toUpperCase();
+        const p = (el('svaDetNewPers').value||'').trim();
+        if(!m){ toastErr('Indica la maquila.'); return; }
+        const pers = p===''? null : Number(p);
+        state.maquilas = state.maquilas.filter(x=>x.maquila!==m);
+        state.maquilas.push({ maquila: m, personal: (Number.isFinite(pers)?pers:null) });
+        el('svaDetNewMaq').value=''; el('svaDetNewPers').value='';
+        _svaDetRender(state);
+      };
+      el('svaDetSave').onclick = async ()=>{ await _svaDetSave(state); };
+      el('svaDetReload').onclick = async ()=>{ await _svaDetLoad(state); };
+      el('svaDetLoadLog').onclick = async ()=>{ await _svaDetLoadLog(state); };
+
+      await _svaDetLoad(state);
+      await _svaDetLoadLog(state);
+    }catch(err){
+      console.error(err);
+      toastErr('Error al abrir detalle SVA.');
+    }
+  }
+
+  async function _svaDetLoad(state){
+    if(!supa) return;
+    // cargar maquilas
+    const mq = await supa.from('sva_reprocesos_maquilas')
+      .select('maquila,personal')
+      .eq('contenedor_norm', state.contenedor_norm)
+      .eq('arribo_ymd', state.arribo_ymd)
+      .eq('proceso', state.proceso);
+
+    if(mq.error){ console.warn(mq.error); }
+    state.maquilas = (mq.data||[]).map(x=>({maquila:(x.maquila||'').toUpperCase(), personal:x.personal==null?null:Number(x.personal)}));
+
+    // cargar producción por hora (por día seleccionado)
+    state.prod = new Map();
+    const pr = await supa.from('sva_prod_hora')
+      .select('maquila,work_ymd,hour_start,cajas')
+      .eq('contenedor_norm', state.contenedor_norm)
+      .eq('arribo_ymd', state.arribo_ymd)
+      .eq('proceso', state.proceso)
+      .eq('work_ymd', state.workYmd);
+
+    if(pr.error){ console.warn(pr.error); }
+    for(const row of (pr.data||[])){
+      const k = `${(row.maquila||'').toUpperCase()}|${row.hour_start}`;
+      state.prod.set(k, Number(row.cajas||0));
+    }
+
+    _svaDetRender(state);
+    await _svaDetRefreshAgg(state);
+  }
+
+  function _svaDetRender(state){
+    const wrap = el('svaDetMaqWrap');
+    if(!wrap) return;
+
+    if(!state.maquilas.length){
+      wrap.innerHTML = `<div class="muted">Sin maquilas capturadas. Agrega una arriba.</div>`;
+      return;
+    }
+
+    const hours = _svaHours();
+
+    let html = '';
+    for(const m of state.maquilas){
+      const name = m.maquila;
+      html += `
+        <div class="card" style="padding:12px;margin-bottom:10px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+            <div style="font-weight:900">${esc(name)}</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <div class="muted" style="font-size:12px">Personal</div>
+              <input class="input svaDetPers" data-maq="${esc(name)}" type="number" min="0" step="1" value="${m.personal==null?'':esc(String(m.personal))}" style="max-width:120px">
+              <button class="btn danger tiny svaDetDelMaq" data-maq="${esc(name)}">Quitar</button>
+            </div>
+          </div>
+
+          <div style="margin-top:10px;overflow:auto">
+            <table class="table" style="min-width:520px">
+              <thead>
+                <tr>
+                  <th>PERIODO</th>
+                  <th>CAJAS (por hora)</th>
+                  <th>ACUMULADA</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${hours.map(h=>{
+                  const k = `${name}|${h}`;
+                  const v = state.prod.get(k) ?? '';
+                  const period = String(h).padStart(2,'0')+':00 - '+String(h+1).padStart(2,'0')+':00';
+                  return `
+                    <tr>
+                      <td>${period}</td>
+                      <td>
+                        <input class="input svaDetCajas" data-maq="${esc(name)}" data-hour="${h}" type="number" min="0" step="1" value="${v===''?'':esc(String(v))}" style="max-width:160px">
+                      </td>
+                      <td class="muted" data-acc="${esc(name)}" data-hour="${h}">—</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:8px">
+            <div class="muted" style="font-size:12px">Total maquila: <b data-total="${esc(name)}">0</b> cajas</div>
+            <div class="muted" style="font-size:12px">Avance maquila (vs total contenedor): <b data-pct="${esc(name)}">0%</b></div>
+          </div>
+        </div>
+      `;
+    }
+
+    wrap.innerHTML = html;
+
+    // bind events
+    wrap.querySelectorAll('.svaDetDelMaq').forEach(btn=>{
+      btn.onclick = ()=>{
+        const maq = btn.dataset.maq;
+        state.maquilas = state.maquilas.filter(x=>x.maquila!==maq);
+        // limpiar prod de esa maquila
+        for(const k of [...state.prod.keys()]){
+          if(k.startsWith(maq+'|')) state.prod.delete(k);
+        }
+        _svaDetRender(state);
+        _svaDetRefreshAgg(state);
+      };
+    });
+
+    wrap.querySelectorAll('.svaDetPers').forEach(inp=>{
+      inp.oninput = ()=>{
+        const maq = inp.dataset.maq;
+        const v = inp.value.trim();
+        const pers = v===''? null : Number(v);
+        const it = state.maquilas.find(x=>x.maquila===maq);
+        if(it) it.personal = Number.isFinite(pers)?pers:null;
+      };
+    });
+
+    wrap.querySelectorAll('.svaDetCajas').forEach(inp=>{
+      inp.oninput = ()=>{
+        const maq = inp.dataset.maq;
+        const h = Number(inp.dataset.hour);
+        const v = inp.value.trim();
+        const n = v===''? 0 : Number(v);
+        if(!Number.isFinite(n) || n<0) return;
+        state.prod.set(`${maq}|${h}`, n);
+        _svaDetRefreshAgg(state);
+      };
+    });
+
+    _svaDetRefreshAgg(state);
+  }
+
+  async function _svaDetRefreshAgg(state){
+    // acumulados por maquila (día)
+    const totalCajas = state.totalCajas || 0;
+    const hours = _svaHours();
+    let grand = 0;
+
+    for(const m of state.maquilas){
+      let acc = 0;
+      for(const h of hours){
+        const v = Number(state.prod.get(`${m.maquila}|${h}`) || 0);
+        acc += v;
+        const cell = document.querySelector(`[data-acc="${CSS.escape(m.maquila)}"][data-hour="${h}"]`);
+        if(cell) cell.textContent = acc ? String(acc) : '';
+      }
+      grand += acc;
+      const tcell = document.querySelector(`[data-total="${CSS.escape(m.maquila)}"]`);
+      if(tcell) tcell.textContent = String(acc);
+
+      const pct = (totalCajas>0) ? Math.round((acc/totalCajas)*100) : 0;
+      const pcell = document.querySelector(`[data-pct="${CSS.escape(m.maquila)}"]`);
+      if(pcell) pcell.textContent = `${pct}%`;
+    }
+
+    // avance general acumulado (todas maquilas, día seleccionado)
+    const pctG = (totalCajas>0) ? Math.round((grand/totalCajas)*100) : 0;
+    const meta = el('svaDetProdMeta');
+    if(meta) meta.textContent = totalCajas>0 ? `(${grand} / ${totalCajas} cajas)` : `(${grand} cajas)`;
+    const pctEl = el('svaDetPct');
+    if(pctEl) pctEl.textContent = totalCajas>0 ? `${pctG}%` : '—';
+  }
+
+  async function _svaDetSave(state){
+    try{
+      if(!authUser){ toastErr('Inicia sesión en ADMIN para guardar.'); return; }
+      await ensureSupa();
+      if(!supa) { toastErr('Nube no conectada.'); return; }
+
+      const { contenedor_norm, arribo_ymd, proceso } = state;
+      const work_ymd = state.workYmd || _todayYMD();
+
+      // 1) upsert maquilas
+      if(state.maquilas.length){
+        const payload = state.maquilas.map(m=>({
+          contenedor_norm, arribo_ymd, proceso,
+          maquila: m.maquila,
+          personal: m.personal
+        }));
+        const up = await supa.from('sva_reprocesos_maquilas').upsert(payload);
+        if(up.error) throw up.error;
+      }
+
+      // 2) upsert producción por hora
+      const hours = _svaHours();
+      const prodPayload = [];
+      for(const m of state.maquilas){
+        for(const h of hours){
+          const cajas = Number(state.prod.get(`${m.maquila}|${h}`) || 0);
+          prodPayload.push({
+            contenedor_norm, arribo_ymd, proceso, maquila: m.maquila,
+            work_ymd, hour_start: h, cajas
+          });
+        }
+      }
+      if(prodPayload.length){
+        const up2 = await supa.from('sva_prod_hora').upsert(prodPayload);
+        if(up2.error) throw up2.error;
+      }
+
+      // 3) recalcular avance general del día y reflejar en sva_reprocesos
+      const totalCajas = state.totalCajas || 0;
+      let grand = 0;
+      for(const m of state.maquilas){
+        for(const h of hours){
+          grand += Number(state.prod.get(`${m.maquila}|${h}`) || 0);
+        }
+      }
+      // avance acumulado (todas las capturas) para el renglón del contenedor
+      let grandAll = grand;
+      try{
+        const agg = await supa.from('sva_prod_hora')
+          .select('cajas')
+          .eq('contenedor_norm', contenedor_norm)
+          .eq('arribo_ymd', arribo_ymd)
+          .eq('proceso', proceso);
+        if(!agg.error){
+          grandAll = (agg.data||[]).reduce((a,r)=>a + Number(r.cajas||0), 0);
+        }
+      }catch(e){ console.warn(e); }
+
+      const avance_pct = (totalCajas>0) ? Math.round((grandAll/totalCajas)*100) : null;
+      const maquilasTxt = state.maquilas.map(m=>m.maquila).join(', ');
+      const persTxt = state.maquilas.map(m=>`${m.maquila}:${m.personal??''}`).join(', ');
+
+      // actualiza registro maestro
+      const up3 = await supa.from('sva_reprocesos').upsert([{
+        contenedor_norm, arribo_ymd, proceso,
+        maquilas: maquilasTxt || null,
+        personal_maquila: persTxt || null,
+        avance_pct: avance_pct,
+        updated_at: new Date().toISOString()
+      }]);
+      if(up3.error) console.warn(up3.error); // no bloquea
+
+      // 4) huella (log)
+      try{
+        const lg = await supa.from('sva_reprocesos_log').insert([{
+          contenedor_norm, arribo_ymd, proceso,
+          action: 'SAVE_DETALLE',
+          field: 'prod_hora',
+          old_value: null,
+          new_value: `${work_ymd}: ${grand} cajas (acum: ${grandAll})`,
+          changed_by: authUser?.id || null
+        }]);
+        if(lg.error) console.warn(lg.error);
+      }catch(e){ console.warn(e); }
+
+      // refrescar renglón
+      await reloadSVA();
+      toastOk('Guardado.');
+      await _svaDetLoadLog(state);
+    }catch(err){
+      console.error(err);
+      toastErr('No se pudo guardar detalle SVA.');
+    }
+  }
+
+  async function _svaDetLoadLog(state){
+    try{
+      if(!supa) return;
+      const r = await supa.from('sva_reprocesos_log')
+        .select('changed_at,action,field,new_value,changed_by')
+        .eq('contenedor_norm', state.contenedor_norm)
+        .eq('arribo_ymd', state.arribo_ymd)
+        .eq('proceso', state.proceso)
+        .order('changed_at', { ascending:false })
+        .limit(20);
+
+      if(r.error){ console.warn(r.error); return; }
+      const rows = r.data || [];
+      const host = el('svaDetLog');
+      if(!host) return;
+      if(!rows.length){
+        host.innerHTML = `<div class="muted">Sin huella todavía.</div>`;
+        return;
+      }
+      host.innerHTML = `
+        <div style="overflow:auto">
+          <table class="table" style="min-width:620px">
+            <thead><tr><th>HORA</th><th>ACCIÓN</th><th>DETALLE</th><th>USUARIO</th></tr></thead>
+            <tbody>
+              ${rows.map(x=>`
+                <tr>
+                  <td>${esc(_isoToYMDLocal(x.changed_at))} ${esc(_isoToHM(x.changed_at))}</td>
+                  <td>${esc(x.action||'')}</td>
+                  <td>${esc(x.new_value||x.field||'')}</td>
+                  <td class="muted">${esc(x.changed_by||'')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }catch(err){
+      console.warn(err);
+    }
+  }
+
 </script>
 </body>
 </html>
