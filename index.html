@@ -3920,9 +3920,9 @@ function initStatusMulti(){
       const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0);
       const done = (r.prod_cajas ?? 0);
       const pct = (r.prod_pct!=null) ? r.prod_pct : ((r.avance_pct!=='' && r.avance_pct!=null) ? Number(r.avance_pct) : null);
-      const avanceIn = `<div style="min-width:110px">
-          <div style="font-weight:900">${pct==null ? '—' : (String(pct)+'%')}</div>
-          <div class="muted" style="font-size:12px">${totalCajas ? `${done} / ${totalCajas} cajas` : `${done} cajas`}</div>
+      const avanceIn = `<div class="svaPctWrap" data-sva-pctwrap="${escapeHtml(r.key)}" style="min-width:110px">
+          <div class="svaPctVal" style="font-weight:900">${pct==null ? '—' : (String(pct)+'%')}</div>
+          <div class="muted svaPctMeta" style="font-size:12px">${totalCajas ? `${done} / ${totalCajas} cajas` : `${done} cajas`}</div>
         </div>`;
 
       const persTxt = Array.isArray(r.maquilas_info)
@@ -6369,207 +6369,270 @@ function initAttendanceUI(){
 
 
 
-  // =================== SVA DETALLE: maquilas múltiples + producción por hora ===================
-  const SVA_HOUR_START = 8;  // 08:00
-  const SVA_HOUR_END   = 20; // 20:00 (último periodo inicia 19:00)
-  function _svaHours(startHour){
-    const sRaw = Number.isFinite(startHour) ? startHour : SVA_HOUR_START;
-    const s = Math.max(0, Math.min(23, Math.floor(sRaw)));
-    const a=[];
-    for(let h=s; h<SVA_HOUR_END; h++) a.push(h);
-    return a;
-  }
+  // =================== SVA PRODUCTIVIDAD: maquilas múltiples + producción por hora ===================
+const SVA_HOUR_START = 8;  // 08:00
+const SVA_HOUR_END   = 20; // 20:00 (último periodo inicia 19:00)
 
-  function _svaKeyParts(key){
-    const [contenedor_norm, arribo_ymd, proceso] = String(key||'').split('|');
-    return { contenedor_norm, arribo_ymd, proceso };
-  }
+function _svaHours(startHour){
+  const sRaw = Number.isFinite(startHour) ? startHour : SVA_HOUR_START;
+  const s = Math.max(0, Math.min(23, Math.floor(sRaw)));
+  const a=[];
+  for(let h=s; h<SVA_HOUR_END; h++) a.push(h);
+  return a;
+}
 
-  function _svaTotalCajasFromShipment(sh){
-    const candidates = [sh?.cajas, sh?.cajas_total, sh?.total_cajas, sh?.cajas_totales, sh?.cajasTotales];
-    for(const v of candidates){
-      const n = Number(v);
-      if(Number.isFinite(n) && n>0) return n;
-    }
-    return 0;
-  }
+function _svaKeyParts(key){
+  const [contenedor_norm, arribo_ymd, proceso] = String(key||'').split('|');
+  return { contenedor_norm, arribo_ymd, proceso };
+}
 
-    // Alias: Productividad (modal)
-  async function openSvaProductividad(key, focusMaq){
-    return openSvaDetail(key, focusMaq);
+function _svaTotalCajasFromShipment(sh){
+  const candidates = [sh?.cajas, sh?.cajas_total, sh?.total_cajas, sh?.cajas_totales, sh?.cajasTotales];
+  for(const v of candidates){
+    const n = Number(v);
+    if(Number.isFinite(n) && n>0) return n;
   }
+  return 0;
+}
+
+function _svaParseHour(hm, fallback){
+  const s = String(hm||'').trim();
+  const h = Number((s.split(':')[0]||'').trim());
+  return Number.isFinite(h) ? Math.max(0, Math.min(23, Math.floor(h))) : (Number.isFinite(fallback)?fallback:SVA_HOUR_START);
+}
+
+function _svaClampHourToGrid(hour, startHour){
+  const hours = _svaHours(startHour);
+  if(!hours.length) return hour;
+  let h = Number(hour);
+  if(!Number.isFinite(h)) h = hours[0];
+  if(h < hours[0]) h = hours[0];
+  if(h > hours[hours.length-1]) h = hours[hours.length-1];
+  return h;
+}
+
+function _svaDetUpdatePctUI(key, doneAll, totalCajas){
+  try{
+    const wrap = document.querySelector(`[data-sva-pctwrap="${CSS.escape(String(key))}"]`);
+    if(!wrap) return;
+    const vEl = wrap.querySelector('.svaPctVal');
+    const mEl = wrap.querySelector('.svaPctMeta');
+
+    const done = Math.max(0, Math.round(Number(doneAll||0)));
+    const total = Math.max(0, Math.round(Number(totalCajas||0)));
+    const pct = (total>0) ? Math.round((done/total)*100) : null;
+
+    if(vEl) vEl.textContent = (pct==null) ? '—' : `${pct}%`;
+    if(mEl) mEl.textContent = total>0 ? `${done} / ${total} cajas` : `${done} cajas`;
+  }catch(e){ console.warn(e); }
+}
+
+// Alias: Productividad (modal)
+async function openSvaProductividad(key, focusMaq){
+  return openSvaDetail(key, focusMaq);
+}
 
 async function openSvaDetail(key, focusMaq){
-    try{
-      await ensureSupa();
-      const r = _findSvaRow(key);
-      if(!r){ toastErr('No se encontró el renglón SVA.'); return; }
-      if(!supa){ toastErr('Nube no conectada.'); return; }
+  try{
+    await ensureSupa();
+    const r = _findSvaRow(key);
+    if(!r){ toastErr('No se encontró el renglón SVA.'); return; }
+    if(!supa){ toastErr('Nube no conectada.'); return; }
 
-      const { contenedor_norm, arribo_ymd, proceso } = _svaKeyParts(key);
-      const totalCajas = _svaTotalCajasFromShipment(r.sh);
+    const { contenedor_norm, arribo_ymd, proceso } = _svaKeyParts(key);
+    const totalCajas = _svaTotalCajasFromShipment(r.sh);
+    const today = _todayYMD();
 
-      el('modalTitle').textContent = `SVA · PRODUCTIVIDAD · ${contenedor_norm} · ${proceso}`;
-      const today = _todayYMD();
-      const workYmd = (el('svaDetWorkDate')?.value) || today;
-      const startTime = (r.inicio_proc ? _isoToHM(r.inicio_proc) : '08:00');
-      const startHour = (()=>{ const h = Number(String(startTime||'').split(':')[0]); return Number.isFinite(h)?h:SVA_HOUR_START; })();
+    const startTime = (r.inicio_proc ? _isoToHM(r.inicio_proc) : '08:00');
+    const startHour = _svaParseHour(startTime, SVA_HOUR_START);
+    const workYmd = (el('svaDetWorkDate')?.value) || today;
 
-      // UI base
-      el('modalBody').innerHTML = `
-        <div class="row"><div class="k">Contenedor</div><div class="v">${esc(contenedor_norm||'')}</div></div>
-        <div class="row"><div class="k">Proceso</div><div class="v">${esc(proceso||'')}</div></div>
-        <div class="row"><div class="k">Arribo</div><div class="v">${esc(arribo_ymd||'')}</div></div>
-        <div class="row"><div class="k">Total cajas</div><div class="v"><b id="svaDetTotalCajas">${totalCajas||0}</b></div></div>
-        <div class="row"><div class="k">Avance general</div><div class="v"><b id="svaDetPct">—</b> <span class="muted" id="svaDetProdMeta" style="font-size:12px"></span></div></div>
+    // State
+    const state = {
+      key,
+      contenedor_norm,
+      arribo_ymd,
+      proceso,
+      totalCajas,
+      workYmd,
+      startTime,
+      startHour,
+      focusMaq: (focusMaq ? String(focusMaq).trim().toUpperCase() : null),
+      maquilas: [],          // [{maquila, personal}]
+      prod: new Map(),       // Map(`${MAQ}|${HOUR}` -> cajas) SOLO DEL workYmd
+      prodOther: 0,          // suma de otros días (para % acumulado)
+    };
 
-        <div class="sep" style="margin:10px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
+    // UI base (modal)
+    el('modalTitle').textContent = `SVA · PRODUCTIVIDAD · ${contenedor_norm} · ${proceso}`;
+    el('modalBody').innerHTML = `
+      <div class="row"><div class="k">Contenedor</div><div class="v">${esc(contenedor_norm||'')}</div></div>
+      <div class="row"><div class="k">Proceso</div><div class="v">${esc(proceso||'')}</div></div>
+      <div class="row"><div class="k">Arribo</div><div class="v">${esc(arribo_ymd||'')}</div></div>
+      <div class="row"><div class="k">Total cajas</div><div class="v"><b id="svaDetTotalCajas">${esc(String(totalCajas||0))}</b></div></div>
+      <div class="row"><div class="k">Avance general</div><div class="v"><b id="svaDetPct">—</b> <span class="muted" id="svaDetProdMeta" style="font-size:12px"></span></div></div>
 
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
-          <div style="min-width:220px">
-            <div class="muted" style="font-size:12px;margin-bottom:6px">Día de producción</div>
-            <input type="date" class="input" id="svaDetWorkDate" value="${esc(workYmd)}">
-          </div>
-          <div style="min-width:200px">
-            <div class="muted" style="font-size:12px;margin-bottom:6px">Hora inicio (del proceso)</div>
-            <input type="time" class="input" id="svaDetStartTime" value="${esc(startTime)}">
-          </div>
+      <div class="sep" style="margin:10px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
 
-          <div style="flex:1;min-width:260px">
-            <div class="muted" style="font-size:12px;margin-bottom:6px">Agregar maquila</div>
-            <div style="display:flex;gap:8px">
-              <input class="input" id="svaDetNewMaq" placeholder="Ej. VALRANI">
-              <input class="input" id="svaDetNewPers" type="number" min="0" step="1" placeholder="Personal" style="max-width:140px">
-              <button class="btn secondary" id="svaDetAddMaq">Agregar</button>
-            </div>
-          
-          <div style="flex:1;min-width:320px">
-            <div class="muted" style="font-size:12px;margin-bottom:6px">Captura rápida (cualquier intervalo)</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <select class="input" id="svaDetQuickMaq" style="min-width:180px"></select>
-              <input class="input" id="svaDetQuickTime" type="time" value="${esc(startTime)}" style="max-width:150px">
-              <input class="input" id="svaDetQuickCajas" type="number" min="0" step="1" placeholder="Cajas" style="max-width:140px">
-              <button class="btn secondary" id="svaDetQuickAdd">Agregar</button>
-            </div>
-            <div class="muted" style="font-size:12px;margin-top:6px">Tip: captura cuando quieras; se suma a la hora correspondiente.</div>
-          </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+        <div style="min-width:220px">
+          <div class="muted" style="font-size:12px;margin-bottom:6px">Día de producción</div>
+          <input type="date" class="input" id="svaDetWorkDate" value="${esc(workYmd)}">
+        </div>
 
-</div>
+        <div style="min-width:200px">
+          <div class="muted" style="font-size:12px;margin-bottom:6px">Hora inicio (del proceso)</div>
+          <input type="time" class="input" id="svaDetStartTime" value="${esc(startTime)}">
+        </div>
 
-          <div style="display:flex;gap:8px">
-            <button class="btn" id="svaDetSave" ${authUser?'':'disabled'}>Guardar</button>
-            <button class="btn secondary" id="svaDetReload">Recargar</button>
+        <div style="flex:1;min-width:260px">
+          <div class="muted" style="font-size:12px;margin-bottom:6px">Agregar maquila</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input class="input" id="svaDetNewMaq" placeholder="Ej. VALRANI" style="min-width:180px">
+            <input class="input" id="svaDetNewPers" type="number" min="0" step="1" placeholder="Personal" style="max-width:140px">
+            <button class="btn secondary" id="svaDetAddMaq">Agregar</button>
           </div>
         </div>
 
-        ${authUser ? '' : '<div class="muted" style="margin-top:8px;font-size:12px">Inicia sesión en <b>ADMIN</b> para capturar y guardar producción.</div>'}
-
-        <div class="sep" style="margin:12px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
-
-        <div id="svaDetMaqWrap"></div>
-
-        <div class="sep" style="margin:12px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
-
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
-          <div>
-            <div style="font-weight:900">Huella (últimos 20 movimientos)</div>
-            <div class="muted" style="font-size:12px">Cada cambio guarda hora y usuario.</div>
+        <div style="flex:1;min-width:320px">
+          <div class="muted" style="font-size:12px;margin-bottom:6px">Captura rápida (cualquier intervalo)</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="input" id="svaDetQuickMaq" style="min-width:180px"></select>
+            <input class="input" id="svaDetQuickTime" type="time" value="${esc(startTime)}" style="max-width:150px">
+            <input class="input" id="svaDetQuickCajas" type="number" min="0" step="1" placeholder="Cajas" style="max-width:140px">
+            <button class="btn secondary" id="svaDetQuickAdd">Agregar</button>
           </div>
-          <button class="btn secondary" id="svaDetLoadLog">Actualizar huella</button>
+          <div class="muted" style="font-size:12px;margin-top:6px">Tip: se suma a la hora correspondiente (grid).</div>
         </div>
-        <div id="svaDetLog" style="margin-top:10px"></div>
-      `;
 
-      el('modalBackdrop').classList.remove('hidden');
+        <div style="display:flex;gap:8px;align-items:end">
+          <button class="btn" id="svaDetSave" ${authUser?'':'disabled'}>Guardar</button>
+          <button class="btn secondary" id="svaDetReload">Recargar</button>
+        </div>
+      </div>
 
-      const state = { key, contenedor_norm, arribo_ymd, proceso, totalCajas, workYmd, startHour, startTime, focusMaq: (focusMaq ? String(focusMaq).trim().toUpperCase() : null), maquilas: [], prod: new Map() };
+      ${authUser ? '' : '<div class="muted" style="margin-top:8px;font-size:12px">Inicia sesión en <b>ADMIN</b> para capturar y guardar producción.</div>'}
 
-      // bind
-      el('svaDetWorkDate').onchange = async ()=>{
-        state.workYmd = el('svaDetWorkDate').value || _todayYMD();
+      <div class="sep" style="margin:12px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
+
+      <div id="svaDetMaqWrap"></div>
+
+      <div class="sep" style="margin:12px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:900">Huella (últimos 20 movimientos)</div>
+          <div class="muted" style="font-size:12px">Cada cambio guarda hora y usuario.</div>
+        </div>
+        <button class="btn secondary" id="svaDetLoadLog">Actualizar huella</button>
+      </div>
+      <div id="svaDetLog" style="margin-top:10px"></div>
+    `;
+
+    el('modalBackdrop').classList.remove('hidden');
+
+    // Bind events (solo una vez por apertura)
+    const workDateEl = el('svaDetWorkDate');
+    if(workDateEl){
+      workDateEl.onchange = async ()=>{
+        state.workYmd = workDateEl.value || _todayYMD();
         await _svaDetLoad(state);
       };
-      el('svaDetStartTime').onchange = ()=>{
-        state.startTime = el('svaDetStartTime').value || '08:00';
-        const h = Number(String(state.startTime||'').split(':')[0]);
-        state.startHour = Number.isFinite(h) ? h : SVA_HOUR_START;
-        _svaDetRender(state);
-        _svaDetRefreshAgg(state);
-      };
-      el('svaDetAddMaq').onclick = async ()=>{
-        const m = (el('svaDetNewMaq').value||'').trim().toUpperCase();
-        const p = (el('svaDetNewPers').value||'').trim();
-        if(!m){ toastErr('Indica la maquila.'); return; }
-        const pers = p===''? null : Number(p);
-        state.maquilas = state.maquilas.filter(x=>x.maquila!==m);
-        state.maquilas.push({ maquila: m, personal: (Number.isFinite(pers)?pers:null) });
-        el('svaDetNewMaq').value=''; el('svaDetNewPers').value='';
+    }
+
+    const startTimeEl = el('svaDetStartTime');
+    if(startTimeEl){
+      startTimeEl.onchange = ()=>{
+        state.startTime = startTimeEl.value || '08:00';
+        state.startHour = _svaParseHour(state.startTime, SVA_HOUR_START);
         _svaDetRender(state);
         _svaDetQuickUpdate(state);
-      
-      // Captura rápida
-      const _svaDetQuickFill = ()=>{
-        const sel = el('svaDetQuickMaq');
-        if(!sel) return;
-        const prev = sel.value;
-        sel.innerHTML = (state.maquilas||[]).map(x=>`<option value="${esc(x.maquila)}">${esc(x.maquila)}</option>`).join('') || '<option value="">(sin maquilas)</option>';
-        if(prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
+        _svaDetRefreshAgg(state);
       };
+    }
 
-      el('svaDetQuickAdd')?.addEventListener('click', ()=>{
+    const addMaqBtn = el('svaDetAddMaq');
+    if(addMaqBtn){
+      addMaqBtn.onclick = ()=>{
+        const m = (el('svaDetNewMaq')?.value || '').trim().toUpperCase();
+        const p = (el('svaDetNewPers')?.value || '').trim();
+        if(!m){ toastErr('Indica la maquila.'); return; }
+        const pers = (p==='') ? null : Number(p);
+        state.maquilas = (state.maquilas||[]).filter(x=>x.maquila!==m);
+        state.maquilas.push({ maquila: m, personal: (Number.isFinite(pers)?Math.round(pers):null) });
+        if(el('svaDetNewMaq')) el('svaDetNewMaq').value = '';
+        if(el('svaDetNewPers')) el('svaDetNewPers').value = '';
+        state.focusMaq = m;
+        _svaDetRender(state);
+        _svaDetQuickUpdate(state);
+        _svaDetRefreshAgg(state);
+        _svaDetFocusMaq(m);
+      };
+    }
+
+    const quickBtn = el('svaDetQuickAdd');
+    if(quickBtn){
+      quickBtn.onclick = ()=>{
         try{
-          const maq = (el('svaDetQuickMaq')?.value||'').trim().toUpperCase();
+          const maq = (el('svaDetQuickMaq')?.value || '').trim().toUpperCase();
           if(!maq){ toastErr('Selecciona maquila.'); return; }
-          const cajas = Number((el('svaDetQuickCajas')?.value||'').trim()||0);
+          const cajasRaw = (el('svaDetQuickCajas')?.value || '').trim();
+          const cajas = (cajasRaw==='') ? NaN : Number(cajasRaw);
           if(!Number.isFinite(cajas) || cajas<=0){ toastErr('Indica cajas (>0).'); return; }
-          const t = (el('svaDetQuickTime')?.value||state.startTime||'08:00');
-          let hour = Number(String(t).split(':')[0]);
-          if(!Number.isFinite(hour)) hour = state.startHour;
-          const hours = _svaHours(state.startHour);
-          if(hour < hours[0]) hour = hours[0];
-          if(hour > hours[hours.length-1]) hour = hours[hours.length-1];
+
+          const t = (el('svaDetQuickTime')?.value || state.startTime || '08:00');
+          const hour = _svaClampHourToGrid(_svaParseHour(t, state.startHour), state.startHour);
 
           const k = `${maq}|${hour}`;
           const cur = Number(state.prod.get(k) || 0);
           state.prod.set(k, cur + cajas);
 
-          // refleja en input de la tabla
           const inp = document.querySelector(`input.svaDetCajas[data-maq="${CSS.escape(maq)}"][data-hour="${hour}"]`);
-          if(inp){ inp.value = String(cur + cajas); }
+          if(inp) inp.value = String(cur + cajas);
 
-          el('svaDetQuickCajas').value = '';
+          if(el('svaDetQuickCajas')) el('svaDetQuickCajas').value = '';
           _svaDetRefreshAgg(state);
-          toastOk(`+${cajas} cajas (${maq} @ ${String(hour).padStart(2,'0')}:00)`);
+          toastOk(`+${Math.round(cajas)} cajas (${maq} @ ${String(hour).padStart(2,'0')}:00)`);
         }catch(e){ console.warn(e); }
-      });
-};
-      el('svaDetSave').onclick = async ()=>{ await _svaDetSave(state); };
-      el('svaDetReload').onclick = async ()=>{ await _svaDetLoad(state); };
-      el('svaDetLoadLog').onclick = async ()=>{ await _svaDetLoadLog(state); };
-
-      await _svaDetLoad(state);
-      if(state.focusMaq) _svaDetFocusMaq(state.focusMaq);
-      await _svaDetLoadLog(state);
-    }catch(err){
-      console.error(err);
-      toastErr('Error al abrir detalle SVA.');
+      };
     }
-  }
 
-  async function _svaDetLoad(state){
+    const saveBtn = el('svaDetSave');
+    if(saveBtn) saveBtn.onclick = async ()=>{ await _svaDetSave(state); };
+
+    const reloadBtn = el('svaDetReload');
+    if(reloadBtn) reloadBtn.onclick = async ()=>{ await _svaDetLoad(state); };
+
+    const loadLogBtn = el('svaDetLoadLog');
+    if(loadLogBtn) loadLogBtn.onclick = async ()=>{ await _svaDetLoadLog(state); };
+
+    await _svaDetLoad(state);
+    if(state.focusMaq) _svaDetFocusMaq(state.focusMaq);
+    await _svaDetLoadLog(state);
+  }catch(err){
+    console.error(err);
+    toastErr('Error al abrir PRODUCTIVIDAD SVA.');
+  }
+}
+
+async function _svaDetLoad(state){
+  try{
     if(!supa) return;
-    // cargar maquilas
+
+    // 1) maquilas
     const mq = await supa.from('sva_reprocesos_maquilas')
       .select('maquila,personal')
       .eq('contenedor_norm', state.contenedor_norm)
       .eq('arribo_ymd', state.arribo_ymd)
       .eq('proceso', state.proceso);
 
-    if(mq.error){ console.warn(mq.error); }
-    state.maquilas = (mq.data||[]).map(x=>({maquila:(x.maquila||'').toUpperCase(), personal:x.personal==null?null:Number(x.personal)}));
-    _svaDetQuickUpdate(state);
+    if(mq.error) console.warn(mq.error);
+    state.maquilas = (mq.data||[]).map(x=>({
+      maquila: String(x.maquila||'').toUpperCase(),
+      personal: (x.personal==null ? null : (Number.isFinite(Number(x.personal)) ? Math.round(Number(x.personal)) : null))
+    }));
 
-    // cargar producción por hora (por día seleccionado)
+    // 2) producción por hora del día seleccionado
     state.prod = new Map();
     const pr = await supa.from('sva_prod_hora')
       .select('maquila,work_ymd,hour_start,cajas')
@@ -6578,315 +6641,362 @@ async function openSvaDetail(key, focusMaq){
       .eq('proceso', state.proceso)
       .eq('work_ymd', state.workYmd);
 
-    if(pr.error){ console.warn(pr.error); }
+    if(pr.error) console.warn(pr.error);
     for(const row of (pr.data||[])){
-      const k = `${(row.maquila||'').toUpperCase()}|${row.hour_start}`;
-      state.prod.set(k, Number(row.cajas||0));
+      const maq = String(row.maquila||'').toUpperCase();
+      const h = Number(row.hour_start);
+      const c = Number(row.cajas||0);
+      if(!maq || !Number.isFinite(h)) continue;
+      state.prod.set(`${maq}|${h}`, Number.isFinite(c)?Math.max(0, Math.round(c)):0);
     }
+
+    // 3) suma de otros días (para % acumulado)
+    state.prodOther = 0;
+    try{
+      const agg = await supa.from('sva_prod_hora')
+        .select('work_ymd,cajas')
+        .eq('contenedor_norm', state.contenedor_norm)
+        .eq('arribo_ymd', state.arribo_ymd)
+        .eq('proceso', state.proceso);
+
+      if(!agg.error){
+        let sumAll = 0;
+        let sumDay = 0;
+        for(const row of (agg.data||[])){
+          const c = Number(row.cajas||0);
+          if(!Number.isFinite(c)) continue;
+          sumAll += c;
+          if(String(row.work_ymd||'') === String(state.workYmd||'')) sumDay += c;
+        }
+        state.prodOther = Math.max(0, Math.round(sumAll - sumDay));
+      }
+    }catch(e){ console.warn(e); }
 
     _svaDetRender(state);
     _svaDetQuickUpdate(state);
-    await _svaDetRefreshAgg(state);
+    _svaDetRefreshAgg(state);
+  }catch(e){
+    console.warn(e);
   }
+}
 
-  
-  function _svaDetQuickUpdate(state){
-    try{
-      const sel = el('svaDetQuickMaq');
-      if(!sel) return;
-      const prev = sel.value;
-      const opts = (state.maquilas||[]).map(x=>{
-        const v = String(x.maquila||'').toUpperCase();
-        return `<option value="${esc(v)}">${esc(v)}</option>`;
-      }).join('');
-      sel.innerHTML = opts || '<option value="">(sin maquilas)</option>';
-      if(prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
-    }catch(e){ console.warn(e); }
-  }
+function _svaDetQuickUpdate(state){
+  try{
+    const sel = el('svaDetQuickMaq');
+    if(!sel) return;
+    const prev = sel.value;
+    const opts = (state.maquilas||[]).map(x=>{
+      const v = String(x.maquila||'').toUpperCase();
+      return `<option value="${esc(v)}">${esc(v)}</option>`;
+    }).join('');
+    sel.innerHTML = opts || '<option value="">(sin maquilas)</option>';
+
+    // prioridad: focusMaq
+    const f = state.focusMaq;
+    if(f && [...sel.options].some(o=>o.value===f)) sel.value = f;
+    else if(prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
+  }catch(e){ console.warn(e); }
+}
 
 function _svaDetRender(state){
-    const wrap = el('svaDetMaqWrap');
-    if(!wrap) return;
+  const wrap = el('svaDetMaqWrap');
+  if(!wrap) return;
 
-    if(!state.maquilas.length){
-      wrap.innerHTML = `<div class="muted">Sin maquilas capturadas. Agrega una arriba.</div>`;
-      return;
-    }
+  if(!state.maquilas.length){
+    wrap.innerHTML = `<div class="muted">Sin maquilas capturadas. Agrega una arriba.</div>`;
+    return;
+  }
 
-    const hours = _svaHours(state.startHour);
+  const hours = _svaHours(state.startHour);
+  let html = '';
+  for(const m of state.maquilas){
+    const name = m.maquila;
 
-    let html = '';
-    for(const m of state.maquilas){
-      const name = m.maquila;
-      html += `
-        <div class="card" data-sva-maq-card="${esc(name)}" style="padding:12px;margin-bottom:10px">
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
-            <div style="font-weight:900">${esc(name)}</div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <div class="muted" style="font-size:12px">Personal</div>
-              <input class="input svaDetPers" data-maq="${esc(name)}" type="number" min="0" step="1" value="${m.personal==null?'':esc(String(m.personal))}" style="max-width:120px">
-              <button class="btn danger tiny svaDetDelMaq" data-maq="${esc(name)}">Quitar</button>
-            </div>
-          </div>
-
-          <div style="margin-top:10px;overflow:auto">
-            <table class="table" style="min-width:520px">
-              <thead>
-                <tr>
-                  <th>PERIODO</th>
-                  <th>CAJAS (por hora)</th>
-                  <th>ACUMULADA</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${hours.map(h=>{
-                  const k = `${name}|${h}`;
-                  const v = state.prod.get(k) ?? '';
-                  const period = String(h).padStart(2,'0')+':00 - '+String(h+1).padStart(2,'0')+':00';
-                  return `
-                    <tr>
-                      <td>${period}</td>
-                      <td>
-                        <input class="input svaDetCajas" data-maq="${esc(name)}" data-hour="${h}" type="number" min="0" step="1" value="${v===''?'':esc(String(v))}" style="max-width:160px">
-                      </td>
-                      <td class="muted" data-acc="${esc(name)}" data-hour="${h}">—</td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-
-          <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:8px">
-            <div class="muted" style="font-size:12px">Total maquila: <b data-total="${esc(name)}">0</b> cajas</div>
-            <div class="muted" style="font-size:12px">Avance maquila (vs total contenedor): <b data-pct="${esc(name)}">0%</b></div>
+    html += `
+      <div class="card" data-sva-maq-card="${esc(name)}" style="padding:12px;margin-bottom:10px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+          <div style="font-weight:900">${esc(name)}</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div class="muted" style="font-size:12px">Personal</div>
+            <input class="input svaDetPers" data-maq="${esc(name)}" type="number" min="0" step="1" value="${m.personal==null?'':esc(String(m.personal))}" style="max-width:120px">
+            <button class="btn danger tiny svaDetDelMaq" data-maq="${esc(name)}">Quitar</button>
           </div>
         </div>
-      `;
-    }
 
-    wrap.innerHTML = html;
-
-    // bind events
-    wrap.querySelectorAll('.svaDetDelMaq').forEach(btn=>{
-      btn.onclick = ()=>{
-        const maq = btn.dataset.maq;
-        state.maquilas = state.maquilas.filter(x=>x.maquila!==maq);
-        // limpiar prod de esa maquila
-        for(const k of [...state.prod.keys()]){
-          if(k.startsWith(maq+'|')) state.prod.delete(k);
-        }
-        _svaDetRender(state);
-        _svaDetQuickUpdate(state);
-        _svaDetRefreshAgg(state);
-      };
-    });
-
-    wrap.querySelectorAll('.svaDetPers').forEach(inp=>{
-      inp.oninput = ()=>{
-        const maq = inp.dataset.maq;
-        const v = inp.value.trim();
-        const pers = v===''? null : Number(v);
-        const it = state.maquilas.find(x=>x.maquila===maq);
-        if(it) it.personal = Number.isFinite(pers)?pers:null;
-      };
-    });
-
-    wrap.querySelectorAll('.svaDetCajas').forEach(inp=>{
-      inp.oninput = ()=>{
-        const maq = inp.dataset.maq;
-        const h = Number(inp.dataset.hour);
-        const v = inp.value.trim();
-        const n = v===''? 0 : Number(v);
-        if(!Number.isFinite(n) || n<0) return;
-        state.prod.set(`${maq}|${h}`, n);
-        _svaDetRefreshAgg(state);
-      };
-    });
-
-    _svaDetRefreshAgg(state);
-  }
-
-  function _svaDetFocusMaq(maq){
-    try{
-      const m = String(maq||'').trim().toUpperCase();
-      if(!m) return;
-      const card = document.querySelector(`[data-sva-maq-card="${CSS.escape(m)}"]`);
-      if(card){
-        card.classList.add('svaFocus');
-        card.scrollIntoView({behavior:'smooth', block:'start'});
-        setTimeout(()=>card.classList.remove('svaFocus'), 1400);
-      }
-    }catch(e){ console.warn(e); }
-  }
-
-  async function _svaDetRefreshAgg(state){
-    // acumulados por maquila (día)
-    const totalCajas = state.totalCajas || 0;
-    const hours = _svaHours(state.startHour);
-    let grand = 0;
-
-    for(const m of state.maquilas){
-      let acc = 0;
-      for(const h of hours){
-        const v = Number(state.prod.get(`${m.maquila}|${h}`) || 0);
-        acc += v;
-        const cell = document.querySelector(`[data-acc="${CSS.escape(m.maquila)}"][data-hour="${h}"]`);
-        if(cell) cell.textContent = acc ? String(acc) : '';
-      }
-      grand += acc;
-      const tcell = document.querySelector(`[data-total="${CSS.escape(m.maquila)}"]`);
-      if(tcell) tcell.textContent = String(acc);
-
-      const pct = (totalCajas>0) ? Math.round((acc/totalCajas)*100) : 0;
-      const pcell = document.querySelector(`[data-pct="${CSS.escape(m.maquila)}"]`);
-      if(pcell) pcell.textContent = `${pct}%`;
-    }
-
-    // avance general acumulado (todas maquilas, día seleccionado)
-    const pctG = (totalCajas>0) ? Math.round((grand/totalCajas)*100) : 0;
-    const meta = el('svaDetProdMeta');
-    if(meta) meta.textContent = totalCajas>0 ? `(${grand} / ${totalCajas} cajas)` : `(${grand} cajas)`;
-    const pctEl = el('svaDetPct');
-    if(pctEl) pctEl.textContent = totalCajas>0 ? `${pctG}%` : '—';
-  }
-
-  async function _svaDetSave(state){
-    try{
-      if(!authUser){ toastErr('Inicia sesión en ADMIN para guardar.'); return; }
-      await ensureSupa();
-      if(!supa) { toastErr('Nube no conectada.'); return; }
-
-      const { contenedor_norm, arribo_ymd, proceso } = state;
-      const work_ymd = state.workYmd || _todayYMD();
-
-      // 1) upsert maquilas
-      if(state.maquilas.length){
-        const payload = state.maquilas.map(m=>({
-          contenedor_norm, arribo_ymd, proceso,
-          maquila: m.maquila,
-          personal: m.personal
-        }));
-        const up = await supa.from('sva_reprocesos_maquilas').upsert(payload);
-        if(up.error) throw up.error;
-      }
-
-      // 2) upsert producción por hora
-      const hours = _svaHours(state.startHour);
-      const prodPayload = [];
-      for(const m of state.maquilas){
-        for(const h of hours){
-          const cajas = Number(state.prod.get(`${m.maquila}|${h}`) || 0);
-          prodPayload.push({
-            contenedor_norm, arribo_ymd, proceso, maquila: m.maquila,
-            work_ymd, hour_start: h, cajas
-          });
-        }
-      }
-      if(prodPayload.length){
-        const up2 = await supa.from('sva_prod_hora').upsert(prodPayload);
-        if(up2.error) throw up2.error;
-      }
-
-      // 3) recalcular avance general del día y reflejar en sva_reprocesos
-      const totalCajas = state.totalCajas || 0;
-      let grand = 0;
-      for(const m of state.maquilas){
-        for(const h of hours){
-          grand += Number(state.prod.get(`${m.maquila}|${h}`) || 0);
-        }
-      }
-      // avance acumulado (todas las capturas) para el renglón del contenedor
-      let grandAll = grand;
-      try{
-        const agg = await supa.from('sva_prod_hora')
-          .select('cajas')
-          .eq('contenedor_norm', contenedor_norm)
-          .eq('arribo_ymd', arribo_ymd)
-          .eq('proceso', proceso);
-        if(!agg.error){
-          grandAll = (agg.data||[]).reduce((a,r)=>a + Number(r.cajas||0), 0);
-        }
-      }catch(e){ console.warn(e); }
-
-      const avance_pct = (totalCajas>0) ? Math.round((grandAll/totalCajas)*100) : null;
-      const maquilasTxt = state.maquilas.map(m=>m.maquila).join(', ');
-      const persTxt = state.maquilas.map(m=>`${m.maquila}:${m.personal??''}`).join(', ');
-
-      // actualiza registro maestro
-      const up3 = await supa.from('sva_reprocesos').upsert([{
-        contenedor_norm, arribo_ymd, proceso,
-        maquilas: maquilasTxt || null,
-        personal_maquila: persTxt || null,
-        avance_pct: avance_pct,
-        updated_at: new Date().toISOString()
-      }]);
-      if(up3.error) console.warn(up3.error); // no bloquea
-
-      // 4) huella (log)
-      try{
-        const lg = await supa.from('sva_reprocesos_log').insert([{
-          contenedor_norm, arribo_ymd, proceso,
-          action: 'SAVE_DETALLE',
-          field: 'prod_hora',
-          old_value: null,
-          new_value: `${work_ymd}: ${grand} cajas (acum: ${grandAll})`,
-          changed_by: authUser?.id || null
-        }]);
-        if(lg.error) console.warn(lg.error);
-      }catch(e){ console.warn(e); }
-
-      // refrescar renglón
-      await reloadSVA();
-      toastOk('Guardado.');
-      await _svaDetLoadLog(state);
-    }catch(err){
-      console.error(err);
-      toastErr('No se pudo guardar detalle SVA.');
-    }
-  }
-
-  async function _svaDetLoadLog(state){
-    try{
-      if(!supa) return;
-      const r = await supa.from('sva_reprocesos_log')
-        .select('changed_at,action,field,new_value,changed_by')
-        .eq('contenedor_norm', state.contenedor_norm)
-        .eq('arribo_ymd', state.arribo_ymd)
-        .eq('proceso', state.proceso)
-        .order('changed_at', { ascending:false })
-        .limit(20);
-
-      if(r.error){ console.warn(r.error); return; }
-      const rows = r.data || [];
-      const host = el('svaDetLog');
-      if(!host) return;
-      if(!rows.length){
-        host.innerHTML = `<div class="muted">Sin huella todavía.</div>`;
-        return;
-      }
-      host.innerHTML = `
-        <div style="overflow:auto">
-          <table class="table" style="min-width:620px">
-            <thead><tr><th>HORA</th><th>ACCIÓN</th><th>DETALLE</th><th>USUARIO</th></tr></thead>
+        <div style="margin-top:10px;overflow:auto">
+          <table class="table" style="min-width:560px">
+            <thead>
+              <tr>
+                <th>PERIODO</th>
+                <th>CAJAS (por periodo)</th>
+                <th>ACUMULADA</th>
+              </tr>
+            </thead>
             <tbody>
-              ${rows.map(x=>`
-                <tr>
-                  <td>${esc(_isoToYMDLocal(x.changed_at))} ${esc(_isoToHM(x.changed_at))}</td>
-                  <td>${esc(x.action||'')}</td>
-                  <td>${esc(x.new_value||x.field||'')}</td>
-                  <td class="muted">${esc(x.changed_by||'')}</td>
-                </tr>
-              `).join('')}
+              ${hours.map(h=>{
+                const k = `${name}|${h}`;
+                const v = state.prod.get(k);
+                const period = String(h).padStart(2,'0')+':00 - '+String(h+1).padStart(2,'0')+':00';
+                return `
+                  <tr>
+                    <td>${period}</td>
+                    <td>
+                      <input class="input svaDetCajas" data-maq="${esc(name)}" data-hour="${h}" type="number" min="0" step="1" value="${(v==null||v===0)?'':esc(String(v))}" style="max-width:160px">
+                    </td>
+                    <td class="muted" data-acc="${esc(name)}" data-hour="${h}"></td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
-      `;
-    }catch(err){
-      console.warn(err);
-    }
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:8px">
+          <div class="muted" style="font-size:12px">Total maquila: <b data-total="${esc(name)}">0</b> cajas</div>
+          <div class="muted" style="font-size:12px">Avance maquila (vs total contenedor): <b data-pct="${esc(name)}">0%</b></div>
+        </div>
+      </div>
+    `;
   }
 
+  wrap.innerHTML = html;
+
+  // bind events (dentro del modal)
+  wrap.querySelectorAll('.svaDetDelMaq').forEach(btn=>{
+    btn.onclick = ()=>{
+      const maq = String(btn.dataset.maq||'').toUpperCase();
+      state.maquilas = (state.maquilas||[]).filter(x=>x.maquila!==maq);
+      for(const k of [...state.prod.keys()]){
+        if(k.startsWith(maq+'|')) state.prod.delete(k);
+      }
+      if(state.focusMaq===maq) state.focusMaq = null;
+      _svaDetRender(state);
+      _svaDetQuickUpdate(state);
+      _svaDetRefreshAgg(state);
+    };
+  });
+
+  wrap.querySelectorAll('.svaDetPers').forEach(inp=>{
+    inp.oninput = ()=>{
+      const maq = String(inp.dataset.maq||'').toUpperCase();
+      const v = String(inp.value||'').trim();
+      const pers = (v==='') ? null : Number(v);
+      const it = (state.maquilas||[]).find(x=>x.maquila===maq);
+      if(it) it.personal = (Number.isFinite(pers) ? Math.round(pers) : null);
+    };
+  });
+
+  wrap.querySelectorAll('.svaDetCajas').forEach(inp=>{
+    inp.oninput = ()=>{
+      const maq = String(inp.dataset.maq||'').toUpperCase();
+      const h = Number(inp.dataset.hour);
+      const v = String(inp.value||'').trim();
+      const n = (v==='') ? 0 : Number(v);
+      if(!Number.isFinite(n) || n<0) return;
+      state.prod.set(`${maq}|${h}`, Math.round(n));
+      _svaDetRefreshAgg(state);
+    };
+  });
+
+  _svaDetRefreshAgg(state);
+}
+
+function _svaDetFocusMaq(maq){
+  try{
+    const m = String(maq||'').trim().toUpperCase();
+    if(!m) return;
+    const card = document.querySelector(`[data-sva-maq-card="${CSS.escape(m)}"]`);
+    if(card){
+      card.classList.add('svaFocus');
+      card.scrollIntoView({behavior:'smooth', block:'start'});
+      setTimeout(()=>card.classList.remove('svaFocus'), 1400);
+    }
+  }catch(e){ console.warn(e); }
+}
+
+function _svaDetRefreshAgg(state){
+  const totalCajas = Math.max(0, Math.round(Number(state.totalCajas||0)));
+  const hours = _svaHours(state.startHour);
+
+  let grandDay = 0;
+
+  for(const m of (state.maquilas||[])){
+    let acc = 0;
+    for(const h of hours){
+      const v = Number(state.prod.get(`${m.maquila}|${h}`) || 0);
+      acc += (Number.isFinite(v)?v:0);
+
+      const cell = document.querySelector(`[data-acc="${CSS.escape(m.maquila)}"][data-hour="${h}"]`);
+      if(cell) cell.textContent = acc ? String(acc) : '';
+    }
+
+    grandDay += acc;
+
+    const tcell = document.querySelector(`[data-total="${CSS.escape(m.maquila)}"]`);
+    if(tcell) tcell.textContent = String(acc);
+
+    const pct = (totalCajas>0) ? Math.round((acc/totalCajas)*100) : 0;
+    const pcell = document.querySelector(`[data-pct="${CSS.escape(m.maquila)}"]`);
+    if(pcell) pcell.textContent = `${pct}%`;
+  }
+
+  // Acumulado total (otros días + día actual)
+  const doneAll = Math.max(0, Math.round(Number(state.prodOther||0))) + Math.max(0, Math.round(Number(grandDay||0)));
+  const pctG = (totalCajas>0) ? Math.round((doneAll/totalCajas)*100) : null;
+
+  const meta = el('svaDetProdMeta');
+  if(meta) meta.textContent = totalCajas>0 ? `(${doneAll} / ${totalCajas} cajas)` : `(${doneAll} cajas)`;
+  const pctEl = el('svaDetPct');
+  if(pctEl) pctEl.textContent = (pctG==null) ? '—' : `${pctG}%`;
+
+  // Actualiza el % en la tabla SVA (sin guardar todavía)
+  _svaDetUpdatePctUI(state.key, doneAll, totalCajas);
+}
+
+async function _svaDetSave(state){
+  try{
+    if(!authUser){ toastErr('Inicia sesión en ADMIN para guardar.'); return; }
+    await ensureSupa();
+    if(!supa) { toastErr('Nube no conectada.'); return; }
+
+    const { contenedor_norm, arribo_ymd, proceso } = state;
+    const work_ymd = state.workYmd || _todayYMD();
+
+    // 1) upsert maquilas (con personal)
+    if((state.maquilas||[]).length){
+      const payload = state.maquilas.map(m=>({
+        contenedor_norm, arribo_ymd, proceso,
+        maquila: m.maquila,
+        personal: (m.personal==null ? null : Math.round(Number(m.personal)))
+      }));
+      const up = await supa.from('sva_reprocesos_maquilas').upsert(payload);
+      if(up.error) throw up.error;
+    }
+
+    // 2) upsert producción por hora (solo día seleccionado)
+    const hours = _svaHours(state.startHour);
+    const prodPayload = [];
+    for(const m of (state.maquilas||[])){
+      for(const h of hours){
+        const cajas = Math.max(0, Math.round(Number(state.prod.get(`${m.maquila}|${h}`) || 0)));
+        prodPayload.push({
+          contenedor_norm, arribo_ymd, proceso,
+          maquila: m.maquila,
+          work_ymd,
+          hour_start: h,
+          cajas
+        });
+      }
+    }
+    if(prodPayload.length){
+      const up2 = await supa.from('sva_prod_hora').upsert(prodPayload);
+      if(up2.error) throw up2.error;
+    }
+
+    // 3) recalcular avance (acumulado todos los días) para reflejar en el renglón
+    const totalCajas = Math.max(0, Math.round(Number(state.totalCajas||0)));
+    let doneAll = 0;
+    try{
+      const agg = await supa.from('sva_prod_hora')
+        .select('cajas')
+        .eq('contenedor_norm', contenedor_norm)
+        .eq('arribo_ymd', arribo_ymd)
+        .eq('proceso', proceso);
+
+      if(!agg.error){
+        doneAll = (agg.data||[]).reduce((a,r)=>a + Math.max(0, Math.round(Number(r.cajas||0))), 0);
+      }
+    }catch(e){ console.warn(e); }
+
+    const avance_pct = (totalCajas>0) ? Math.round((doneAll/totalCajas)*100) : null;
+
+    // texto maquilas/personal (para columna en SVA)
+    const maquilasTxt = (state.maquilas||[]).map(m=>m.maquila).join(', ');
+    const persTxt = (state.maquilas||[]).map(m=>`${m.maquila}:${(m.personal==null?'':Math.round(Number(m.personal)))}`).join(', ');
+
+    const up3 = await supa.from('sva_reprocesos').upsert([{
+      contenedor_norm, arribo_ymd, proceso,
+      maquilas: maquilasTxt || null,
+      personal_maquila: persTxt || null,
+      avance_pct,
+      updated_at: new Date().toISOString()
+    }]);
+    if(up3.error) console.warn(up3.error);
+
+    // 4) log
+    try{
+      const lg = await supa.from('sva_reprocesos_log').insert([{
+        contenedor_norm, arribo_ymd, proceso,
+        action: 'SAVE_PRODUCTIVIDAD',
+        field: 'prod_hora',
+        old_value: null,
+        new_value: `${work_ymd}: guardado (acum: ${doneAll} cajas)`,
+        changed_by: authUser?.id || null
+      }]);
+      if(lg.error) console.warn(lg.error);
+    }catch(e){ console.warn(e); }
+
+    // refresca tabla SVA
+    await reloadSVA();
+
+    // refresca baseline de otros días y UI
+    state.prodOther = Math.max(0, Math.round(doneAll - (()=>{
+      let day = 0;
+      for(const v of state.prod.values()) day += Math.max(0, Math.round(Number(v||0)));
+      return day;
+    })()));
+    _svaDetRefreshAgg(state);
+
+    toastOk('Guardado.');
+    await _svaDetLoadLog(state);
+  }catch(err){
+    console.error(err);
+    toastErr(`No se pudo guardar PRODUCTIVIDAD SVA: ${err?.message||err}`);
+  }
+}
+
+async function _svaDetLoadLog(state){
+  try{
+    if(!supa) return;
+    const r = await supa.from('sva_reprocesos_log')
+      .select('changed_at,action,field,new_value,changed_by')
+      .eq('contenedor_norm', state.contenedor_norm)
+      .eq('arribo_ymd', state.arribo_ymd)
+      .eq('proceso', state.proceso)
+      .order('changed_at', { ascending:false })
+      .limit(20);
+
+    if(r.error){ console.warn(r.error); return; }
+    const rows = r.data || [];
+    const host = el('svaDetLog');
+    if(!host) return;
+
+    if(!rows.length){
+      host.innerHTML = `<div class="muted">Sin huella todavía.</div>`;
+      return;
+    }
+
+    host.innerHTML = `
+      <div style="overflow:auto">
+        <table class="table" style="min-width:620px">
+          <thead><tr><th>HORA</th><th>ACCIÓN</th><th>DETALLE</th><th>USUARIO</th></tr></thead>
+          <tbody>
+            ${rows.map(x=>`
+              <tr>
+                <td>${esc(_isoToYMDLocal(x.changed_at))} ${esc(_isoToHM(x.changed_at))}</td>
+                <td>${esc(x.action||'')}</td>
+                <td>${esc(x.new_value||x.field||'')}</td>
+                <td class="muted">${esc(x.changed_by||'')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }catch(err){
+    console.warn(err);
+  }
+}
 </script>
 </body>
 </html>
