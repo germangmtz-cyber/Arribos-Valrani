@@ -917,7 +917,7 @@ MARIA LOPEZ
               <th data-key="tiempo_proc">TIEMPO</th>
               <th data-key="personal_maquila">PERSONAL POR MAQUILA</th>
               <th data-key="indicacion">INDICACIÓN</th>
-              <th data-key="acciones">ACCIONES</th>
+              
             </tr>
           </thead>
           <tbody id="tbodySVA"></tbody>
@@ -3593,7 +3593,6 @@ function initStatusMulti(){
     { key:'tiempo_proc', label:'TIEMPO' },
     { key:'personal_maquila', label:'PERSONAL POR MAQUILA' },
     { key:'indicacion', label:'INDICACIÓN' },
-    { key:'acciones', label:'ACCIONES' },
   ];
 
   const LS_COLS_LOG = 'cols_log_v1';
@@ -3917,11 +3916,24 @@ function initStatusMulti(){
           <button class="btn secondary tiny" data-sva-act="prod" data-key="${r.key}" data-maq="${mm}" title="Capturar productividad / cajas">Productividad</button>
         </div>`;
       }).join('');
-      const maquilasIn = maqCount
-        ? `<details class="svaDetails"><summary>${maqCount} maquila(s)</summary><div style="margin-top:8px">${maqItems}</div></details>`
-        : `<span class="muted">—</span>`;
+      const topBtns = `<div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn secondary tiny" data-sva-act="addMaq" data-key="${r.key}" ${disabled}>Agregar maquila</button>
+          <button class="btn secondary tiny" data-sva-act="prodAll" data-key="${r.key}" ${(disabled || !maqCount) ? 'disabled' : ''}>Productividad</button>
+          <button class="btn tiny" data-sva-act="saveRow" data-key="${r.key}" ${disabled}>Guardar</button>
+        </div>`;
 
-      const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0);
+      const maquilasIn = `
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+          <div class="muted" style="font-size:12px">${maqCount ? (maqCount + ' maquila(s)') : 'Sin maquilas'}</div>
+          ${topBtns}
+        </div>
+        ${
+          maqCount
+            ? `<details class="svaDetails" style="margin-top:8px"><summary>Ver maquilas</summary><div style="margin-top:8px">${maqItems}</div></details>`
+            : `<div class="muted" style="margin-top:8px;font-size:12px">Agrega una maquila para iniciar y capturar productividad.</div>`
+        }
+      `;
+const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0);
       const done = (r.prod_cajas ?? 0);
       const pct = (r.prod_pct!=null) ? r.prod_pct : ((r.avance_pct!=='' && r.avance_pct!=null) ? Number(r.avance_pct) : null);
       const avanceIn = `<div class="svaPctWrap" data-sva-pctwrap="${escapeHtml(r.key)}" style="min-width:110px">
@@ -3938,17 +3950,6 @@ function initStatusMulti(){
       const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
       const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
 
-      const hasState = Array.isArray(r.maquilas_info) && r.maquilas_info.some(x=>x.inicio_at||x.fin_at||x.estatus);
-      const canStart = (maqCount>0) ? (!hasState ? true : maqList.some(mm=>{ const st=(r.maquilas_state||{})[mm]||{}; return !(st.inicio_at || st.estatus==='EN PROCESO' || st.estatus==='TERMINADO'); })) : false;
-      const canEnd = (maqCount>0) ? (!hasState ? true : maqList.some(mm=>{ const st=(r.maquilas_state||{})[mm]||{}; return (st.inicio_at || st.estatus==='EN PROCESO') && !(st.fin_at || st.estatus==='TERMINADO'); })) : false;
-
-      const btnStart = `<button class="btn secondary" data-sva-act="start" data-key="${r.key}" ${disabled || !canStart ?'disabled':''}>Iniciar</button>`;
-      const btnEnd = `<button class="btn secondary" data-sva-act="end" data-key="${r.key}" ${disabled || !canEnd ?'disabled':''}>Terminar</button>`;
-      const btnSave = `<button class="btn" data-sva-act="save" data-key="${r.key}" ${disabled}>Guardar</button>`;
-      const btnDet  = `<button class="btn secondary" data-sva-act="prod" data-key="${r.key}" ${disabled}>Productividad</button>`;
-
-      const acciones = `<div style="display:flex;gap:6px;flex-wrap:wrap">${btnStart}${btnEnd}${btnSave}${btnDet}</div>`;
-
       const rowCells = [
         ['no', r.no],
         ['contenedor', escapeHtml(r.contenedor)],
@@ -3963,7 +3964,6 @@ function initStatusMulti(){
         ['tiempo_proc', escapeHtml(r.tiempo_proc||'')],
         ['personal_maquila', persIn],
         ['indicacion', `<span class="muted">${escapeHtml(r.indicacion||'')}</span>`],
-        ['acciones', acciones]
       ];
 
       // Build row respecting visible cols
@@ -3976,7 +3976,8 @@ function initStatusMulti(){
       html += tr;
     }
 
-    el('tbodySVA').innerHTML = html || `<tr><td class="muted" colspan="20">Sin resultados.</td></tr>`;
+    const colCount = Math.max(1, (visible||[]).length || COLS_SVA.length);
+    el('tbodySVA').innerHTML = html || `<tr><td class="muted" colspan="${colCount}">Sin resultados.</td></tr>`;
     applyColsSVA();
     _svaSetupHScroll();
 
@@ -3998,9 +3999,9 @@ function initStatusMulti(){
       const act = t.dataset.svaAct;
       const key = t.dataset.key;
       if(!act || !key) return;
-      if(act==='save'){ _saveSvaNow(key); }
-      if(act==='start'){ _startSva(key); }
-      if(act==='end'){ _endSva(key); }
+      if(act==='saveRow'){ _saveSvaNow(key); }
+      if(act==='addMaq'){ _svaAddMaquila(key); }
+      if(act==='prodAll'){ openSvaProductividad(key, null); }
       if(act==='maqStart'){ _svaMaqStart(key, t.dataset.maq||null); }
       if(act==='maqEnd'){ _svaMaqEnd(key, t.dataset.maq||null); }
       if(act==='prod'){ openSvaProductividad(key, t.dataset.maq || null); }
@@ -4010,6 +4011,87 @@ function initStatusMulti(){
   function _findSvaRow(key){
     return (svaMerged||[]).find(x=>x.key===key);
   }
+
+
+  async function _svaAddMaquila(key){
+    try{
+      const r = _findSvaRow(key);
+      if(!r) return;
+
+      await ensureSupa();
+      if(!supa){ toastErr('Nube no conectada.'); return; }
+      if(!authUser){ alert('Para agregar maquila necesitas iniciar sesión (ADMIN).'); return; }
+
+      const nameRaw = prompt('Nombre de la maquila:', '');
+      if(nameRaw==null) return;
+      const mq = String(nameRaw||'').trim().toUpperCase();
+      if(!mq){ alert('Nombre de maquila requerido.'); return; }
+
+      const persRaw = prompt('Cantidad de personas (opcional):', '');
+      let personal = null;
+      if(persRaw!=null){
+        const s = String(persRaw).trim();
+        if(s!==''){
+          const n = Number(s);
+          if(!Number.isFinite(n) || n<0){
+            alert('Cantidad de personas inválida.');
+            return;
+          }
+          personal = Math.round(n);
+        }
+      }
+
+      const { contenedor_norm, arribo_ymd, proceso } = _svaKeyParts(key);
+
+      const up1 = await supa.from('sva_reprocesos_maquilas')
+        .upsert([{
+          contenedor_norm, arribo_ymd, proceso,
+          maquila: mq,
+          personal
+        }], { onConflict: 'contenedor_norm,arribo_ymd,proceso,maquila' });
+      if(up1.error) throw up1.error;
+
+      // Re-lee maquilas para reflejar en el registro maestro (rápido en UI)
+      const cur = await supa.from('sva_reprocesos_maquilas')
+        .select('maquila,personal,inicio_at,fin_at,estatus')
+        .eq('contenedor_norm', contenedor_norm)
+        .eq('arribo_ymd', arribo_ymd)
+        .eq('proceso', proceso);
+      if(cur.error) throw cur.error;
+
+      const list = (cur.data||[]).map(x=>String(x.maquila||'').trim()).filter(Boolean);
+      const persTxt = (cur.data||[]).map(x=>`${String(x.maquila||'').trim()}:${(x.personal==null?'':x.personal)}`).join(', ');
+
+      const up2 = await supa.from('sva_reprocesos')
+        .upsert([{
+          contenedor_norm, arribo_ymd, proceso,
+          maquilas: list.join(', '),
+          personal_maquila: persTxt || null,
+          updated_at: new Date().toISOString(),
+        }], { onConflict: 'contenedor_norm,arribo_ymd,proceso' });
+      if(up2.error) throw up2.error;
+
+      // log best-effort
+      try{
+        await supa.from('sva_reprocesos_log').insert([{
+          contenedor_norm, arribo_ymd, proceso,
+          action: 'ADD_MAQUILA',
+          field: 'maquila',
+          old_value: null,
+          new_value: `${mq}:${personal==null?'':personal}`,
+          created_at: new Date().toISOString(),
+          changed_by: authUser?.id || null
+        }]);
+      }catch(_){}
+
+      toastOk('Maquila agregada.');
+      await reloadSVA();
+    }catch(err){
+      console.error(err);
+      toastErr('No se pudo agregar maquila.');
+    }
+  }
+
 
   function _queueSaveSva(key, patch){
     // debounce
