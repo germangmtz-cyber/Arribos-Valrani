@@ -299,19 +299,41 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     #attendanceCard .att-audit-item .when{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-size:12px;opacity:.9;min-width:132px}
     #attendanceCard .att-audit-item .msg{font-size:12px;line-height:1.35}
 
-    /* SVA: tabla a ancho completo (solo cuando estás en SVA) */
-    body.svaWide .wrap{max-width:none;width:100%;}
-    #svaView{ --tblScale: 1.2; }
-    #svaView .tableWrap{ overflow:auto !important; padding-bottom:10px; }
-    #svaView #svaTable{ width:max-content; min-width:100%; table-layout:auto; }
-    #svaView #svaTable thead th, #svaView #svaTable tbody td{ white-space:nowrap; }
-    #svaView td[data-key="indicacion"]{ white-space:normal; min-width:30ch; max-width:52ch; }
-    #svaView td[data-key="maquilas"]{ white-space:normal; min-width:22ch; max-width:36ch; }
-    #svaView td[data-key="personal_maquila"]{ white-space:normal; min-width:26ch; max-width:44ch; }
-    #svaView td[data-key="acciones"]{ min-width:320px; }
-    #svaView .svaDetails summary{ cursor:pointer; }
+    /* SVA: tabla a ancho completo */
+    #wrapSVA{overflow-x:auto;}
+    #wrapSVA .table{width:100%;}
 
-  </style>
+  
+    /* SVA: barra horizontal visible + tabla ancho completo */
+    #svaView .tableWrap{ overflow:auto !important; padding-bottom:10px; scrollbar-width:auto !important; -ms-overflow-style:auto !important; }
+    #svaView .tableWrap::-webkit-scrollbar{ height:12px !important; width:12px !important; display:block !important; }
+    #svaView #svaTable{ width:max-content; min-width:100%; table-layout:auto; }
+    #svaView .svaDetails summary{ cursor:pointer; }
+    #svaView .svaMaqItem{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px}
+    #svaView .svaMaqItem .chip{cursor:default}
+    .svaFocus{outline:2px solid rgba(255,153,0,.65); box-shadow:0 0 0 4px rgba(255,153,0,.12);}
+
+
+/* ===== SVA: scrollbar horizontal dedicado ===== */
+.svaTableWrapOuter{ position: relative; }
+#svaTableWrap{ overflow-x:auto; overflow-y:visible; }
+#svaTable{ width:100%; min-width: 1600px; }
+#svaTable th, #svaTable td{ white-space:nowrap; }
+#svaTable td[data-key="indicacion"]{ white-space:normal; min-width:260px; max-width:520px; }
+.svaHScroll{
+  overflow-x:auto;
+  overflow-y:hidden;
+  height:14px;
+  margin-top:6px;
+  border-radius:10px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06);
+}
+.svaHScrollInner{ height:1px; }
+.svaMaqItem{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
+#svaView .btn.tiny{ padding:6px 10px; font-size:12px; }
+
+</style>
 </head>
 <body>
   <div class="topbar" id="topbar">
@@ -875,7 +897,8 @@ MARIA LOPEZ
         <div class="muted" id="svaMeta" style="margin-top:8px"></div>
       </div>
 
-      <div class="tableWrap">
+      <div class="svaTableWrapOuter">
+      <div class="tableWrap" id="svaTableWrap">
         <table class="table" id="svaTable">
           <thead>
             <tr>
@@ -898,6 +921,10 @@ MARIA LOPEZ
           <tbody id="tbodySVA"></tbody>
         </table>
       </div>
+      <div class="svaHScroll" id="svaHScroll" aria-label="Desplazamiento horizontal">
+        <div class="svaHScrollInner" id="svaHScrollInner"></div>
+      </div>
+    </div>
     </section>
 
 
@@ -3382,9 +3409,6 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(isSummary){ renderSummary(); }
     if(isDashboard){ renderDashboard(); setTimeout(dashResize, 60); }
 
-    // Layout: SVA a ancho completo
-    document.body.classList.toggle('svaWide', isSVA);
-
     // Carga de subvistas
     if(isPorLlegar){ reloadPorLlegar(); }
     if(isHistorico){ reloadHistorico(); }
@@ -3773,11 +3797,20 @@ function initStatusMulti(){
         if(conts2.length){
           // Maquilas asignadas (lista + personal)
           let mqQ = supa.from('sva_reprocesos_maquilas')
-            .select('contenedor_norm,arribo_ymd,proceso,maquila,personal')
+            .select('contenedor_norm,arribo_ymd,proceso,maquila,personal,estatus,inicio_at,fin_at')
             .in('contenedor_norm', conts2);
           if(d1) mqQ = mqQ.gte('arribo_ymd', d1);
           if(d2) mqQ = mqQ.lte('arribo_ymd', d2);
-          const mqR = await mqQ;
+          let mqR = await mqQ;
+          // Fallback si la tabla aún no tiene columnas de estado por maquila
+          if(mqR && mqR.error && String(mqR.error.message||'').toLowerCase().includes('column')){
+            mqQ = supa.from('sva_reprocesos_maquilas')
+              .select('contenedor_norm,arribo_ymd,proceso,maquila,personal')
+              .in('contenedor_norm', conts2);
+            if(d1) mqQ = mqQ.gte('arribo_ymd', d1);
+            if(d2) mqQ = mqQ.lte('arribo_ymd', d2);
+            mqR = await mqQ;
+          }
           if(!mqR.error){
             const mapM = new Map();
             for(const row of (mqR.data||[])){
@@ -3785,13 +3818,17 @@ function initStatusMulti(){
               if(!mapM.has(k)) mapM.set(k, []);
               mapM.get(k).push({
                 maquila: (row.maquila||'').toUpperCase(),
-                personal: (row.personal==null ? null : Number(row.personal))
+                personal: (row.personal==null ? null : Number(row.personal)),
+                estatus: (row.estatus||'') ? String(row.estatus).toUpperCase() : null,
+                inicio_at: row.inicio_at || null,
+                fin_at: row.fin_at || null
               });
             }
             for(const r of svaMerged){
               const lst = mapM.get(r.key) || [];
               r.maquilas_info = lst;
               r.maquilas_list = [...new Set(lst.map(x=>x.maquila).filter(Boolean))];
+              r.maquilas_state = Object.fromEntries(lst.map(x=>[x.maquila, {estatus:x.estatus||null, inicio_at:x.inicio_at||null, fin_at:x.fin_at||null}]));
             }
           }
 
@@ -3863,9 +3900,21 @@ function initStatusMulti(){
         : String(r.maquilas||'').split(',').map(s=>s.trim()).filter(Boolean);
 
       const maqCount = maqList.length;
-      const maqChips = maqList.map(m=>`<button class="chip" data-sva-act="prod" data-key="${r.key}" data-maq="${escapeHtml(m)}" title="Abrir productividad">${escapeHtml(m)}</button>`).join(' ');
+      const maqItems = maqList.map(m=>{
+        const mm = escapeHtml(m);
+        const st = (r.maquilas_state||{})[(String(m||'').toUpperCase())] || {};
+        const disStart = (disabled || st.inicio_at || st.estatus==='EN PROCESO' || st.estatus==='TERMINADO') ? 'disabled' : '';
+        const disEnd = (disabled || st.fin_at || st.estatus==='TERMINADO' || (!st.inicio_at && st.estatus!=='EN PROCESO')) ? 'disabled' : '';
+        const badge = st.estatus ? `<span class="chip" style="opacity:.9">${esc(st.estatus)}</span>` : '';
+        return `<div class="svaMaqItem">
+          <span class="chip">${mm}</span>${badge}
+          <button class="btn secondary tiny" data-sva-act="maqStart" data-key="${r.key}" data-maq="${mm}" ${disStart}>Iniciar</button>
+          <button class="btn secondary tiny" data-sva-act="maqEnd" data-key="${r.key}" data-maq="${mm}" ${disEnd}>Terminar</button>
+          <button class="btn secondary tiny" data-sva-act="prod" data-key="${r.key}" data-maq="${mm}" title="Capturar productividad / cajas">Productividad</button>
+        </div>`;
+      }).join('');
       const maquilasIn = maqCount
-        ? `<details class="svaDetails"><summary>${maqCount} maquila(s)</summary><div class="chips" style="margin-top:8px">${maqChips}</div></details>`
+        ? `<details class="svaDetails"><summary>${maqCount} maquila(s)</summary><div style="margin-top:8px">${maqItems}</div></details>`
         : `<span class="muted">—</span>`;
 
       const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0);
@@ -3885,13 +3934,16 @@ function initStatusMulti(){
       const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
       const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
 
-      const btnStart = `<button class="btn secondary" data-sva-act="start" data-key="${r.key}" ${disabled || r.estatus_sva!=='PENDIENTE'?'disabled':''}>Iniciar</button>`;
-      const btnEnd = `<button class="btn secondary" data-sva-act="end" data-key="${r.key}" ${disabled || r.estatus_sva!=='EN PROCESO'?'disabled':''}>Terminar</button>`;
+      const hasState = Array.isArray(r.maquilas_info) && r.maquilas_info.some(x=>x.inicio_at||x.fin_at||x.estatus);
+      const canStart = (maqCount>0) ? (!hasState ? true : maqList.some(mm=>{ const st=(r.maquilas_state||{})[mm]||{}; return !(st.inicio_at || st.estatus==='EN PROCESO' || st.estatus==='TERMINADO'); })) : false;
+      const canEnd = (maqCount>0) ? (!hasState ? true : maqList.some(mm=>{ const st=(r.maquilas_state||{})[mm]||{}; return (st.inicio_at || st.estatus==='EN PROCESO') && !(st.fin_at || st.estatus==='TERMINADO'); })) : false;
+
+      const btnStart = `<button class="btn secondary" data-sva-act="start" data-key="${r.key}" ${disabled || !canStart ?'disabled':''}>Iniciar</button>`;
+      const btnEnd = `<button class="btn secondary" data-sva-act="end" data-key="${r.key}" ${disabled || !canEnd ?'disabled':''}>Terminar</button>`;
       const btnSave = `<button class="btn" data-sva-act="save" data-key="${r.key}" ${disabled}>Guardar</button>`;
       const btnDet  = `<button class="btn secondary" data-sva-act="prod" data-key="${r.key}" ${disabled}>Productividad</button>`;
-      const btnAddMaq = `<button class="btn secondary tiny" data-sva-act="addmaq" data-key="${r.key}">Agregar maquila</button>`;
 
-      const acciones = `<div style="display:flex;gap:6px;flex-wrap:wrap">${btnAddMaq}${btnStart}${btnEnd}${btnSave}${btnDet}</div>`;
+      const acciones = `<div style="display:flex;gap:6px;flex-wrap:wrap">${btnStart}${btnEnd}${btnSave}${btnDet}</div>`;
 
       const rowCells = [
         ['no', r.no],
@@ -3922,12 +3974,12 @@ function initStatusMulti(){
 
     el('tbodySVA').innerHTML = html || `<tr><td class="muted" colspan="20">Sin resultados.</td></tr>`;
     applyColsSVA();
+    _svaSetupHScroll();
 
     // wire inputs (delegated)
     const body = el('tbodySVA');
     body.oninput = (ev)=>{
-      const t0 = ev.target;
-      const t = (t0 && t0.closest) ? t0.closest('[data-sva]') : t0;
+      const t = ev.target;
       if(!t || !t.dataset) return;
       const field = t.dataset.sva;
       const key = t.dataset.key;
@@ -3937,86 +3989,19 @@ function initStatusMulti(){
     body.onchange = body.oninput;
 
     body.onclick = (ev)=>{
-      const t0 = ev.target;
-      const t = (t0 && t0.closest) ? t0.closest('[data-sva-act]') : t0;
+      const t = ev.target;
       if(!t || !t.dataset) return;
       const act = t.dataset.svaAct;
       const key = t.dataset.key;
       if(!act || !key) return;
-      if(act==='addmaq'){ _svaQuickAddMaq(key); return; }
       if(act==='save'){ _saveSvaNow(key); }
       if(act==='start'){ _startSva(key); }
       if(act==='end'){ _endSva(key); }
-      if(act==='prod'){ openSvaProductividad(key); }
+      if(act==='maqStart'){ _svaMaqStart(key, t.dataset.maq||null); }
+      if(act==='maqEnd'){ _svaMaqEnd(key, t.dataset.maq||null); }
+      if(act==='prod'){ openSvaProductividad(key, t.dataset.maq || null); }
     };
   }
-
-  async function _svaQuickAddMaq(key){
-    try{
-      await ensureSupa();
-      if(!supa){ toastErr('Nube no conectada.'); return; }
-      if(!authUser){
-        alert('Para asignar maquilas necesitas iniciar sesión (ADMIN).');
-        return;
-      }
-      const row = _findSvaRow(key);
-      if(!row) return;
-
-      const mRaw = prompt('Nombre de la maquila:');
-      if(mRaw===null) return;
-      const maq = String(mRaw||'').trim().toUpperCase();
-      if(!maq){ toastErr('Nombre de maquila vacío.'); return; }
-
-      const pRaw = prompt('Cantidad de personas (opcional):');
-      if(pRaw===null) return;
-      const pTrim = String(pRaw||'').trim();
-      let pers = null;
-      if(pTrim!==''){
-        const n = Number(pTrim);
-        if(!Number.isFinite(n) || n<0){ toastErr('Cantidad de personas inválida.'); return; }
-        pers = Math.round(n);
-      }
-
-      const payload = [{
-        contenedor_norm: row.contenedor_norm,
-        arribo_ymd: row.fecha,
-        proceso: row.proceso,
-        maquila: maq,
-        personal: pers
-      }];
-
-      const up = await supa.from('sva_reprocesos_maquilas').upsert(payload);
-      if(up.error) throw up.error;
-
-      // huella (no bloquea)
-      try{
-        await supa.from('sva_reprocesos_log').insert([{
-          contenedor_norm: row.contenedor_norm,
-          arribo_ymd: row.fecha,
-          proceso: row.proceso,
-          action: 'ADD_MAQUILA',
-          field: 'maquila',
-          old_value: null,
-          new_value: JSON.stringify({ maquila: maq, personal: pers }),
-          changed_by: authUser?.id || null
-        }]);
-      }catch(e){ console.warn(e); }
-
-      // refrescar cache local para reflejarlo inmediatamente
-      const info = Array.isArray(row.maquilas_info) ? row.maquilas_info.slice() : [];
-      const filtered = info.filter(x=>String(x.maquila||'').toUpperCase()!==maq);
-      filtered.push({ maquila: maq, personal: pers });
-      row.maquilas_info = filtered;
-      row.maquilas_list = [...new Set(filtered.map(x=>String(x.maquila||'').toUpperCase()).filter(Boolean))];
-
-      renderSVA();
-      toast('Maquila agregada.');
-    }catch(err){
-      console.error(err);
-      toastErr(`Error al agregar maquila: ${err?.message||err}`);
-    }
-  }
-
 
   function _findSvaRow(key){
     return (svaMerged||[]).find(x=>x.key===key);
@@ -4055,16 +4040,28 @@ function initStatusMulti(){
         return elIn.value;
       };
 
+      const toInt = (v)=>{
+        if(v==null) return null;
+        if(typeof v==='number' && Number.isFinite(v)) return Math.round(v);
+        const s = String(v).trim();
+        if(s==='') return null;
+        const n = Number(s);
+        return Number.isFinite(n) ? Math.round(n) : null;
+      };
+
+      const patch2 = Object.assign({}, patch);
+      if(Object.prototype.hasOwnProperty.call(patch2,'avance_pct')) patch2.avance_pct = toInt(patch2.avance_pct);
+
       const payload = {
         contenedor_norm: row.contenedor_norm,
         arribo_ymd: row.fecha,
         proceso: row.proceso,
         estatus_sva: pull('estatus_sva') ?? row.estatus_sva,
         maquilas: pull('maquilas') ?? row.maquilas,
-        avance_pct: (pull('avance_pct') ?? row.avance_pct),
+        avance_pct: toInt(pull('avance_pct') ?? row.avance_pct),
         personal_maquila: pull('personal_maquila') ?? row.personal_maquila,
         updated_at: new Date().toISOString(),
-        ...patch,
+        ...patch2,
       };
 
       const resp = await supa.from('sva_reprocesos')
@@ -4105,24 +4102,265 @@ function initStatusMulti(){
   async function _startSva(key){
     const row = _findSvaRow(key);
     if(!row) return;
-    await _saveSvaPatch(key, {
-      estatus_sva: 'EN PROCESO',
-      inicio_proc: row.inicio_proc || new Date().toISOString(),
-      avance_pct: (row.avance_pct==='' || row.avance_pct==null) ? 0 : row.avance_pct
-    });
+    const maq = _svaChooseMaq(row);
+    if(!maq){ toastErr('Selecciona una maquila (primero agrega maquila).'); return; }
+    await _svaMaqStart(key, maq);
   }
 
   async function _endSva(key){
     const row = _findSvaRow(key);
     if(!row) return;
-    await _saveSvaPatch(key, {
-      estatus_sva: 'TERMINADO',
-      fin_proc: new Date().toISOString(),
-      avance_pct: 100
-    });
+    const maq = _svaChooseMaq(row);
+    if(!maq){ toastErr('Selecciona una maquila (primero agrega maquila).'); return; }
+    await _svaMaqEnd(key, maq);
   }
 
-  async function reloadLogistica(){
+  function _svaChooseMaq(row){
+    const lst = (row.maquilas_list && row.maquilas_list.length) ? row.maquilas_list : String(row.maquilas||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(lst.length===1) return String(lst[0]||'').toUpperCase();
+    if(!lst.length) return null;
+    const msg = 'Selecciona maquila:\n' + lst.map((m,i)=>`${i+1}) ${m}`).join('\n');
+    const ans = prompt(msg, '1');
+    const n = Number(ans);
+    if(!Number.isFinite(n) || n<1 || n>lst.length) return null;
+    return String(lst[n-1]||'').toUpperCase();
+  }
+
+  async function _svaMaqStart(key, maquila){
+    try{
+      const r = _findSvaRow(key);
+      if(!r) return;
+      const mq = String(maquila||'').trim().toUpperCase();
+      if(!mq) return;
+
+      await ensureSupa();
+      if(!supa){ toastErr('Nube no conectada.'); return; }
+      if(!authUser){ alert('Para iniciar/terminar por maquila necesitas iniciar sesión (ADMIN).'); return; }
+
+      const { contenedor_norm, arribo_ymd, proceso } = _svaKeyParts(key);
+      const nowIso = new Date().toISOString();
+
+      // Intentar actualizar estado por maquila (si existen columnas)
+      let ok = true;
+      try{
+        const cur = await supa.from('sva_reprocesos_maquilas')
+          .select('maquila,inicio_at,fin_at,estatus')
+          .eq('contenedor_norm', contenedor_norm)
+          .eq('arribo_ymd', arribo_ymd)
+          .eq('proceso', proceso)
+          .eq('maquila', mq)
+          .limit(1);
+
+        const exists = (cur.data && cur.data.length) ? cur.data[0] : null;
+        const inicio_at = exists?.inicio_at || nowIso;
+
+        const up = await supa.from('sva_reprocesos_maquilas')
+          .upsert([{
+            contenedor_norm, arribo_ymd, proceso,
+            maquila: mq,
+            inicio_at,
+            fin_at: null,
+            estatus: 'EN PROCESO'
+          }], { onConflict: 'contenedor_norm,arribo_ymd,proceso,maquila' });
+        if(up.error) throw up.error;
+      }catch(e){
+        ok = false;
+        console.warn(e);
+      }
+
+      // Huella (siempre)
+      try{
+        await supa.from('sva_reprocesos_log').insert([{
+          contenedor_norm, arribo_ymd, proceso,
+          action: 'MAQ_START',
+          field: 'maquila',
+          old_value: null,
+          new_value: JSON.stringify({ maquila: mq, at: nowIso, ok }),
+          changed_by: authUser?.id || null
+        }]);
+      }catch(e){ console.warn(e); }
+
+      // Recalcular estatus del contenedor en base a maquilas
+      if(!ok){
+        // Fallback (si aún no existen columnas por maquila)
+        await _saveSvaPatch(key, {
+          estatus_sva: 'EN PROCESO',
+          inicio_proc: r.inicio_proc || nowIso,
+          avance_pct: (r.avance_pct==='' || r.avance_pct==null) ? 0 : r.avance_pct
+        });
+        toastErr('Falta esquema de estado por maquila en la nube (sva_reprocesos_maquilas.inicio_at/fin_at/estatus).');
+        await reloadSVA();
+        return;
+      }
+
+      await _svaRecalcMasterFromMaquilas(key);
+
+      await reloadSVA();
+      toastOk(`Iniciado: ${mq}`);
+    }catch(err){
+      console.error(err);
+      toastErr('No se pudo iniciar maquila.');
+    }
+  }
+
+  async function _svaMaqEnd(key, maquila){
+    try{
+      const r = _findSvaRow(key);
+      if(!r) return;
+      const mq = String(maquila||'').trim().toUpperCase();
+      if(!mq) return;
+
+      await ensureSupa();
+      if(!supa){ toastErr('Nube no conectada.'); return; }
+      if(!authUser){ alert('Para iniciar/terminar por maquila necesitas iniciar sesión (ADMIN).'); return; }
+
+      const { contenedor_norm, arribo_ymd, proceso } = _svaKeyParts(key);
+      const nowIso = new Date().toISOString();
+
+      let ok = true;
+      try{
+        const cur = await supa.from('sva_reprocesos_maquilas')
+          .select('maquila,inicio_at,fin_at,estatus')
+          .eq('contenedor_norm', contenedor_norm)
+          .eq('arribo_ymd', arribo_ymd)
+          .eq('proceso', proceso)
+          .eq('maquila', mq)
+          .limit(1);
+
+        const exists = (cur.data && cur.data.length) ? cur.data[0] : null;
+        const inicio_at = exists?.inicio_at || nowIso;
+
+        const up = await supa.from('sva_reprocesos_maquilas')
+          .upsert([{
+            contenedor_norm, arribo_ymd, proceso,
+            maquila: mq,
+            inicio_at,
+            fin_at: nowIso,
+            estatus: 'TERMINADO'
+          }], { onConflict: 'contenedor_norm,arribo_ymd,proceso,maquila' });
+        if(up.error) throw up.error;
+      }catch(e){
+        ok = false;
+        console.warn(e);
+      }
+
+      try{
+        await supa.from('sva_reprocesos_log').insert([{
+          contenedor_norm, arribo_ymd, proceso,
+          action: 'MAQ_END',
+          field: 'maquila',
+          old_value: null,
+          new_value: JSON.stringify({ maquila: mq, at: nowIso, ok }),
+          changed_by: authUser?.id || null
+        }]);
+      }catch(e){ console.warn(e); }
+
+      await _svaRecalcMasterFromMaquilas(key);
+      if(!ok){
+        await _saveSvaPatch(key, {
+          estatus_sva: 'TERMINADO',
+          fin_proc: nowIso,
+          avance_pct: 100
+        });
+        toastErr('Falta esquema de estado por maquila en la nube (sva_reprocesos_maquilas.inicio_at/fin_at/estatus).');
+        await reloadSVA();
+        return;
+      }
+
+
+
+      await reloadSVA();
+      toastOk(`Terminado: ${mq}`);
+    }catch(err){
+      console.error(err);
+      toastErr('No se pudo terminar maquila.');
+    }
+  }
+
+  async function _svaRecalcMasterFromMaquilas(key){
+    try{
+      await ensureSupa();
+      if(!supa) return;
+      const row = _findSvaRow(key);
+      if(!row) return;
+
+      const { contenedor_norm, arribo_ymd, proceso } = _svaKeyParts(key);
+
+      // leer estados por maquila (si hay columnas)
+      const mq = await supa.from('sva_reprocesos_maquilas')
+        .select('maquila,inicio_at,fin_at,estatus')
+        .eq('contenedor_norm', contenedor_norm)
+        .eq('arribo_ymd', arribo_ymd)
+        .eq('proceso', proceso);
+
+      if(mq.error){ console.warn(mq.error); return; }
+
+      const lst = (mq.data||[]).map(x=>({
+        maquila: String(x.maquila||'').toUpperCase(),
+        inicio_at: x.inicio_at || null,
+        fin_at: x.fin_at || null,
+        estatus: (x.estatus||'') ? String(x.estatus).toUpperCase() : null
+      })).filter(x=>x.maquila);
+
+      if(!lst.length) return;
+
+      const started = lst.filter(x=>x.inicio_at || x.estatus==='EN PROCESO' || x.estatus==='TERMINADO').length;
+      const ended = lst.filter(x=>x.fin_at || x.estatus==='TERMINADO').length;
+
+      let estatus_sva = 'PENDIENTE';
+      if(ended===lst.length) estatus_sva = 'TERMINADO';
+      else if(started>0) estatus_sva = 'EN PROCESO';
+
+      const inicio_proc = (started>0) ? lst.map(x=>x.inicio_at).filter(Boolean).sort()[0] : null;
+      const fin_proc = (ended===lst.length) ? lst.map(x=>x.fin_at).filter(Boolean).sort().slice(-1)[0] : null;
+      const tiempo_proc = (inicio_proc && fin_proc) ? _fmtDur(new Date(fin_proc)-new Date(inicio_proc)) : null;
+
+      await supa.from('sva_reprocesos').upsert([{
+        contenedor_norm, arribo_ymd, proceso,
+        estatus_sva,
+        inicio_proc: inicio_proc || null,
+        fin_proc: fin_proc || null,
+        tiempo_proc: tiempo_proc || null,
+        updated_at: new Date().toISOString()
+      }], { onConflict: 'contenedor_norm,arribo_ymd,proceso' });
+    }catch(e){ console.warn(e); }
+  }
+
+  let _svaScrollBound = false;
+  function _svaSetupHScroll(){
+    try{
+      const wrap = el('svaTableWrap');
+      const bar = el('svaHScroll');
+      const inner = el('svaHScrollInner');
+      if(!wrap || !bar || !inner) return;
+
+      inner.style.width = wrap.scrollWidth + 'px';
+
+      if(!_svaScrollBound){
+        let lock = false;
+        wrap.addEventListener('scroll', ()=>{
+          if(lock) return;
+          lock = true;
+          bar.scrollLeft = wrap.scrollLeft;
+          lock = false;
+        });
+        bar.addEventListener('scroll', ()=>{
+          if(lock) return;
+          lock = true;
+          wrap.scrollLeft = bar.scrollLeft;
+          lock = false;
+        });
+        window.addEventListener('resize', ()=>{
+          inner.style.width = wrap.scrollWidth + 'px';
+        });
+        _svaScrollBound = true;
+      }
+      // sincroniza posición
+      bar.scrollLeft = wrap.scrollLeft;
+    }catch(e){ console.warn(e); }
+  }
+
+  async function reloadLogistica(){async function reloadLogistica(){
     try{
       if(!el('logStart') || !el('logEnd')) return;
       if(!el('logStart').value || !el('logEnd').value){ _setTodayRange('logStart','logEnd'); }
@@ -6157,11 +6395,11 @@ function initAttendanceUI(){
   }
 
     // Alias: Productividad (modal)
-  async function openSvaProductividad(key){
-    return openSvaDetail(key);
+  async function openSvaProductividad(key, focusMaq){
+    return openSvaDetail(key, focusMaq);
   }
 
-async function openSvaDetail(key){
+async function openSvaDetail(key, focusMaq){
     try{
       await ensureSupa();
       const r = _findSvaRow(key);
@@ -6204,7 +6442,19 @@ async function openSvaDetail(key){
               <input class="input" id="svaDetNewPers" type="number" min="0" step="1" placeholder="Personal" style="max-width:140px">
               <button class="btn secondary" id="svaDetAddMaq">Agregar</button>
             </div>
+          
+          <div style="flex:1;min-width:320px">
+            <div class="muted" style="font-size:12px;margin-bottom:6px">Captura rápida (cualquier intervalo)</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <select class="input" id="svaDetQuickMaq" style="min-width:180px"></select>
+              <input class="input" id="svaDetQuickTime" type="time" value="${esc(startTime)}" style="max-width:150px">
+              <input class="input" id="svaDetQuickCajas" type="number" min="0" step="1" placeholder="Cajas" style="max-width:140px">
+              <button class="btn secondary" id="svaDetQuickAdd">Agregar</button>
+            </div>
+            <div class="muted" style="font-size:12px;margin-top:6px">Tip: captura cuando quieras; se suma a la hora correspondiente.</div>
           </div>
+
+</div>
 
           <div style="display:flex;gap:8px">
             <button class="btn" id="svaDetSave" ${authUser?'':'disabled'}>Guardar</button>
@@ -6232,7 +6482,7 @@ async function openSvaDetail(key){
 
       el('modalBackdrop').classList.remove('hidden');
 
-      const state = { key, contenedor_norm, arribo_ymd, proceso, totalCajas, workYmd, startHour, startTime, maquilas: [], prod: new Map() };
+      const state = { key, contenedor_norm, arribo_ymd, proceso, totalCajas, workYmd, startHour, startTime, focusMaq: (focusMaq ? String(focusMaq).trim().toUpperCase() : null), maquilas: [], prod: new Map() };
 
       // bind
       el('svaDetWorkDate').onchange = async ()=>{
@@ -6255,12 +6505,50 @@ async function openSvaDetail(key){
         state.maquilas.push({ maquila: m, personal: (Number.isFinite(pers)?pers:null) });
         el('svaDetNewMaq').value=''; el('svaDetNewPers').value='';
         _svaDetRender(state);
+        _svaDetQuickUpdate(state);
+      
+      // Captura rápida
+      const _svaDetQuickFill = ()=>{
+        const sel = el('svaDetQuickMaq');
+        if(!sel) return;
+        const prev = sel.value;
+        sel.innerHTML = (state.maquilas||[]).map(x=>`<option value="${esc(x.maquila)}">${esc(x.maquila)}</option>`).join('') || '<option value="">(sin maquilas)</option>';
+        if(prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
       };
+
+      el('svaDetQuickAdd')?.addEventListener('click', ()=>{
+        try{
+          const maq = (el('svaDetQuickMaq')?.value||'').trim().toUpperCase();
+          if(!maq){ toastErr('Selecciona maquila.'); return; }
+          const cajas = Number((el('svaDetQuickCajas')?.value||'').trim()||0);
+          if(!Number.isFinite(cajas) || cajas<=0){ toastErr('Indica cajas (>0).'); return; }
+          const t = (el('svaDetQuickTime')?.value||state.startTime||'08:00');
+          let hour = Number(String(t).split(':')[0]);
+          if(!Number.isFinite(hour)) hour = state.startHour;
+          const hours = _svaHours(state.startHour);
+          if(hour < hours[0]) hour = hours[0];
+          if(hour > hours[hours.length-1]) hour = hours[hours.length-1];
+
+          const k = `${maq}|${hour}`;
+          const cur = Number(state.prod.get(k) || 0);
+          state.prod.set(k, cur + cajas);
+
+          // refleja en input de la tabla
+          const inp = document.querySelector(`input.svaDetCajas[data-maq="${CSS.escape(maq)}"][data-hour="${hour}"]`);
+          if(inp){ inp.value = String(cur + cajas); }
+
+          el('svaDetQuickCajas').value = '';
+          _svaDetRefreshAgg(state);
+          toastOk(`+${cajas} cajas (${maq} @ ${String(hour).padStart(2,'0')}:00)`);
+        }catch(e){ console.warn(e); }
+      });
+};
       el('svaDetSave').onclick = async ()=>{ await _svaDetSave(state); };
       el('svaDetReload').onclick = async ()=>{ await _svaDetLoad(state); };
       el('svaDetLoadLog').onclick = async ()=>{ await _svaDetLoadLog(state); };
 
       await _svaDetLoad(state);
+      if(state.focusMaq) _svaDetFocusMaq(state.focusMaq);
       await _svaDetLoadLog(state);
     }catch(err){
       console.error(err);
@@ -6279,6 +6567,7 @@ async function openSvaDetail(key){
 
     if(mq.error){ console.warn(mq.error); }
     state.maquilas = (mq.data||[]).map(x=>({maquila:(x.maquila||'').toUpperCase(), personal:x.personal==null?null:Number(x.personal)}));
+    _svaDetQuickUpdate(state);
 
     // cargar producción por hora (por día seleccionado)
     state.prod = new Map();
@@ -6296,10 +6585,26 @@ async function openSvaDetail(key){
     }
 
     _svaDetRender(state);
+    _svaDetQuickUpdate(state);
     await _svaDetRefreshAgg(state);
   }
 
-  function _svaDetRender(state){
+  
+  function _svaDetQuickUpdate(state){
+    try{
+      const sel = el('svaDetQuickMaq');
+      if(!sel) return;
+      const prev = sel.value;
+      const opts = (state.maquilas||[]).map(x=>{
+        const v = String(x.maquila||'').toUpperCase();
+        return `<option value="${esc(v)}">${esc(v)}</option>`;
+      }).join('');
+      sel.innerHTML = opts || '<option value="">(sin maquilas)</option>';
+      if(prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
+    }catch(e){ console.warn(e); }
+  }
+
+function _svaDetRender(state){
     const wrap = el('svaDetMaqWrap');
     if(!wrap) return;
 
@@ -6314,7 +6619,7 @@ async function openSvaDetail(key){
     for(const m of state.maquilas){
       const name = m.maquila;
       html += `
-        <div class="card" style="padding:12px;margin-bottom:10px">
+        <div class="card" data-sva-maq-card="${esc(name)}" style="padding:12px;margin-bottom:10px">
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
             <div style="font-weight:900">${esc(name)}</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -6372,6 +6677,7 @@ async function openSvaDetail(key){
           if(k.startsWith(maq+'|')) state.prod.delete(k);
         }
         _svaDetRender(state);
+        _svaDetQuickUpdate(state);
         _svaDetRefreshAgg(state);
       };
     });
@@ -6399,6 +6705,19 @@ async function openSvaDetail(key){
     });
 
     _svaDetRefreshAgg(state);
+  }
+
+  function _svaDetFocusMaq(maq){
+    try{
+      const m = String(maq||'').trim().toUpperCase();
+      if(!m) return;
+      const card = document.querySelector(`[data-sva-maq-card="${CSS.escape(m)}"]`);
+      if(card){
+        card.classList.add('svaFocus');
+        card.scrollIntoView({behavior:'smooth', block:'start'});
+        setTimeout(()=>card.classList.remove('svaFocus'), 1400);
+      }
+    }catch(e){ console.warn(e); }
   }
 
   async function _svaDetRefreshAgg(state){
