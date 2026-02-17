@@ -4360,7 +4360,7 @@ function initStatusMulti(){
     }catch(e){ console.warn(e); }
   }
 
-  async function reloadLogistica(){async function reloadLogistica(){
+  async function reloadLogistica(){
     try{
       if(!el('logStart') || !el('logEnd')) return;
       if(!el('logStart').value || !el('logEnd').value){ _setTodayRange('logStart','logEnd'); }
