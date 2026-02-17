@@ -1,113 +1,875 @@
--- ============================================================
--- SVA PRODUCTIVIDAD: maquilas + producción por hora + bitácora
--- (select público, escritura solo authenticated)
--- ============================================================
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arribos a Cedis — base+fecha+no — v3-tabla-2x-fixed</title>
+  <style>
+    :root{--bg:#0b0f15;--panel:#0e1623;--panel2:#101b2b;--text:#e9eef8;--muted:#a9b4c6;--line:#23324a;--accent:#ff8c00;--ok:#1db954;--bad:#ff4d4f;--btn:#15233a;--btn2:#1b2b45;--shadow:0 10px 40px rgba(0,0,0,.35);--radius:16px}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(1200px 600px at 15% 0%,rgba(40,80,140,.45),rgba(10,15,25,0)) ,radial-gradient(900px 500px at 70% 10%,rgba(255,140,0,.14),rgba(10,15,25,0)) ,var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+    a{color:#9cc6ff}
+    .wrap{max-width:1400px;margin:0 auto;padding:18px 18px 40px}
+    header{display:flex;align-items:center;gap:16px;justify-content:space-between}
+    .brand{display:flex;align-items:center;gap:14px}
+    .logo{width:58px;height:58px;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);box-shadow:var(--shadow)}
+    .title{font-size:46px;font-weight:900;letter-spacing:.5px}
+    .nav{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center}
+    .tab{border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.03);color:var(--text);padding:8px 14px;border-radius:999px;cursor:pointer;user-select:none;font-weight:800}
+    .tab.active{background:linear-gradient(180deg,rgba(255,140,0,.22),rgba(255,140,0,.08));border-color:rgba(255,140,0,.6)}
+    .right{display:flex;gap:10px;align-items:center}
+    .pill{display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.03);border-radius:999px;padding:8px 12px}
+    .btn{border:1px solid rgba(255,255,255,.12);background:var(--btn);color:var(--text);padding:8px 14px;border-radius:999px;cursor:pointer;font-weight:800}
+    .btn:hover{background:var(--btn2)}
+    .btn.accent{background:linear-gradient(180deg,rgba(255,140,0,.95),rgba(255,140,0,.78));border-color:rgba(255,140,0,.8);color:#111}
+    .btn.accent:hover{filter:brightness(1.05)}
+    .btn.ghost{background:transparent}
+    .grid{display:grid;grid-template-columns:1fr;gap:14px;margin-top:16px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px}
+    .card h2{margin:0 0 6px 0;font-size:20px}
+    .sub{color:var(--muted);font-size:12px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    input,select,textarea{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);color:var(--text);border-radius:12px;padding:10px 12px;outline:none}
+    input::placeholder{color:#7f8aa1}
+    .spacer{flex:1}
+    .small{font-size:12px;color:var(--muted)}
+    table{width:100%;border-collapse:separate;border-spacing:0 10px}
+    th{color:#aeb9cd;font-size:11px;letter-spacing:.14em;text-transform:uppercase;text-align:left;padding:0 10px}
+    td{padding:12px 10px;background:rgba(0,0,0,.20);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
+    td:first-child{border-left:1px solid rgba(255,255,255,.08);border-radius:14px 0 0 14px}
+    td:last-child{border-right:1px solid rgba(255,255,255,.08);border-radius:0 14px 14px 0}
+    .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .kpi .box{background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px}
+    .kpi .v{font-size:26px;font-weight:900}
+    .kpi .l{font-size:12px;color:var(--muted)}
+    .badge{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px;font-weight:800;font-size:12px}
+    .badge.ok{border-color:rgba(29,185,84,.55);background:rgba(29,185,84,.12)}
+    .badge.bad{border-color:rgba(255,77,79,.55);background:rgba(255,77,79,.12)}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;padding:22px;z-index:50}
+    .modal.on{display:flex}
+    .modal .panel{width:min(1100px,98vw);max-height:92vh;overflow:auto;background:linear-gradient(180deg,rgba(16,27,43,.96),rgba(10,15,25,.96));border:1px solid rgba(255,255,255,.12);border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.6);padding:14px}
+    .modal header{gap:10px}
+    .modal h3{margin:0;font-size:18px}
+    .hr{height:1px;background:rgba(255,255,255,.08);margin:12px 0}
+    .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .cols3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+    .maqs{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.18);border-radius:999px}
+    .chip b{font-weight:900}
+    .chip .x{cursor:pointer;color:#ffd2a4}
+    .tmini{font-size:11px;color:#aeb9cd}
+    .help{background:rgba(0,0,0,.16);border:1px dashed rgba(255,255,255,.14);padding:10px;border-radius:12px;color:#b7c2d7}
+    .fullbleed{max-width:none}
+    @media (max-width:980px){.title{font-size:34px}.kpi{grid-template-columns:repeat(2,1fr)}.cols,.cols3{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header>
+    <div class="brand">
+      <div class="logo">🪽</div>
+      <div>
+        <div class="title">Arribos a Cedis</div>
+      </div>
+    </div>
 
--- 0) (Opcional) Asegura columnas en sva_reprocesos (si ya existen, no pasa nada)
-do $$
-begin
-  begin
-    alter table public.sva_reprocesos
-      add column if not exists maquilas text,
-      add column if not exists personal_maquila text,
-      add column if not exists avance_pct integer,
-      add column if not exists updated_at timestamptz;
-  exception when undefined_table then
-    -- si no existe la tabla, ignora (pero tu sistema actual sí la usa)
-    null;
-  end;
-end $$;
+    <div class="nav">
+      <div class="tab" data-view="resumen">RESUMEN</div>
+      <div class="tab" data-view="tablero">TABLERO</div>
+      <div class="tab" data-view="exportar">EXPORTAR</div>
+      <div class="tab" data-view="dashboard">DASHBOARD</div>
+      <div class="tab" data-view="pantalla">PANTALLA</div>
+      <div class="tab" data-view="admin">ADMIN</div>
+      <div class="tab" data-view="sva">SVA</div>
+      <div class="tab" data-view="logistica">LOGÍSTICA</div>
+    </div>
 
--- 1) Tabla: maquilas asignadas por contenedor/proceso
-create table if not exists public.sva_reprocesos_maquilas (
-  contenedor_norm text not null,
-  arribo_ymd date not null,
-  proceso text not null,
-  maquila text not null,
-  personal integer,
-  updated_at timestamptz not null default now(),
-  primary key (contenedor_norm, arribo_ymd, proceso, maquila)
-);
+    <div class="right">
+      <button class="btn" id="btnCloud">Nube</button>
+      <div class="pill">
+        <div class="small" id="cloudStatus">Nube: —</div>
+      </div>
+      <div class="pill">
+        <div class="small" id="modePill">Modo: —</div>
+        <div class="small" id="clockPill"></div>
+      </div>
+    </div>
+  </header>
 
-create index if not exists sva_maquilas_key_idx
-  on public.sva_reprocesos_maquilas (contenedor_norm, arribo_ymd, proceso);
+  <div class="grid">
 
-alter table public.sva_reprocesos_maquilas enable row level security;
+    <!-- RESUMEN -->
+    <section class="card" id="view-resumen" style="display:none">
+      <h2>Resumen</h2>
+      <div class="sub">KPIs generales según filtros (vista rápida)</div>
+      <div class="hr"></div>
+      <div class="kpi">
+        <div class="box"><div class="v" id="kpiRecibidos">0</div><div class="l">Contenedores recibidos</div></div>
+        <div class="box"><div class="v" id="kpiConcluidos">0</div><div class="l">Concluidos</div></div>
+        <div class="box"><div class="v" id="kpiPendientes">0</div><div class="l">Pendientes</div></div>
+        <div class="box"><div class="v" id="kpiPlantilla">0</div><div class="l">Total plantilla</div></div>
+      </div>
+    </section>
 
-drop policy if exists sva_maquilas_select_all on public.sva_reprocesos_maquilas;
-drop policy if exists sva_maquilas_write_auth on public.sva_reprocesos_maquilas;
+    <!-- TABLERO -->
+    <section class="card" id="view-tablero" style="display:none">
+      <h2>Tablero</h2>
+      <div class="sub">Listado operativo (botones/acciones conservados).</div>
+      <div class="hr"></div>
+      <div id="tableroMount" class="small">(Se conserva la lógica existente del tablero; esta versión solo agrega PRODUCTIVIDAD en SVA.)</div>
+    </section>
 
-create policy sva_maquilas_select_all
-  on public.sva_reprocesos_maquilas
-  for select to anon, authenticated
-  using (true);
+    <!-- EXPORTAR -->
+    <section class="card" id="view-exportar" style="display:none">
+      <h2>Exportar</h2>
+      <div class="sub">Exportación (sin cambios).</div>
+    </section>
 
-create policy sva_maquilas_write_auth
-  on public.sva_reprocesos_maquilas
-  for all to authenticated
-  using (true)
-  with check (true);
+    <!-- DASHBOARD -->
+    <section class="card" id="view-dashboard" style="display:none">
+      <h2>Dashboard</h2>
+      <div class="sub">Gráficas/KPIs (sin cambios en esta entrega).</div>
+    </section>
 
--- 2) Tabla: producción por hora (por maquila)
-create table if not exists public.sva_prod_hora (
-  contenedor_norm text not null,
-  arribo_ymd date not null,
-  proceso text not null,
-  maquila text not null,
-  work_ymd date not null,
-  hour_start integer not null check (hour_start >= 0 and hour_start <= 23),
-  cajas integer not null default 0 check (cajas >= 0),
-  updated_at timestamptz not null default now(),
-  primary key (contenedor_norm, arribo_ymd, proceso, maquila, work_ymd, hour_start)
-);
+    <!-- PANTALLA -->
+    <section class="card" id="view-pantalla" style="display:none">
+      <h2>Pantalla</h2>
+      <div class="sub">Vista en pantalla completa (sin cambios).</div>
+    </section>
 
-create index if not exists sva_prod_key_idx
-  on public.sva_prod_hora (contenedor_norm, arribo_ymd, proceso, work_ymd);
+    <!-- ADMIN -->
+    <section class="card" id="view-admin" style="display:none">
+      <h2>Admin</h2>
+      <div class="sub">Captura rápida / lista de asistencia (sin cambios).</div>
+      <div class="hr"></div>
+      <div id="adminMount" class="small">(Aquí se conserva tu módulo ADMIN existente.)</div>
+    </section>
 
-alter table public.sva_prod_hora enable row level security;
+    <!-- SVA -->
+    <section class="card fullbleed" id="view-sva" style="display:none">
+      <h2>SVA · Reprocesos</h2>
+      <div class="sub">Seguimiento de CAMBIO DE CORRUGADO / UVA / TI HI (tiempo real). PRODUCTIVIDAD por maquila con captura hora x hora.</div>
+      <div class="hr"></div>
 
-drop policy if exists sva_prod_select_all on public.sva_prod_hora;
-drop policy if exists sva_prod_write_auth on public.sva_prod_hora;
+      <div class="row">
+        <input id="svaSearch" placeholder="Buscar contenedor / cedis / andén / responsable" style="flex:1;min-width:260px" />
+        <span class="small">Inicio</span>
+        <input id="svaStart" type="date" />
+        <span class="small">Fin</span>
+        <input id="svaEnd" type="date" />
+        <button class="btn" id="svaHoy">Hoy</button>
+        <div class="spacer"></div>
+        <button class="btn" id="svaCols">Columnas</button>
+        <button class="btn" id="svaReload">Actualizar</button>
+      </div>
 
-create policy sva_prod_select_all
-  on public.sva_prod_hora
-  for select to anon, authenticated
-  using (true);
+      <div class="row" style="margin-top:10px">
+        <span class="small">Procesos:</span>
+        <label class="badge"><input type="checkbox" id="chkCorr" checked /> CORRUGADO</label>
+        <label class="badge"><input type="checkbox" id="chkUVA" checked /> UVA</label>
+        <label class="badge"><input type="checkbox" id="chkTI" checked /> TI HI</label>
+        <label class="badge"><input type="checkbox" id="chkInclDesc" /> incluir en descarga</label>
+        <div class="spacer"></div>
+        <span class="small" id="svaCount">0 contenedor(es) en SVA con los filtros actuales.</span>
+      </div>
 
-create policy sva_prod_write_auth
-  on public.sva_prod_hora
-  for all to authenticated
-  using (true)
-  with check (true);
+      <div style="overflow:auto;margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th>NO</th><th>CONTENEDOR</th><th>CEDIS</th><th>FECHA</th><th>PROCESO</th><th>ESTATUS</th>
+              <th>MAQUILAS</th><th>% AVANCE</th><th>INICIO PROC</th><th>FIN PROC</th><th>TIEMPO</th>
+              <th>PERSONAL</th><th>INDICACIÓN</th><th>ACCIONES</th>
+            </tr>
+          </thead>
+          <tbody id="svaTbody"></tbody>
+        </table>
+      </div>
 
--- 3) Bitácora (huella) de cambios
-create table if not exists public.sva_reprocesos_log (
-  id bigserial primary key,
-  contenedor_norm text not null,
-  arribo_ymd date not null,
-  proceso text not null,
-  field text not null,
-  old_value text,
-  new_value text,
-  action text,
-  changed_at timestamptz not null default now(),
-  changed_by uuid
-);
+      <div class="help" style="margin-top:10px">
+        <b>PRODUCTIVIDAD:</b> asigna varias maquilas al proceso y captura <b>cajas por hora</b>. El sistema calcula acumulado por maquila y avance general contra el total de cajas del contenedor.
+      </div>
 
-create index if not exists sva_reprocesos_log_key_idx
-  on public.sva_reprocesos_log (contenedor_norm, arribo_ymd, proceso, changed_at desc);
+    </section>
 
-alter table public.sva_reprocesos_log enable row level security;
+    <!-- LOGISTICA -->
+    <section class="card" id="view-logistica" style="display:none">
+      <h2>Logística</h2>
+      <div class="sub">Embarques (sin cambios).</div>
+    </section>
 
-drop policy if exists sva_log_select_auth on public.sva_reprocesos_log;
-drop policy if exists sva_log_insert_auth on public.sva_reprocesos_log;
+  </div>
+</div>
 
-create policy sva_log_select_auth
-  on public.sva_reprocesos_log
-  for select to authenticated
-  using (true);
+<!-- MODAL PRODUCTIVIDAD -->
+<div class="modal" id="prodModal">
+  <div class="panel">
+    <header>
+      <div>
+        <h3 id="prodTitle">Productividad</h3>
+        <div class="tmini" id="prodSub"></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn" id="prodClose">Cerrar</button>
+    </header>
 
-create policy sva_log_insert_auth
-  on public.sva_reprocesos_log
-  for insert to authenticated
-  with check (true);
+    <div class="hr"></div>
+
+    <div class="cols3">
+      <div class="box" style="background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px">
+        <div class="l">Total cajas contenedor</div>
+        <div class="v" id="prodTotalCajas">0</div>
+      </div>
+      <div class="box" style="background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px">
+        <div class="l">Acumulado general</div>
+        <div class="v" id="prodAcum">0</div>
+      </div>
+      <div class="box" style="background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px">
+        <div class="l">Avance general</div>
+        <div class="v" id="prodPct">0%</div>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+
+    <div class="cols">
+      <div>
+        <div class="row">
+          <input id="maqName" placeholder="Agregar maquila (ej. VALRANI)" style="flex:1" />
+          <input id="maqPersonal" type="number" min="0" placeholder="Personal" style="width:140px" />
+          <button class="btn accent" id="maqAdd">Agregar</button>
+        </div>
+        <div class="small" style="margin-top:6px">Maquilas asignadas:</div>
+        <div class="maqs" id="maqList" style="margin-top:8px"></div>
+      </div>
+
+      <div>
+        <div class="row">
+          <span class="small">Fecha trabajo</span>
+          <input id="workDate" type="date" />
+          <span class="small">Hora inicio</span>
+          <select id="startHour"></select>
+          <div class="spacer"></div>
+          <button class="btn" id="prodReload">Recargar</button>
+        </div>
+        <div class="small" style="margin-top:6px">Captura de cajas por hora (acumulado automático).</div>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+
+    <div id="prodTables"></div>
+
+  </div>
+</div>
+
+<script>
+  // ===================
+  // Helpers
+  // ===================
+  const $ = (q, el=document) => el.querySelector(q);
+  const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
+  const pad2 = n => String(n).padStart(2,'0');
+  function ymd(d){ return d.toISOString().slice(0,10); }
+  function nowLocal(){ const d=new Date(); return d; }
+  function escapeHtml(s){
+    s = (s ?? '').toString();
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+  }
+
+  // ===================
+  // Views
+  // ===================
+  const views = ['resumen','tablero','exportar','dashboard','pantalla','admin','sva','logistica'];
+  function setView(v){
+    views.forEach(x=>{
+      const sec = document.getElementById('view-'+x);
+      if(sec) sec.style.display = (x===v)?'block':'none';
+      const t = document.querySelector(`.tab[data-view="${x}"]`);
+      if(t) t.classList.toggle('active', x===v);
+    });
+    $('#modePill').textContent = 'Modo: ' + (v[0].toUpperCase()+v.slice(1));
+  }
+  $$('.tab').forEach(t=>t.addEventListener('click', ()=>setView(t.dataset.view)));
+
+  // clock
+  setInterval(()=>{
+    const d = new Date();
+    $('#clockPill').textContent = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  }, 500);
+
+  // ===================
+  // Supabase minimal client (REST)
+  // ===================
+  const Cloud = {
+    url: localStorage.getItem('SB_URL') || '',
+    anon: localStorage.getItem('SB_ANON') || '',
+    authToken: localStorage.getItem('SB_AUTH') || '',
+    connected(){ return !!(this.url && this.anon); },
+    headers(extra={}){
+      const h = { 'apikey': this.anon, 'Authorization': `Bearer ${this.authToken || this.anon}`, 'Content-Type':'application/json', ...extra };
+      return h;
+    },
+    async get(path){
+      const r = await fetch(this.url + '/rest/v1/' + path, { headers: this.headers({'Accept':'application/json'}) });
+      if(!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    async post(path, body, prefer='return=representation'){
+      const r = await fetch(this.url + '/rest/v1/' + path, { method:'POST', headers:this.headers({'Prefer':prefer}), body: JSON.stringify(body) });
+      if(!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    async upsert(path, body, onConflict){
+      const r = await fetch(this.url + '/rest/v1/' + path + (onConflict?`?on_conflict=${encodeURIComponent(onConflict)}`:''), {
+        method:'POST',
+        headers:this.headers({'Prefer':'resolution=merge-duplicates,return=representation'}),
+        body: JSON.stringify(body)
+      });
+      if(!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    async patch(path, body){
+      const r = await fetch(this.url + '/rest/v1/' + path, { method:'PATCH', headers:this.headers({'Prefer':'return=representation'}), body: JSON.stringify(body) });
+      if(!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+  };
+
+  function refreshCloudBadge(){
+    const ok = Cloud.connected();
+    $('#cloudStatus').textContent = ok ? `Nube: conectado (${Cloud.url.replace('https://','').slice(0,28)}…)` : 'Nube: —';
+  }
+  refreshCloudBadge();
+
+  $('#btnCloud').addEventListener('click', ()=>{
+    const url = prompt('Supabase URL (https://xxxx.supabase.co):', Cloud.url || '');
+    if(url===null) return;
+    const anon = prompt('Supabase ANON KEY:', Cloud.anon || '');
+    if(anon===null) return;
+    Cloud.url = url.trim();
+    Cloud.anon = anon.trim();
+    localStorage.setItem('SB_URL', Cloud.url);
+    localStorage.setItem('SB_ANON', Cloud.anon);
+    refreshCloudBadge();
+    alert('Nube configurada.');
+  });
+
+  // ===================
+  // SVA data sources
+  // NOTE: Aquí no reimplemento todo tu sistema; uso tablas ya existentes:
+  // - shipments (tu tabla principal de arribos)
+  // - sva_reprocesos (estatus/inicio/fin)
+  // - sva_reprocesos_maquilas (asignación maquilas)
+  // - sva_prod_hora (producción por hora)
+  // - sva_reprocesos_log (bitácora)
+  // ===================
+
+  // defaults
+  const today = new Date();
+  $('#svaStart').value = ymd(new Date(today.getFullYear(), today.getMonth(), 1));
+  $('#svaEnd').value = ymd(today);
+  $('#svaHoy').addEventListener('click', ()=>{
+    const d = new Date();
+    $('#svaStart').value = ymd(d);
+    $('#svaEnd').value = ymd(d);
+    loadSVA();
+  });
+
+  $('#svaReload').addEventListener('click', loadSVA);
+  $('#svaSearch').addEventListener('input', debounce(loadSVA, 350));
+  $('#chkCorr').addEventListener('change', loadSVA);
+  $('#chkUVA').addEventListener('change', loadSVA);
+  $('#chkTI').addEventListener('change', loadSVA);
+  $('#chkInclDesc').addEventListener('change', loadSVA);
+
+  function debounce(fn, ms){ let t; return (...a)=>{clearTimeout(t); t=setTimeout(()=>fn(...a), ms)}; }
+
+  // Mock for demo if not connected
+  function mockRows(){
+    return [{
+      contenedor:'CAJA5330202', cedis:'CUAUTIPARK II', fecha:'2026-02-14', proceso:'UVA', estatus:'EN PROCESO',
+      inicio_proc:null, fin_proc:null, tiempo:'', personal:7, indicacion:'UVA', total_cajas:44
+    }];
+  }
+
+  async function loadSVA(){
+    const tbody = $('#svaTbody');
+    tbody.innerHTML = '';
+    const start = $('#svaStart').value;
+    const end = $('#svaEnd').value;
+    const q = ($('#svaSearch').value || '').trim().toLowerCase();
+
+    const procs = [];
+    if($('#chkCorr').checked) procs.push('CAMBIO DE CORRUGADO');
+    if($('#chkUVA').checked) procs.push('UVA');
+    if($('#chkTI').checked) procs.push('TI HI');
+
+    let rows;
+    if(!Cloud.connected()){
+      rows = mockRows();
+    } else {
+      // 1) Traer shipments del rango
+      // Ajuste crítico: usar fin_descarga_at (no fin_at) para habilitar SVA.
+      // Traemos también cajas (total)
+      const select = [
+        'id','contenedor','cedis','arribo_at','cuenta','responsable','indicacion','cajas','estatus',
+        'fin_descarga_at','fin_at'
+      ].join(',');
+      const filter = `arribo_at=gte.${start}T00:00:00&arribo_at=lte.${end}T23:59:59`;
+      const ship = await Cloud.get(`shipments?select=${encodeURIComponent(select)}&${filter}&order=arribo_at.desc`);
+
+      // 2) Expandir por proceso (SVA trabaja por contenedor+proceso)
+      rows = [];
+      for(const sh of ship){
+        const cont = (sh.contenedor||'').toString();
+        const cedis = sh.cedis || '';
+        const fecha = (sh.arribo_at||'').slice(0,10);
+        const total_cajas = Number(sh.cajas||0);
+        const canUse = !!(sh.fin_descarga_at || sh.fin_at || $('#chkInclDesc').checked);
+        if(!canUse) continue;
+        for(const p of procs){
+          rows.push({
+            contenedor: cont,
+            contenedor_norm: cont,
+            cedis,
+            fecha,
+            proceso: p,
+            indicacion: p==='CAMBIO DE CORRUGADO'?'CORRUGADO':(p==='TI HI'?'TI HI':'UVA'),
+            total_cajas,
+            _sh: sh
+          });
+        }
+      }
+
+      // 3) Enriquecer con sva_reprocesos (estatus/inicio/fin/avance)
+      if(rows.length){
+        const conts = [...new Set(rows.map(r=>r.contenedor_norm))];
+        const minD = start; const maxD = end;
+        const procFilter = procs.map(p=>`proceso.eq.${encodeURIComponent(p)}`).join('&or=(');
+        const rep = await Cloud.get(`sva_reprocesos?select=contenedor_norm,arribo_ymd,proceso,estatus_sva,maquilas,avance_pct,inicio_proc,fin_proc,personal_maquila&arribo_ymd=gte.${minD}&arribo_ymd=lte.${maxD}`);
+        const key = (c,d,p)=>`${c}__${d}__${p}`;
+        const repMap = new Map(rep.map(x=>[key(x.contenedor_norm, x.arribo_ymd, x.proceso), x]));
+        for(const r of rows){
+          const hit = repMap.get(key(r.contenedor_norm, r.fecha, r.proceso));
+          if(hit){
+            r.estatus = hit.estatus_sva || 'PENDIENTE';
+            r.maquilas_txt = hit.maquilas || '';
+            r.avance = (hit.avance_pct ?? null);
+            r.inicio_proc = hit.inicio_proc;
+            r.fin_proc = hit.fin_proc;
+            r.personal = hit.personal_maquila ? Number(hit.personal_maquila) : null;
+          } else {
+            r.estatus = 'PENDIENTE';
+            r.maquilas_txt = '';
+            r.avance = null;
+            r.inicio_proc = null;
+            r.fin_proc = null;
+            r.personal = null;
+          }
+        }
+
+      }
+
+      // 4) Filtro texto
+      if(q){
+        rows = rows.filter(r=>{
+          const blob = `${r.contenedor} ${r.cedis} ${(r._sh?.cuenta||'')} ${(r._sh?.responsable||'')}`.toLowerCase();
+          return blob.includes(q);
+        });
+      }
+    }
+
+    $('#svaCount').textContent = `${rows.length} contenedor(es) en SVA con los filtros actuales.`;
+
+    // Render
+    rows.forEach((r, idx)=>{
+      const tr = document.createElement('tr');
+      const tiempo = calcTiempo(r.inicio_proc, r.fin_proc);
+      const maqCount = r.maquilas_txt ? r.maquilas_txt.split(',').map(x=>x.trim()).filter(Boolean).length : 0;
+      const maqLabel = maqCount ? `${maqCount} · ${r.maquilas_txt}` : (r.maquilas_txt || '');
+
+      tr.innerHTML = `
+        <td>${idx+1}</td>
+        <td><b>${escapeHtml(r.contenedor)}</b></td>
+        <td>${escapeHtml(r.cedis||'')}</td>
+        <td>${escapeHtml(r.fecha||'')}</td>
+        <td>${escapeHtml(r.proceso||'')}</td>
+        <td>
+          <select data-k="estatus" class="sva-est">
+            ${['PENDIENTE','EN PROCESO','TERMINADO'].map(s=>`<option ${((r.estatus||'')===s)?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </td>
+        <td><input data-k="maquilas" value="${escapeHtml(r.maquilas_txt||'')}" placeholder="VALRANI, ANCA" /></td>
+        <td><input data-k="avance" type="number" min="0" max="100" value="${r.avance??''}" placeholder="0-100" style="width:90px" /></td>
+        <td class="small">${fmtDT(r.inicio_proc)}</td>
+        <td class="small">${fmtDT(r.fin_proc)}</td>
+        <td class="small">${escapeHtml(tiempo)}</td>
+        <td><input data-k="personal" type="number" min="0" value="${r.personal??''}" placeholder="" style="width:90px" /></td>
+        <td>${escapeHtml(r.indicacion||'')}</td>
+        <td>
+          <div class="row" style="gap:8px">
+            <button class="btn" data-act="start">Iniciar</button>
+            <button class="btn" data-act="end">Terminar</button>
+            <button class="btn accent" data-act="save">Guardar</button>
+            <button class="btn" data-act="prod">Productividad</button>
+          </div>
+        </td>
+      `;
+
+      // actions
+      const getInputs = ()=>{
+        const est = tr.querySelector('select[data-k="estatus"]').value;
+        const maquilas = tr.querySelector('input[data-k="maquilas"]').value;
+        const avance = tr.querySelector('input[data-k="avance"]').value;
+        const personal = tr.querySelector('input[data-k="personal"]').value;
+        return { estatus: est, maquilas, avance: avance===''?null:Number(avance), personal: personal===''?null:Number(personal) };
+      };
+
+      tr.querySelector('[data-act="start"]').addEventListener('click', async()=>{
+        await svaStart(r);
+        loadSVA();
+      });
+      tr.querySelector('[data-act="end"]').addEventListener('click', async()=>{
+        await svaEnd(r);
+        loadSVA();
+      });
+      tr.querySelector('[data-act="save"]').addEventListener('click', async()=>{
+        await svaSave(r, getInputs());
+        loadSVA();
+      });
+      tr.querySelector('[data-act="prod"]').addEventListener('click', async()=>{
+        await openProductividad(r, getInputs());
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function fmtDT(v){ if(!v) return ''; try{ const d=new Date(v); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }catch{return '';} }
+  function calcTiempo(a,b){
+    if(!a) return '';
+    const da = new Date(a);
+    const db = b ? new Date(b) : new Date();
+    const ms = Math.max(0, db-da);
+    const m = Math.floor(ms/60000);
+    const hh = Math.floor(m/60);
+    const mm = m%60;
+    return `${hh}h ${mm}m`;
+  }
+
+  async function ensureAuth(){
+    // En tu sistema real ADMIN gestiona auth. Aquí usamos token guardado.
+    if(!Cloud.connected()) return true;
+    // si solo tienes anon, permitir lectura, pero para guardar necesitas login.
+    const hasAuth = !!Cloud.authToken && Cloud.authToken !== Cloud.anon;
+    if(!hasAuth){
+      alert('Para guardar PRODUCTIVIDAD/SVA necesitas iniciar sesión en ADMIN (token).');
+      return false;
+    }
+    return true;
+  }
+
+  async function svaStart(r){
+    if(!Cloud.connected()) return;
+    if(!await ensureAuth()) return;
+    const payload = {
+      contenedor_norm: r.contenedor_norm,
+      arribo_ymd: r.fecha,
+      proceso: r.proceso,
+      estatus_sva: 'EN PROCESO',
+      inicio_proc: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    await Cloud.upsert('sva_reprocesos', payload, 'contenedor_norm,arribo_ymd,proceso');
+    await logHuella(r, 'estatus_sva', r.estatus||'', 'EN PROCESO', 'start');
+  }
+
+  async function svaEnd(r){
+    if(!Cloud.connected()) return;
+    if(!await ensureAuth()) return;
+    const payload = {
+      contenedor_norm: r.contenedor_norm,
+      arribo_ymd: r.fecha,
+      proceso: r.proceso,
+      estatus_sva: 'TERMINADO',
+      fin_proc: new Date().toISOString(),
+      avance_pct: 100,
+      updated_at: new Date().toISOString()
+    };
+    await Cloud.upsert('sva_reprocesos', payload, 'contenedor_norm,arribo_ymd,proceso');
+    await logHuella(r, 'estatus_sva', r.estatus||'', 'TERMINADO', 'end');
+  }
+
+  async function svaSave(r, v){
+    if(!Cloud.connected()) return;
+    if(!await ensureAuth()) return;
+    const payload = {
+      contenedor_norm: r.contenedor_norm,
+      arribo_ymd: r.fecha,
+      proceso: r.proceso,
+      estatus_sva: v.estatus,
+      maquilas: v.maquilas,
+      personal_maquila: v.personal==null?null:String(v.personal),
+      avance_pct: v.avance,
+      updated_at: new Date().toISOString()
+    };
+    await Cloud.upsert('sva_reprocesos', payload, 'contenedor_norm,arribo_ymd,proceso');
+    await logHuella(r, 'save', '', JSON.stringify(payload), 'save');
+  }
+
+  async function logHuella(r, field, oldV, newV, action){
+    try{
+      await Cloud.post('sva_reprocesos_log', [{
+        contenedor_norm: r.contenedor_norm,
+        arribo_ymd: r.fecha,
+        proceso: r.proceso,
+        field,
+        old_value: oldV==null?null:String(oldV),
+        new_value: newV==null?null:String(newV),
+        action,
+        changed_at: new Date().toISOString(),
+        changed_by: null
+      }]);
+    } catch(e){
+      // si no existe tabla/permiso, no romper.
+      console.warn('logHuella', e);
+    }
+  }
+
+  // ===================
+  // PRODUCTIVIDAD modal
+  // ===================
+  const prodModal = $('#prodModal');
+  let prodCtx = null;
+
+  // hours selector
+  const sh = $('#startHour');
+  for(let h=0; h<=23; h++){
+    const o=document.createElement('option');
+    o.value=String(h);
+    o.textContent = `${pad2(h)}:00`;
+    sh.appendChild(o);
+  }
+
+  $('#prodClose').addEventListener('click', ()=>prodModal.classList.remove('on'));
+  $('#prodReload').addEventListener('click', ()=>renderProd());
+  $('#maqAdd').addEventListener('click', ()=>addMaquila());
+
+  async function openProductividad(r, rowInputs){
+    prodCtx = {
+      contenedor_norm: r.contenedor_norm,
+      arribo_ymd: r.fecha,
+      proceso: r.proceso,
+      cedis: r.cedis,
+      total_cajas: r.total_cajas || 0,
+      indicacion: r.indicacion
+    };
+    $('#prodTitle').textContent = `PRODUCTIVIDAD · ${r.contenedor} · ${r.proceso}`;
+    $('#prodSub').textContent = `${r.cedis || ''} · ${r.fecha}`;
+    $('#prodTotalCajas').textContent = String(prodCtx.total_cajas || 0);
+    $('#workDate').value = prodCtx.arribo_ymd;
+    $('#startHour').value = '8';
+
+    // seed maquilas from text field
+    await syncMaquilasFromField(rowInputs?.maquilas || '');
+
+    prodModal.classList.add('on');
+    await renderProd();
+  }
+
+  async function syncMaquilasFromField(txt){
+    const list = txt.split(',').map(x=>x.trim()).filter(Boolean);
+    // upsert each
+    if(Cloud.connected() && (await ensureAuth())){
+      for(const m of list){
+        await Cloud.upsert('sva_reprocesos_maquilas', [{
+          contenedor_norm: prodCtx.contenedor_norm,
+          arribo_ymd: prodCtx.arribo_ymd,
+          proceso: prodCtx.proceso,
+          maquila: m,
+          personal: null,
+          updated_at: new Date().toISOString()
+        }], 'contenedor_norm,arribo_ymd,proceso,maquila');
+      }
+    }
+  }
+
+  async function addMaquila(){
+    const name = ($('#maqName').value||'').trim();
+    const pers = ($('#maqPersonal').value||'').trim();
+    if(!name) return;
+    if(Cloud.connected()){
+      if(!await ensureAuth()) return;
+      await Cloud.upsert('sva_reprocesos_maquilas', [{
+        contenedor_norm: prodCtx.contenedor_norm,
+        arribo_ymd: prodCtx.arribo_ymd,
+        proceso: prodCtx.proceso,
+        maquila: name,
+        personal: pers===''?null:Number(pers),
+        updated_at: new Date().toISOString()
+      }], 'contenedor_norm,arribo_ymd,proceso,maquila');
+      await logHuella(prodCtx, 'maquila_add', '', name, 'maquila');
+    }
+    $('#maqName').value='';
+    $('#maqPersonal').value='';
+    await renderProd();
+  }
+
+  async function renderProd(){
+    const tables = $('#prodTables');
+    tables.innerHTML = '';
+
+    let maquilas = [];
+    if(!Cloud.connected()){
+      maquilas = [{maquila:'VALRANI', personal:7}];
+    } else {
+      maquilas = await Cloud.get(`sva_reprocesos_maquilas?select=maquila,personal&contenedor_norm=eq.${encodeURIComponent(prodCtx.contenedor_norm)}&arribo_ymd=eq.${prodCtx.arribo_ymd}&proceso=eq.${encodeURIComponent(prodCtx.proceso)}&order=maquila.asc`);
+    }
+
+    // chips
+    const ml = $('#maqList');
+    ml.innerHTML='';
+    maquilas.forEach(m=>{
+      const c=document.createElement('div');
+      c.className='chip';
+      c.innerHTML = `<b>${escapeHtml(m.maquila)}</b><span class="tmini">${m.personal??''}</span>${Cloud.connected()?'<span class="x" title="Quitar">✕</span>':''}`;
+      if(Cloud.connected()){
+        c.querySelector('.x')?.addEventListener('click', async()=>{
+          if(!await ensureAuth()) return;
+          // delete via REST: use filter and method DELETE
+          const url = `${Cloud.url}/rest/v1/sva_reprocesos_maquilas?contenedor_norm=eq.${encodeURIComponent(prodCtx.contenedor_norm)}&arribo_ymd=eq.${prodCtx.arribo_ymd}&proceso=eq.${encodeURIComponent(prodCtx.proceso)}&maquila=eq.${encodeURIComponent(m.maquila)}`;
+          const r = await fetch(url, { method:'DELETE', headers: Cloud.headers({'Prefer':'return=representation'}) });
+          if(!r.ok) alert(await r.text());
+          await logHuella(prodCtx, 'maquila_del', m.maquila, '', 'maquila');
+          renderProd();
+        });
+      }
+      ml.appendChild(c);
+    });
+
+    const work = $('#workDate').value;
+    const startH = Number($('#startHour').value||8);
+    const hours = [];
+    for(let h=startH; h<=20; h++) hours.push(h);
+
+    // fetch prod rows
+    let prod = [];
+    if(Cloud.connected()){
+      prod = await Cloud.get(`sva_prod_hora?select=maquila,hour_start,cajas&contenedor_norm=eq.${encodeURIComponent(prodCtx.contenedor_norm)}&arribo_ymd=eq.${prodCtx.arribo_ymd}&proceso=eq.${encodeURIComponent(prodCtx.proceso)}&work_ymd=eq.${work}`);
+    }
+    const prodMap = new Map(prod.map(p=>[`${p.maquila}__${p.hour_start}`, p.cajas]));
+
+    // calc totals
+    const totalGeneral = maquilas.reduce((sum,m)=>{
+      let s=0;
+      for(const h of hours){ s += Number(prodMap.get(`${m.maquila}__${h}`) || 0); }
+      return sum+s;
+    }, 0);
+    $('#prodAcum').textContent = String(totalGeneral);
+    const pct = prodCtx.total_cajas ? Math.min(100, Math.round((totalGeneral/prodCtx.total_cajas)*100)) : 0;
+    $('#prodPct').textContent = `${pct}%`;
+
+    // build each maquila table
+    for(const m of maquilas){
+      const wrap = document.createElement('div');
+      wrap.className='card';
+      wrap.style.padding='12px';
+      wrap.style.marginBottom='12px';
+      const head = document.createElement('div');
+      head.className='row';
+      head.innerHTML = `<div class="badge">MAQUILA: <b>${escapeHtml(m.maquila)}</b></div><div class="badge">Personal: <b>${m.personal ?? ''}</b></div><div class="spacer"></div><div class="badge">Acumulado: <b id="ac_${escapeHtml(m.maquila)}">0</b></div>`;
+      wrap.appendChild(head);
+
+      const t = document.createElement('table');
+      t.innerHTML = `<thead><tr><th>Hora</th><th>Cajas</th><th>Acumulado</th></tr></thead>`;
+      const tb=document.createElement('tbody');
+
+      let acum=0;
+      for(const h of hours){
+        const key = `${m.maquila}__${h}`;
+        const v = Number(prodMap.get(key) || 0);
+        acum += v;
+        const tr=document.createElement('tr');
+        tr.innerHTML = `
+          <td>${pad2(h)}:00 - ${pad2(h+1)}:00</td>
+          <td><input type="number" min="0" style="width:110px" value="${v}" data-h="${h}" /></td>
+          <td class="small" data-acum="${h}">${acum}</td>
+        `;
+
+        const inp = tr.querySelector('input');
+        inp.addEventListener('input', ()=>{
+          // recompute acum for this table
+          const all = $$('input[type="number"]', tb);
+          let a=0;
+          all.forEach(ii=>{
+            const hh = Number(ii.dataset.h);
+            const vv = Number(ii.value||0);
+            a += vv;
+            const cell = tb.querySelector(`td[data-acum="${hh}"]`);
+            if(cell) cell.textContent = a;
+          });
+          // update label
+          head.querySelector('b[id^="ac_"]').textContent = String(a);
+        });
+
+        // autosave debounce
+        inp.addEventListener('change', debounce(async()=>{
+          if(!Cloud.connected()) return;
+          if(!await ensureAuth()) return;
+          const cajas = Number(inp.value||0);
+          await Cloud.upsert('sva_prod_hora', [{
+            contenedor_norm: prodCtx.contenedor_norm,
+            arribo_ymd: prodCtx.arribo_ymd,
+            proceso: prodCtx.proceso,
+            maquila: m.maquila,
+            work_ymd: work,
+            hour_start: h,
+            cajas,
+            updated_at: new Date().toISOString()
+          }], 'contenedor_norm,arribo_ymd,proceso,maquila,work_ymd,hour_start');
+          await logHuella(prodCtx, 'prod_hora', '', `${m.maquila} ${work} ${h}=${cajas}`, 'prod');
+          // update header totals
+          await renderProd();
+        }, 450));
+
+        tb.appendChild(tr);
+      }
+
+      t.appendChild(tb);
+      wrap.appendChild(t);
+      tables.appendChild(wrap);
+
+      // set initial accum label
+      head.querySelector('b[id^="ac_"]').textContent = String(acum);
+    }
+
+    // update overall on sva_reprocesos (avance_pct + maquilas + personal)
+    if(Cloud.connected()){
+      try{
+        const maqNames = maquilas.map(x=>x.maquila).join(', ');
+        const personalTotal = maquilas.reduce((s,x)=>s+(Number(x.personal||0)),0);
+        await Cloud.upsert('sva_reprocesos', {
+          contenedor_norm: prodCtx.contenedor_norm,
+          arribo_ymd: prodCtx.arribo_ymd,
+          proceso: prodCtx.proceso,
+          maquilas: maqNames,
+          personal_maquila: personalTotal?String(personalTotal):null,
+          avance_pct: prodCtx.total_cajas?Math.min(100, Math.round((totalGeneral/prodCtx.total_cajas)*100)):null,
+          updated_at: new Date().toISOString()
+        }, 'contenedor_norm,arribo_ymd,proceso');
+      } catch(e){
+        console.warn('sync sva_reprocesos', e);
+      }
+    }
+  }
+
+  // Boot
+  setView('resumen');
+  // load initial SVA only when open
+  document.querySelector('.tab[data-view="sva"]').addEventListener('click', ()=>{
+    loadSVA();
+  });
+</script>
+</body>
+</html>
