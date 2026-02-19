@@ -2197,9 +2197,14 @@ async function fetchRows(range){
     const nextFolio = (maxq.data && maxq.data[0] && maxq.data[0].folio) ? (Number(maxq.data[0].folio)+1) : 1;
 
     const now = new Date();
+    const cuenta = (payload.cuenta || '').trim();
+    if(!cuenta) throw new Error('CUENTA es obligatoria');
+    const playosRaw = (payload.playos_utilizados == null ? '' : String(payload.playos_utilizados)).trim();
+    const playosN = playosRaw==='' ? null : Number(playosRaw);
+
     const row = {
       cedis: payload.cedis,
-      cuenta: payload.cuenta || null,
+      cuenta: cuenta,
       folio: nextFolio,
       contenedor: payload.contenedor,
       estatus: 'REPORTADO_PATIO',
@@ -2209,9 +2214,11 @@ async function fetchRows(range){
       cajas: payload.cajas ? Number(payload.cajas) : null,
       tarimas: payload.tarimas || null,
       pallets: payload.pallets ? Number(payload.pallets) : null,
-      playos_utilizados: payload.playos_utilizados ? Number(payload.playos_utilizados) : null,
+      playos_utilizados: playosN,
       arribo_at: now.toISOString(),
     };
+    if(!Number.isFinite(playosN)) delete row.playos_utilizados;
+
 
     let ins = await s.from('shipments').insert([row]).select('*').single();
     if(ins.error){
@@ -3016,6 +3023,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     el('e_cancel').addEventListener('click', closeDetail);
     el('e_save').addEventListener('click', async ()=>{
       const note = (el('e_note').value || '').trim() || 'Edición';
+      const cuenta = (el('e_cuenta').value || '').trim();
+      if(!cuenta){ alert('CUENTA es obligatoria'); return; }
       const cajasRaw = (el('e_cajas').value || '').trim();
       const cajas = cajasRaw ? Number(cajasRaw) : null;
       const palletsRaw = (el('e_pallets').value || '').trim();
@@ -3024,7 +3033,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       const playosN = playosRaw ? Number(playosRaw) : null;
       const patch = {
         cedis: (el('e_cedis').value || '').trim(),
-        cuenta: (el('e_cuenta').value || '').trim(),
+        cuenta: cuenta,
         contenedor: (el('e_contenedor').value || '').trim(),
         anden: (el('e_anden').value || '').trim(),
         responsable: (el('e_responsable').value || '').trim(),
@@ -4758,12 +4767,14 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
   el('btnAdd').addEventListener('click', async ()=>{
     const cedis = (el('f_cedis').value || '').trim();
     const cont = (el('f_contenedor').value || '').trim();
+    const cuenta = (el('f_cuenta').value || '').trim();
     if(!cedis || !cont){ alert('CEDIS y Contenedor/Unidad son obligatorios'); return; }
+    if(!cuenta){ alert('CUENTA es obligatoria'); return; }
 
     try{
       await addRowCloud({
         cedis,
-        cuenta: (el('f_cuenta').value||'').trim(),
+        cuenta,
         contenedor: cont,
         anden: (el('f_anden').value||'').trim(),
         responsable: (el('f_responsable').value||'').trim(),
@@ -4844,10 +4855,14 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
 
       if(t && t.id === 'd_del'){
         if(!authUser){ alert('Inicia sesión para eliminar.'); return; }
-        const ok = confirm('¿Eliminar este registro? (se guarda huella)');
-        if(!ok) return;
+        const row = (STATE.rows||[]).find(r=>r.id===id);
+        const label = row ? (row.folio + ' · ' + row.contenedor) : id;
+        const reason = prompt(`Motivo de eliminación (${label}):`, 'Duplicado');
+        if(reason===null) return;
+        const rr = (reason||'').trim();
+        if(!rr){ alert('Motivo requerido.'); return; }
         try{
-          await softDelete(id);
+          await softDeleteCloud(id, rr);
           closeDetail();
         }catch(e){
           alert('Error al eliminar: ' + (e?.message || e));
