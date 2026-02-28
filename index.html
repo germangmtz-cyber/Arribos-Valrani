@@ -1145,9 +1145,11 @@ MARIA LOPEZ
     {order:'1.1', code:'ESPERA_CONFRONTA', label:'EN ESPERA DE CONFRONTA'},
     {order:'1.1', code:'FUMIG_PEND', label:'FUMIGACIÓN - PENDIENTE'},
     {order:'1.1.1', code:'FUMIG_CUARENTENA', label:'FUMIGACIÓN - CUARENTENA'},
-    {order:'1.1.1.1', code:'RECHAZADO', label:'RECHAZADO'},
-    {order:'1.1.1.2', code:'TRASPALEO_CURSO', label:'TRASPALEO EN CURSO'},
-    {order:'1.1.1.3', code:'TRASPALEO_CONCL', label:'TRASPALEO CONCLUIDO'},
+    {order:'1.1.1.1', code:'FUMIGADO_RECHAZADO', label:'FUMIGADO - RECHAZADO'},
+    {order:'1.1.1.2', code:'FUMIGADO_POR_DESCARGAR', label:'FUMIGADO - POR DESCARGAR'},
+    {order:'1.1.1.3', code:'TRASPALEO_CURSO', label:'TRASPALEO EN CURSO'},
+    {order:'1.1.1.4', code:'TRASPALEO_CONCL', label:'TRASPALEO CONCLUIDO'},
+    {order:'1.1.1.5', code:'RECHAZADO', label:'RECHAZADO'},
     {order:'2', code:'CORTINA_ASIGNADA', label:'CORTINA ASIGNADA'},
     {order:'3', code:'ESPERA_DESCARGA', label:'EN ESPERA DE DESCARGA'},
     {order:'4', code:'DESCARGA_PROCESO', label:'DESCARGA - EN PROCESO'},
@@ -1167,10 +1169,15 @@ MARIA LOPEZ
     HOLD_NO_DESCARGAR: ['FUMIG_PEND','ESPERA_CONFRONTA','ESPERA_CORTINA','RECHAZADO'],
     ESPERA_CONFRONTA: ['ESPERA_CORTINA','CORTINA_ASIGNADA','RECHAZADO'],
     FUMIG_PEND: ['FUMIG_CUARENTENA','ESPERA_CORTINA'],
-    FUMIG_CUARENTENA: ['RECHAZADO','TRASPALEO_CURSO'],
+
+    // Después de CUARENTENA: 3 opciones (según operación)
+    FUMIG_CUARENTENA: ['FUMIGADO_RECHAZADO','FUMIGADO_POR_DESCARGAR','TRASPALEO_CURSO'],
+    FUMIGADO_RECHAZADO: ['RECHAZADO'],                 // termina en RECHAZADO
+    FUMIGADO_POR_DESCARGAR: ['CORTINA_ASIGNADA'],      // vuelve al curso normal
     TRASPALEO_CURSO: ['TRASPALEO_CONCL'],
     TRASPALEO_CONCL: ['LIBERADO'],
-    RECHAZADO: ['LIBERADO'],
+
+    RECHAZADO: [],                                     // terminal
 
     LIBERADO: [],
   };
@@ -1305,6 +1312,8 @@ function ymd(d=new Date()){
       case 'HOLD_NO_DESCARGAR': return 'st-hold';
       case 'FUMIG_PEND': return 'st-pend';
       case 'FUMIG_CUARENTENA': return 'st-cuar';
+      case 'FUMIGADO_POR_DESCARGAR': return 'st-espera';
+      case 'FUMIGADO_RECHAZADO': return 'st-rech';
       case 'DESCARGA_PROCESO':
       case 'TRASPALEO_CURSO': return 'st-proceso';
       case 'DESCARGA_CONCL':
@@ -1978,6 +1987,7 @@ async function fetchRows(range){
       // Resumen (meta chips)
       if(el('sumMetaPlantilla')) el('sumMetaPlantilla').textContent = `Plantilla: ${totals.plantilla}`;
       if(el('sumMetaManiobra')) el('sumMetaManiobra').textContent = `Maniobra: ${totals.maniobra}`;
+      try{ if(el('summaryView') && !el('summaryView').classList.contains('hidden')) renderSummary(); }catch(_e){}
     }, 220);
   }
 
@@ -2125,7 +2135,7 @@ async function fetchRows(range){
   }
 
   function requireNote(to){
-    return ['HOLD_NO_DESCARGAR','ESPERA_CONFRONTA','FUMIG_PEND','FUMIG_CUARENTENA','RECHAZADO'].includes(to);
+    return ['HOLD_NO_DESCARGAR','ESPERA_CONFRONTA','FUMIG_PEND','FUMIG_CUARENTENA','FUMIGADO_RECHAZADO','RECHAZADO'].includes(to);
   }
   function requireAnden(to){ return to === 'CORTINA_ASIGNADA'; }
   function requireResp(to){ return to === 'CORTINA_ASIGNADA' || to === 'DESCARGA_PROCESO'; }
@@ -2395,6 +2405,7 @@ async function fetchRows(range){
       const ok = confirm(`Cerrar día: ${label}.
 
 Esto archivará (is_active=false) los registros CONCLUIDOS de ese día.
+También limpiará del activo TODOS los LIBERADOS (aunque hayan sido del día).
 No se borran: quedan disponibles en Histórico por fecha.
 
 ¿Continuar?`);
@@ -2412,6 +2423,10 @@ No se borran: quedan disponibles en Histórico por fecha.
       .gte('arribo_at', startIso)
       .lte('arribo_at', endIso);
     if(up.error) throw up.error;
+
+    // Limpieza adicional: LIBERADOS (se sacan del tablero activo, se conserva huella)
+    const upLib = await s.from('shipments').update({ is_active: false }).eq('estatus','LIBERADO').eq('is_active', true);
+    if(upLib.error) throw upLib.error;
 
     localStorage.setItem(LS_LAST_CLOSE, day);
     if(!silent) alert('Cierre aplicado. Los concluidos ya no aparecen en HOY (solo pendientes).');
