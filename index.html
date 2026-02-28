@@ -265,9 +265,19 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     .screenMeta{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:center}
 
 
-  /* RESUMEN */
-  #summaryWrap .table th, #summaryWrap .table td{ white-space:nowrap; }
+  /* RESUMEN (headers a 2 renglones + tabla responsive) */
+  #summaryWrap{ overflow:auto; }
+  #tableSummary{ width:100%; table-layout:fixed; }
+  #summaryWrap .table th{ white-space:normal; }
+  #summaryWrap .table td{ white-space:nowrap; }
   #summaryWrap .table td:first-child{ white-space:nowrap; }
+  #tableSummary thead th{ vertical-align:bottom; }
+  #tableSummary thead th.sumHdr{ padding-top:10px; padding-bottom:10px; }
+  #tableSummary thead th.sumHdr .sumHdrTxt{
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    overflow:hidden; line-height:1.05;
+    word-break:break-word; overflow-wrap:anywhere;
+  }
   .sumRowTop td{ border-top:2px solid rgba(255,255,255,.12); }
 
 /* --- REQ#4 TABLERO: mostrar barra horizontal (sin ocultar scrollbars) --- */
@@ -1883,6 +1893,11 @@ async function fetchRows(range){
     return `${range.start}..${range.end}__${c}`;
   }
 
+  function invalidateStaffKPIs(){
+    // fuerza recomputo (la data cambió)
+    _staffKpiKey = null;
+  }
+
   function _ymdToDate(ymd){
     const [y,m,d] = (ymd||'').split('-').map(Number);
     if(!y||!m||!d) return null;
@@ -1983,6 +1998,10 @@ async function fetchRows(range){
       // Tablero (chips)
       _staffSetText('kpiPlantillaBoard', totals.plantilla);
       _staffSetText('kpiManiobraBoard', totals.maniobra);
+
+      // Resumen (tabla totals)
+      _staffSetText('sumTotalPlantilla', totals.plantilla);
+      _staffSetText('sumTotalManiobra', totals.maniobra);
 
       // Resumen (meta chips)
       if(el('sumMetaPlantilla')) el('sumMetaPlantilla').textContent = `Plantilla: ${totals.plantilla}`;
@@ -5011,10 +5030,18 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
     }
 
     // Header
+    function sumHdrLabel(label){
+      const parts = String(label||'').split(' - ');
+      if(parts.length>=2){
+        return parts.map(p=>esc(p)).join('<br>');
+      }
+      return esc(String(label||''));
+    }
+
     thead.innerHTML = `
       <tr>
         <th style="min-width:220px">CONTENEDORES POR ESTATUS</th>
-        ${visible.map(s=>`<th class="sumHdr ${statusClass(s.code)}">${esc(s.label)}</th>`).join('')}
+        ${visible.map(s=>`<th class="sumHdr ${statusClass(s.code)}"><div class="sumHdrTxt">${sumHdrLabel(s.label)}</div></th>`).join('')}
         <th>GRAN TOTAL</th>
       </tr>
     `;
@@ -5080,12 +5107,12 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
         <tr>
           <td class="mono" style="font-weight:700">TOTAL PLANTILLA</td>
           ${visible.map(_=>'<td class="mono" style="text-align:center"></td>').join('')}
-          <td class="mono" style="text-align:center;font-weight:800">${esc(String(Math.round(tp)))}</td>
+          <td class="mono" id="sumTotalPlantilla" style="text-align:center;font-weight:800">${esc(String(Math.round(tp)))}</td>
         </tr>
         <tr>
           <td class="mono" style="font-weight:700">TOTAL MANIOBRA</td>
           ${visible.map(_=>'<td class="mono" style="text-align:center"></td>').join('')}
-          <td class="mono" style="text-align:center;font-weight:800">${esc(String(Math.round(tm)))}</td>
+          <td class="mono" id="sumTotalManiobra" style="text-align:center;font-weight:800">${esc(String(Math.round(tm)))}</td>
         </tr>
       `;
         }
@@ -5948,6 +5975,7 @@ const q = (el('q')?.value || '').trim();
       }
     }catch(_e){}
 
+    try{ invalidateStaffKPIs(); }catch(_e){}
     try{ refreshStaffKPIsDebounced(); }catch(_e){}
   }
 
@@ -6053,6 +6081,7 @@ async function _attPersistEventCloud(field, person, oldValue, newValue){
         if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar asistencia: ${r.error.message||r.error}`);
       }
     }catch(_e){}
+    try{ invalidateStaffKPIs(); }catch(_e){}
     try{ refreshStaffKPIsDebounced(); }catch(_e){}
   }
 
@@ -6109,6 +6138,7 @@ async function _attPersistEventCloud(field, person, oldValue, newValue){
         if(!_attSchemaMissing(r.error)) toast(`No se pudo guardar maniobras: ${r.error.message||r.error}`);
       }
     }catch(_e){}
+    try{ invalidateStaffKPIs(); }catch(_e){}
     try{ refreshStaffKPIsDebounced(); }catch(_e){}
   }
 
