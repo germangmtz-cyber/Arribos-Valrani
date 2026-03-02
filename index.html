@@ -1165,6 +1165,12 @@ MARIA LOPEZ
     {order:'4', code:'DESCARGA_PROCESO', label:'DESCARGA - EN PROCESO'},
     {order:'5', code:'DESCARGA_CONCL', label:'DESCARGA - CONCLUIDA'},
     {order:'6', code:'LIBERADO', label:'LIBERADO'},
+    {order:'6.1', code:'INSP_FUMIG_PEND', label:'INSPECC - FUMIGACIÓN PENDIENTE'},
+    {order:'6.2', code:'INSP_FUMIG_CUARENTENA', label:'INSPECC - FUMIGACIÓN CUARENTENA'},
+    {order:'6.3', code:'INSP_RECHAZADO', label:'INSPECCIÓN - RECHAZADO'},
+    {order:'6.4', code:'INSP_LIBERADO', label:'INSPECCIÓN - LIBERADO'},
+    {order:'6.4.1', code:'LIBERADO_2', label:'LIBERADO 2'},
+  
   ];
   const STATUS_BY_CODE = Object.fromEntries(STATUS.map(s=>[s.code, s]));
 
@@ -1188,12 +1194,16 @@ MARIA LOPEZ
     TRASPALEO_CONCL: ['LIBERADO'],
 
     RECHAZADO: [],                                     // terminal
-
-    LIBERADO: [],
+    LIBERADO: ['INSP_FUMIG_PEND'],
+    INSP_FUMIG_PEND: ['INSP_FUMIG_CUARENTENA'],
+    INSP_FUMIG_CUARENTENA: ['INSP_RECHAZADO','INSP_LIBERADO'],
+    INSP_RECHAZADO: ['RECHAZADO'],
+    INSP_LIBERADO: ['LIBERADO_2'],
+    LIBERADO_2: [],
   };
 
   // Concluidos (para regla de visibilidad)
-  const CONCLUIDOS = new Set(['DESCARGA_CONCL','LIBERADO','RECHAZADO','TRASPALEO_CONCL']);
+  const CONCLUIDOS = new Set(['DESCARGA_CONCL','LIBERADO','RECHAZADO','TRASPALEO_CONCL','LIBERADO_2']);
 
   // Seed (histórico 2026/01/07). Se usa solo si tú presionas "Cargar histórico".
   const SEED_20260107 = (typeof window.SEED_20260107 !== 'undefined') ? window.SEED_20260107 : null;
@@ -2022,7 +2032,7 @@ async function fetchRows(range){
       ['Espera cortina', by('ESPERA_CORTINA')],
       ['Cortina asignada', by('CORTINA_ASIGNADA')],
       ['Descarga en proceso', by('DESCARGA_PROCESO')],
-      ['Bloqueos (hold/fumig)', visible.filter(r=>['HOLD_NO_DESCARGAR','FUMIG_PEND','FUMIG_CUARENTENA','ESPERA_CONFRONTA'].includes(r.status)).length],
+      ['Bloqueos (hold/fumig)', visible.filter(r=>['HOLD_NO_DESCARGAR','FUMIG_PEND','FUMIG_CUARENTENA','INSP_FUMIG_PEND','INSP_FUMIG_CUARENTENA','ESPERA_CONFRONTA'].includes(r.status)).length],
             ['Concluidos día', conclWork],
       ['Playos', visible.reduce((a,r)=>a+num0(r.playos_utilizados),0)],
       ['Plantilla', `<span id="kpiPlantillaBoard">${_staffKpiCache.plantilla}</span>`],
@@ -2444,7 +2454,7 @@ No se borran: quedan disponibles en Histórico por fecha.
     if(up.error) throw up.error;
 
     // Limpieza adicional: LIBERADOS (se sacan del tablero activo, se conserva huella)
-    const upLib = await s.from('shipments').update({ is_active: false }).eq('estatus','LIBERADO').eq('is_active', true);
+    const upLib = await s.from('shipments').update({ is_active: false }).in('estatus',['LIBERADO','LIBERADO_2']).eq('is_active', true);
     if(upLib.error) throw upLib.error;
 
     localStorage.setItem(LS_LAST_CLOSE, day);
@@ -4994,7 +5004,9 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
     if(el('sumMetaFecha')) el('sumMetaFecha').textContent = `Fecha: ${fTxt.replaceAll('-','/')}`;
     refreshStaffKPIsDebounced();
 
-    const statusOrder = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
+    // En RESUMEN: LIBERADO 2 se agrupa dentro de LIBERADO (misma columna)
+    const statusOrder = (STATUS||[]).map(s=>({code:s.code,label:s.label}))
+      .filter(x=>x.code && x.label && x.code!=='LIBERADO_2');
 
     // Acumuladores por estatus
     const acc = {};
@@ -5003,7 +5015,8 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
     });
 
     for(const r of rows){
-      const a = acc[r.status] || (acc[r.status] = {day:0, prev:0, cajas:0, tarimas:0, pallets:0, playos:0});
+      const st = (r.status==='LIBERADO_2') ? 'LIBERADO' : r.status;
+      const a = acc[st] || (acc[st] = {day:0, prev:0, cajas:0, tarimas:0, pallets:0, playos:0});
       const isDay = (range.start===range.end) ? (r.arribo_ymd === range.start) : (r.arribo_ymd >= range.start && r.arribo_ymd <= range.end);
       if(isDay) a.day += 1; else a.prev += 1;
       a.cajas += num0(r.cajas);
