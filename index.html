@@ -623,9 +623,22 @@ html,body{overflow-y:auto;overflow-x:hidden;}
               <input class="input" id="f_playos" inputmode="numeric" placeholder="" style="width:100%" />
             </div>
           </div>
+          
           <div style="height:10px"></div>
+          <div class="card" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);padding:10px;border-radius:14px">
+            <div class="muted" style="font-size:12px;margin-bottom:6px"><b>Carga masiva</b> (1 contenedor por renglón). Usa el mismo <b>CEDIS</b> y <b>CUENTA</b> de arriba.</div>
+            <textarea id="f_bulk" class="input" style="width:100%;height:120px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;font-size:12px;line-height:1.25" placeholder="MRKU7608568 | REPORTADO EN PATIO
+BEAU5215349 | FUMIGADO - POR DESCARGAR | Z06 | OSCAR
+CAIU9803936 | ESPERA CORTINA"></textarea>
+            <div class="muted" style="font-size:11px;margin-top:6px;line-height:1.35">
+              Formato por línea: <b>Contenedor</b> | <b>Estatus</b>(opcional) | Andén(opcional) | Responsable(opcional) | Indicación(opcional) | Cajas | Tarimas | Pallets | Playos | Hora(HH:MM)
+              <br>Separadores aceptados: <b>|</b> o <b>,</b> o <b>tab</b>. Si no pones estatus, se usa <b>REPORTADO EN PATIO</b>.
+            </div>
+          </div>
+
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button class="btn" id="btnAdd">Agregar</button>
+            <button class="btn secondary" id="btnAddBulk">Carga masiva</button>
             <button class="btn secondary hidden" id="btnSeed">Cargar histórico 2026/01/07</button>
             <button class="btn secondary" id="btnCloseDay">Cerrar día (archivar concluidos)</button>
             <button class="btn danger" id="btnReset">Desconectar nube</button>
@@ -1182,7 +1195,57 @@ MARIA LOPEZ
   // este tablero soporta un link de configuracion (?cfg=...) que guarda la config en el navegador.
 
   let supa = null;
-  let authUser = null;
+  
+const VIEW_ONLY_EMAIL = 'usuario@valrani.com.mx';
+
+function isViewOnlyUser(){
+  try{ return !!(authUser && String(authUser.email||'').toLowerCase() === VIEW_ONLY_EMAIL); }
+  catch(_e){ return false; }
+}
+
+function applyViewOnlyMode(){
+  if(!isViewOnlyUser()) return;
+
+  // Forzar TABLERO HOY de CUAUTIPARK (sin permitir cambiar)
+  const today = ymd();
+  try{ setWorkRange(today, ''); }catch(_e){}
+
+  try{
+    const target = (CEDIS_LIST||[]).find(c=>String(c).toUpperCase().includes('CUAUTIPARK')) || 'CUAUTIPARK II';
+    cedisFilter = new Set([target]);
+    statusFilter = new Set(); // todos
+  }catch(_e){}
+
+  // Deshabilita navegación y controles (visibles pero inactivos)
+  const disableIds = [
+    'tabAdmin','tabSummary','tabDashboard','tabScreen','tabSVA','tabLogistica',
+    'btnExport','btnToday','toggleCols','toggleFullscreen','btnCloud',
+    'q','dateStart','dateEnd','cedisBtn','estatusBtn',
+    'btnAdd','btnAddBulk','btnSeed','btnCloseDay','btnReset'
+  ];
+  for(const id of disableIds){
+    const node = el(id);
+    if(!node) continue;
+    try{ node.disabled = true; }catch(_e){}
+    try{ node.setAttribute('aria-disabled','true'); }catch(_e){}
+    try{ node.style.pointerEvents = 'none'; }catch(_e){}
+  }
+
+  // Evita salir del tablero por clicks en tabs (si algo queda habilitado)
+  ['tabAdmin','tabSummary','tabDashboard','tabScreen','tabSVA','tabLogistica'].forEach(id=>{
+    const n = el(id);
+    if(n) n.addEventListener('click', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); setTab('board'); });
+  });
+
+  // Asegura orden por llegada (folio asc)
+  try{ sortKey = 'folio'; sortDir = 1; }catch(_e){}
+
+  // Render
+  try{ setTab('board'); }catch(_e){}
+  try{ renderBoard(); }catch(_e){}
+}
+
+let authUser = null;
   let realtime = null;
   let currentTab = 'board';
   let realtimeSva = null;
@@ -1973,83 +2036,94 @@ async function fetchRows(range){
   }
 
   async function _computeStaffTotals(range){
-    const key = _staffKey(range);
+  const key = _staffKey(range);
 
-    // evita recomputar si ya está fresco para el mismo key
-    if(key === _staffKpiKey && _staffKpiCache) return _staffKpiCache;
+  // evita recomputar si ya está fresco para el mismo key
+  if(key === _staffKpiKey && _staffKpiCache) return _staffKpiCache;
 
-    const cedisList = (cedisFilter && cedisFilter.size) ? Array.from(cedisFilter) : null;
+  const cedisList = (cedisFilter && cedisFilter.size) ? Array.from(cedisFilter) : null;
 
-    // 1) intenta nube (Supabase)
-    try{
-      const sb = await _attGetSupabaseSilent();
-      if(sb){
-        // Plantilla (presentes)
-        let q1 = sb.from('attendance_entries')
-          .select('person')
-          .eq('present', true)
-          .gte('work_date', range.start)
-          .lte('work_date', range.end);
-        if(cedisList && cedisList.length) q1 = q1.in('cedis', cedisList);
-        const r1 = await q1;
-        if(r1.error) throw r1.error;
-        const plantilla = (r1.data||[]).length;
-
-        // Maniobra (suma de 3)
-        let q2 = sb.from('attendance_maneuvers')
-          .select('manobra_rodriguez,manobra_hernandez,manobra_zuniga')
-          .gte('work_date', range.start)
-          .lte('work_date', range.end);
-        if(cedisList && cedisList.length) q2 = q2.in('cedis', cedisList);
-        const r2 = await q2;
-        if(r2.error) throw r2.error;
-
-        const maniobra = (r2.data||[]).reduce((acc,row)=>{
-          const a = (row.manobra_rodriguez==null?0:Number(row.manobra_rodriguez)) || 0;
-          const b = (row.manobra_hernandez==null?0:Number(row.manobra_hernandez)) || 0;
-          const c = (row.manobra_zuniga==null?0:Number(row.manobra_zuniga)) || 0;
-          return acc + a + b + c;
-        }, 0);
-
-        _staffKpiCache = { plantilla, maniobra };
-        _staffKpiKey = key;
-        return _staffKpiCache;
-      }
-    }catch(e){
-      // si hay error de esquema, no revientes la app
-      if(!_attSchemaMissing(e)) console.warn('Staff KPI nube error', e);
-    }
-
-    // 2) fallback local (si no hay nube): suma por días/cedis de lo guardado local
-    try{
-      let plantilla = 0, maniobra = 0;
-      const d0 = _ymdToDate(range.start);
-      const d1 = _ymdToDate(range.end);
-      if(d0 && d1){
-        const cList = (cedisList && cedisList.length) ? cedisList : (CEDIS_LIST||[]);
-        for(let dt = new Date(d0); dt <= d1; dt.setDate(dt.getDate()+1)){
-          const ymd = _dateToYMD(dt);
-          for(const cedis of cList){
-            const day = _attLoadLocalDay(cedis, ymd);
-            const ppl = day && day.people ? day.people : {};
-            for(const k of Object.keys(ppl)){
-              if(ppl[k] && ppl[k].present) plantilla += 1;
-            }
-            const m = day && day.maneuvers ? day.maneuvers : {};
-            maniobra += (Number(m.rodriguez)||0) + (Number(m.hernandez)||0) + (Number(m.zuniga)||0);
+  const computeLocal = ()=>{
+    let plantilla = 0, maniobra = 0;
+    const d0 = _ymdToDate(range.start);
+    const d1 = _ymdToDate(range.end);
+    if(d0 && d1){
+      const cList = (cedisList && cedisList.length) ? cedisList : (CEDIS_LIST||[]);
+      for(let dt = new Date(d0); dt <= d1; dt.setDate(dt.getDate()+1)){
+        const ymdStr = _dateToYMD(dt);
+        for(const cedis of cList){
+          const day = _attLoadLocalDay(cedis, ymdStr);
+          const ppl = day && day.people ? day.people : {};
+          for(const k of Object.keys(ppl)){
+            if(ppl[k] && ppl[k].present) plantilla += 1;
           }
+          const m = day && day.maneuvers ? day.maneuvers : {};
+          maniobra += (Number(m.rodriguez)||0) + (Number(m.hernandez)||0) + (Number(m.zuniga)||0);
         }
       }
-      _staffKpiCache = { plantilla, maniobra };
-      _staffKpiKey = key;
-      return _staffKpiCache;
-    }catch(e){
-      console.warn('Staff KPI local error', e);
-      _staffKpiCache = { plantilla: 0, maniobra: 0 };
+    }
+    return { plantilla, maniobra };
+  };
+
+  // Precalcula local (sirve como respaldo inmediato aunque la nube esté conectada)
+  let localTotals = { plantilla: 0, maniobra: 0 };
+  try{ localTotals = computeLocal(); }catch(_e){}
+
+  // 1) intenta nube (Supabase)
+  try{
+    const sb = await _attGetSupabaseSilent();
+    if(sb){
+      // Plantilla (presentes)
+      let q1 = sb.from('attendance_entries')
+        .select('person')
+        .eq('present', true)
+        .gte('work_date', range.start)
+        .lte('work_date', range.end);
+      if(cedisList && cedisList.length) q1 = q1.in('cedis', cedisList);
+      const r1 = await q1;
+      if(r1.error) throw r1.error;
+      const plantillaCloud = (r1.data||[]).length;
+
+      // Maniobra (suma de 3)
+      let q2 = sb.from('attendance_maneuvers')
+        .select('manobra_rodriguez,manobra_hernandez,manobra_zuniga')
+        .gte('work_date', range.start)
+        .lte('work_date', range.end);
+      if(cedisList && cedisList.length) q2 = q2.in('cedis', cedisList);
+      const r2 = await q2;
+      if(r2.error) throw r2.error;
+
+      const maniobraCloud = (r2.data||[]).reduce((acc,row)=>{
+        const a = (row.manobra_rodriguez==null?0:Number(row.manobra_rodriguez)) || 0;
+        const b = (row.manobra_hernandez==null?0:Number(row.manobra_hernandez)) || 0;
+        const c = (row.manobra_zuniga==null?0:Number(row.manobra_zuniga)) || 0;
+        return acc + a + b + c;
+      }, 0);
+
+      // Si la nube regresa 0 pero local ya trae datos (RLS, cache o latencia), usa local.
+      const useLocal = ((plantillaCloud + maniobraCloud) === 0) && ((localTotals.plantilla + localTotals.maniobra) > 0);
+      const totals = useLocal ? localTotals : { plantilla: plantillaCloud, maniobra: maniobraCloud };
+
+      _staffKpiCache = totals;
       _staffKpiKey = key;
       return _staffKpiCache;
     }
+  }catch(e){
+    if(!_attSchemaMissing(e)) console.warn('Staff KPI nube error', e);
   }
+
+  // 2) fallback local (si no hay nube o falló)
+  try{
+    _staffKpiCache = localTotals;
+    _staffKpiKey = key;
+    return _staffKpiCache;
+  }catch(e){
+    console.warn('Staff KPI local error', e);
+    _staffKpiCache = { plantilla: 0, maniobra: 0 };
+    _staffKpiKey = key;
+    return _staffKpiCache;
+  }
+}
 
   function refreshStaffKPIsDebounced(){
     clearTimeout(_staffKpiTimer);
@@ -2239,11 +2313,14 @@ async function fetchRows(range){
     if(authUser){ closeAuthDialog(); }
 
     // habilitar/inhabilitar botones de captura
-    const canEdit = !!authUser;
+    const canEdit = !!authUser && !isViewOnlyUser();
     el('btnAdd').disabled = !canEdit;
     el('btnSeed').disabled = !canEdit;
     el('btnCloseDay').disabled = !canEdit;
-  }
+  
+
+    try{ applyViewOnlyMode(); }catch(_e){}
+}
 
   async function login(){
     try{
@@ -2278,6 +2355,7 @@ async function fetchRows(range){
 
   async function addRowCloud(payload){
     if(!authUser){ alert('Necesitas iniciar sesión para capturar.'); return; }
+    if(isViewOnlyUser()){ alert('Usuario de solo lectura.'); return; }
     const s = await ensureSupabase();
     const range = getWorkRange();
     const { startIso, endIso } = rangeISO(range.start);
@@ -2298,7 +2376,7 @@ async function fetchRows(range){
       cuenta: cuenta,
       folio: nextFolio,
       contenedor: payload.contenedor,
-      estatus: 'REPORTADO_PATIO',
+      estatus: (payload.estatus || 'REPORTADO_PATIO'),
       anden: payload.anden || null,
       responsable: payload.responsable || null,
       indicacion: payload.indicacion || null,
@@ -2306,7 +2384,7 @@ async function fetchRows(range){
       tarimas: payload.tarimas || null,
       pallets: payload.pallets ? Number(payload.pallets) : null,
       playos_utilizados: playosN,
-      arribo_at: now.toISOString(),
+      arribo_at: (payload.arribo_at || now.toISOString()),
     };
     if(!Number.isFinite(playosN)) delete row.playos_utilizados;
 
@@ -2358,7 +2436,126 @@ async function fetchRows(range){
     await reloadData(true);
   }
 
-  async function seedExampleCloud(){
+  
+// ------------------- Captura rápida: Carga masiva -------------------
+function _bulkNormalizeToken(s){ return String(s||'').trim(); }
+
+function _bulkParseTimeToken(tok){
+  tok = _bulkNormalizeToken(tok);
+  if(/^\d{1,2}:\d{2}$/.test(tok)) return tok;
+  return '';
+}
+
+function _bulkParseStatusToken(tok){
+  tok = _bulkNormalizeToken(tok);
+  if(!tok) return '';
+  const up = tok.toUpperCase().replace(/\s+/g,' ').trim();
+
+  // 1) si ya es código interno (keys de STATUS_META)
+  if(STATUS_META && STATUS_META[up]) return up;
+
+  // 2) por etiqueta (label)
+  const norm = (s)=>String(s||'').toUpperCase().replace(/\s+/g,' ').trim();
+  for(const k of Object.keys(STATUS_META||{})){
+    const meta = STATUS_META[k] || {};
+    if(norm(meta.label) === up) return k;
+  }
+
+  // 3) por “número”
+  const mapNum = {
+    '1':'REPORTADO_PATIO',
+    '1.1':'ESPERA_CORTINA',
+    '2':'CORTINA_ASIGNADA',
+    '3':'ESPERA_DESCARGA',
+    '4':'DESCARGA_PROCESO',
+    '5':'DESCARGA_CONCLUIDA',
+    '6':'LIBERADO',
+    '6.1':'INSP_FUMIG_PEND',
+    '6.2':'INSP_FUMIG_CUARENTENA',
+    '6.3':'INSP_RECHAZADO',
+    '6.4':'INSP_LIBERADO',
+    '6.4.1':'LIBERADO_2'
+  };
+  if(mapNum[up]) return mapNum[up];
+
+  // 4) alias comunes por texto
+  const alias = {
+    'REPORTADO EN PATIO':'REPORTADO_PATIO',
+    'ESPERA CORTINA':'ESPERA_CORTINA',
+    'CORTINA ASIGNADA':'CORTINA_ASIGNADA',
+    'EN ESPERA DE DESCARGA':'ESPERA_DESCARGA',
+    'DESCARGA - EN PROCESO':'DESCARGA_PROCESO',
+    'DESCARGA EN PROCESO':'DESCARGA_PROCESO',
+    'DESCARGA - CONCLUIDA':'DESCARGA_CONCLUIDA',
+    'DESCARGA CONCLUIDA':'DESCARGA_CONCLUIDA',
+    'LIBERADO':'LIBERADO',
+    'LIBERADO 2':'LIBERADO_2',
+    'FUMIGACIÓN - CUARENTENA':'FUMIG_CUARENTENA',
+    'FUMIGACION - CUARENTENA':'FUMIG_CUARENTENA',
+    'FUMIGADO - POR DESCARGAR':'FUMIGADO_POR_DESCARGAR',
+    'FUMIGADO - RECHAZADO':'FUMIGADO_RECHAZADO',
+    'RECHAZADO':'RECHAZADO',
+    'INSPECC - FUMIGACIÓN PENDIENTE':'INSP_FUMIG_PEND',
+    'INSPECC - FUMIGACION PENDIENTE':'INSP_FUMIG_PEND',
+    'INSPECC - FUMIGACIÓN CUARENTENA':'INSP_FUMIG_CUARENTENA',
+    'INSPECC - FUMIGACION CUARENTENA':'INSP_FUMIG_CUARENTENA',
+    'INSPECCIÓN - RECHAZADO':'INSP_RECHAZADO',
+    'INSPECCION - RECHAZADO':'INSP_RECHAZADO',
+    'INSPECCIÓN - LIBERADO':'INSP_LIBERADO',
+    'INSPECCION - LIBERADO':'INSP_LIBERADO'
+  };
+  if(alias[up]) return alias[up];
+
+  return '';
+}
+
+function _bulkLocalISOForWorkDate(workYMD, hhmm, addSeconds){
+  const d = _ymdToDate(workYMD) || _ymdToDate(ymd());
+  const base = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+  const now = new Date();
+  let hh = now.getHours(), mm = now.getMinutes(), ss = now.getSeconds();
+  const t = _bulkParseTimeToken(hhmm);
+  if(t){
+    const parts = t.split(':').map(n=>parseInt(n,10));
+    hh = parts[0]||0; mm = parts[1]||0; ss = 0;
+  }
+  const dt = new Date(base.getFullYear(), base.getMonth(), base.getDate(), hh, mm, ss + (addSeconds||0), 0);
+  return dt.toISOString();
+}
+
+function _bulkParseLine(line){
+  const parts = String(line||'').split(/[|\t,]+/).map(s=>String(s||'').trim()).filter(s=>s!=='');
+  if(!parts.length) return null;
+
+  // Hora (si viene)
+  let hora = '';
+  const last = parts[parts.length-1];
+  const t = _bulkParseTimeToken(last);
+  if(t){ hora = t; parts.pop(); }
+
+  const contenedor = parts[0] ? String(parts[0]).trim() : '';
+  if(!contenedor) return null;
+
+  // Estatus opcional
+  let estatus = '';
+  if(parts[1]){
+    const st = _bulkParseStatusToken(parts[1]);
+    if(st) estatus = st;
+  }
+
+  const anden = parts[2] ? parts[2] : '';
+  const responsable = parts[3] ? parts[3] : '';
+  const indicacion = parts[4] ? parts[4] : '';
+
+  const cajas = parts[5] || '';
+  const tarimas = parts[6] || '';
+  const pallets = parts[7] || '';
+  const playos = parts[8] || '';
+
+  return { contenedor, estatus, anden, responsable, indicacion, cajas, tarimas, pallets, playos, hora };
+}
+
+async function seedExampleCloud(){
     if(!authUser){
       alert('Primero inicia sesión en ADMIN (correo/contraseña) para poder cargar el histórico a la nube.');
       setTab('admin');
@@ -2766,7 +2963,7 @@ async function rollbackOneStepCloud(id){
 
 
   function renderAdmin(){
-    const canEdit = !!authUser;
+    const canEdit = !!authUser && !isViewOnlyUser();
 
     const range = getWorkRange();
     let rows = (STATE.rows || []).slice().filter(r=>isVisible(r, range));
@@ -5104,6 +5301,71 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
       alert('Error al agregar: ' + (e?.message || e));
     }
   });
+
+
+// Admin add: Carga masiva
+const btnAddBulk = el('btnAddBulk');
+if(btnAddBulk) btnAddBulk.addEventListener('click', async ()=>{
+  if(!authUser){ alert('Necesitas iniciar sesión para capturar.'); return; }
+  if(isViewOnlyUser()){ alert('Usuario de solo lectura.'); return; }
+
+  const cedis = (el('f_cedis').value || '').trim();
+  const cuenta = (el('f_cuenta').value || '').trim();
+  const txt = (el('f_bulk').value || '').trim();
+  if(!cedis){ alert('CEDIS es obligatorio'); return; }
+  if(!cuenta){ alert('CUENTA es obligatoria'); return; }
+  if(!txt){ alert('Pega la lista de contenedores (1 por renglón).'); return; }
+
+  const range = getWorkRange();
+  const workYMD = range.start || ymd();
+
+  const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length){ alert('No hay líneas válidas.'); return; }
+
+  let ok = 0;
+  const errs = [];
+
+  for(let i=0;i<lines.length;i++){
+    const line = lines[i];
+    const rec = _bulkParseLine(line);
+    if(!rec || !rec.contenedor){
+      errs.push(`Línea ${i+1}: no se pudo leer contenedor.`);
+      continue;
+    }
+
+    const arrIso = _bulkLocalISOForWorkDate(workYMD, rec.hora, i);
+
+    try{
+      await addRowCloud({
+        cedis,
+        cuenta,
+        contenedor: rec.contenedor,
+        estatus: rec.estatus || 'REPORTADO_PATIO',
+        anden: rec.anden || (el('f_anden').value||'').trim(),
+        responsable: rec.responsable || (el('f_responsable').value||'').trim(),
+        indicacion: rec.indicacion || (el('f_indicacion').value||'').trim(),
+        cajas: (rec.cajas || '').trim(),
+        tarimas: (rec.tarimas || '').trim(),
+        pallets: (rec.pallets || '').trim(),
+        playos_utilizados: (rec.playos || '').trim(),
+        arribo_at: arrIso,
+      });
+      ok += 1;
+    }catch(e){
+      errs.push(`Línea ${i+1} (${rec.contenedor}): ${e?.message || e}`);
+    }
+  }
+
+  if(errs.length){
+    console.warn('Carga masiva errores:\n' + errs.join('\n'));
+    alert(`Carga masiva: ${ok} agregado(s).\nErrores: ${errs.length}.\n\nRevisa la consola (F12) para detalle.`);
+  }else{
+    toast(`Carga masiva completada: ${ok} agregado(s).`);
+  }
+
+  el('f_bulk').value = '';
+  setTab('board');
+});
 
   // Histórico 2026/01/07 (opcional)
   const btnSeed = el('btnSeed');
