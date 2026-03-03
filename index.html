@@ -640,6 +640,52 @@ html,body{overflow-y:auto;overflow-x:hidden;}
           <div style="font-weight:900;margin-bottom:8px">Conceptos autorizados (estatus)</div>
           <div class="muted" style="font-size:12px;line-height:1.45" id="statusHelp"></div>
         </div>
+      
+</div>
+
+      <div style="height:12px"></div>
+      <div class="card compact" id="archiveSearchCard">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:900;margin-bottom:4px">Archivo de recibos (buscar contenedor)</div>
+            <div class="muted" style="font-size:12px;line-height:1.35">
+              Busca un contenedor específico en el archivo (incluye registros archivados). Si está en <b>LIBERADO</b> o <b>LIBERADO 2</b>,
+              podrás <b>cancelar LIBERADO</b>, dejar huella y continuar con INSPECCIÓN sin cambiar la fecha original de recibo.
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+            <div>
+              <div class="muted" style="font-size:12px">Contenedor / Folio</div>
+              <input id="arch_search" class="input" placeholder="MRKU7608568 / 123" style="min-width:260px" />
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">&nbsp;</div>
+              <button class="btn secondary" id="arch_btn">Buscar</button>
+            </div>
+            <div>
+              <div class="muted" style="font-size:12px">Resultados</div>
+              <div class="pill" id="arch_meta" style="font-weight:900;min-width:76px;text-align:center;">0</div>
+            </div>
+          </div>
+        </div>
+        <div style="height:10px"></div>
+        <div class="tableWrap" style="overflow:auto;border:1px solid var(--line);border-radius:14px">
+          <table class="table" style="min-width:980px">
+            <thead>
+              <tr>
+                <th style="width:86px">Folio</th>
+                <th style="width:140px">Arribo</th>
+                <th style="width:160px">CEDIS</th>
+                <th style="width:220px">Contenedor</th>
+                <th style="width:240px">Estatus</th>
+                <th style="width:90px">Activo</th>
+                <th>Indicación</th>
+                <th style="width:120px">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="arch_body"></tbody>
+          </table>
+        </div>
       </div>
 
       <div style="height:12px"></div>
@@ -2612,7 +2658,11 @@ No se borran: quedan disponibles en Histórico por fecha.
     if(!authUser){ alert('Necesitas iniciar sesión para editar.'); return; }
     const row = (STATE.rows || []).find(r=>r.id===id);
     if(!row){ alert('No se encontró el registro.'); return; }
-    const cur = row.status;
+    const cur = String(row.status||'').toUpperCase();
+    if(cur==='LIBERADO' || cur==='LIBERADO_2'){
+      alert('No se permite regresar desde LIBERADO/LIBERADO 2. Usa "Cancelar LIBERADO" si aplica.');
+      return;
+    }
     if(!targetStatus || targetStatus===cur){ alert('Selecciona un estatus válido.'); return; }
 
     const motivo = prompt('Motivo de regresar a "'+statusLabel(targetStatus)+'" (opcional):', 'Corrección de dedo');
@@ -2621,19 +2671,18 @@ No se borran: quedan disponibles en Histórico por fecha.
     const patch = {};
     const early = ['REPORTADO_PATIO','ESPERA_CORTINA','HOLD_NO_DESCARGAR','ESPERA_CONFRONTA','FUMIG_PEND','FUMIG_CUARENTENA','TRASPALEO_CURSO','TRASPALEO_CONCL'];
     if(early.includes(targetStatus)){
-      patch.asignacion_at = null;
-      patch.inicio_at = null;
-      patch.fin_at = null;
-      patch.responsable = '';
-    }else if(targetStatus === 'CORTINA_ASIGNADA'){
-      patch.inicio_at = null;
-      patch.fin_at = null;
+      patch.asig_cortina_at = null;
+      patch.inicio_descarga_at = null;
+      patch.fin_descarga_at = null;
+      patch.responsable = null;
+    }else if(targetStatus === 'CORTINA_ASIGNADA' || targetStatus === 'ESPERA_DESCARGA'){
+      patch.inicio_descarga_at = null;
+      patch.fin_descarga_at = null;
     }else if(targetStatus === 'DESCARGA_PROCESO'){
-      patch.fin_at = null;
+      patch.fin_descarga_at = null;
     }
-
-    const s = await ensureSupabase();
-    const up = await s.from('shipments').update({ status: targetStatus, ...patch }).eq('id', id);
+const s = await ensureSupabase();
+    const up = await s.from('shipments').update({ estatus: targetStatus, is_active: (row.is_active || !CONCLUIDOS.has(targetStatus)), ...patch }).eq('id', id);
     if(up.error) throw up.error;
 
     const ev = await s.from('shipment_events').insert([{
@@ -2654,7 +2703,11 @@ async function rollbackOneStepCloud(id){
     const row = (STATE.rows || []).find(r=>r.id===id);
     if(!row){ alert('No se encontró el registro en memoria.'); return; }
 
-    const cur = row.status;
+    const cur = String(row.status||'').toUpperCase();
+    if(cur==='LIBERADO' || cur==='LIBERADO_2'){
+      alert('No se permite regresar desde LIBERADO/LIBERADO 2. Usa "Cancelar LIBERADO" si aplica.');
+      return;
+    }
     const s = await ensureSupabase();
 
     // buscar el último cambio que llevó al estatus actual
@@ -2688,7 +2741,7 @@ async function rollbackOneStepCloud(id){
     };
     const pStage = stage(prev);
 
-    const patch = { estatus: prev };
+    const patch = { estatus: prev, is_active: (row.is_active || !CONCLUIDOS.has(prev)) };
 
     if(pStage < 3) patch.fin_descarga_at = null;
     if(pStage < 2) patch.inicio_descarga_at = null;
@@ -3134,6 +3187,13 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const optHtml = opts.map(o=>`<option value="${o.to}">${esc(o.label)}</option>`).join('');
     const dis = authUser ? '' : 'disabled';
 
+    const _st = String(r.status||'').toUpperCase();
+    const isLiberadoLike = (_st==='LIBERADO' || _st==='LIBERADO_2');
+    const disBack = (!authUser || isLiberadoLike) ? 'disabled' : '';
+    const cancelHtml = (authUser && isLiberadoLike)
+      ? `<button class="btn" id="d_cancel_liberado" title="Cancelar LIBERADO y continuar con INSPECCIÓN">Cancelar LIBERADO</button>`
+      : '';
+
     el('modalBody').innerHTML += `
       <div class="sep" style="margin:10px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
       <div id="detailActions" class="admin-controls" style="gap:10px;flex-wrap:wrap">
@@ -3142,10 +3202,16 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
           ${optHtml}
         </select>
         <button class="btn" id="d_apply" ${dis}>Aplicar</button>
-        <select class="input" id="d_back_to" ${dis} style="min-width:220px;max-width:320px">
+        <select class="input" id="d_back_to" ${disBack} style="min-width:220px;max-width:320px">
           <option value="">Regresar a…</option>
         </select>
-        <button class="btn secondary tiny" id="d_back_apply" ${dis} style="max-width:180px">Regresar</button>
+        <select class="input" id="d_back_steps" ${disBack} style="min-width:110px;max-width:140px">
+          <option value="1">1 paso</option>
+          <option value="2">2 pasos</option>
+          <option value="3">3 pasos</option>
+        </select>
+        <button class="btn secondary tiny" id="d_back_apply" ${disBack} style="max-width:180px">Regresar</button>
+        ${cancelHtml}
         <button class="btn secondary" id="d_edit" ${dis}>Editar</button>
         <button class="btn danger" id="d_del" ${dis}>Eliminar</button>
         ${authUser ? '' : '<div class="muted" style="font-size:12px;opacity:.9">Inicia sesión en ADMIN para ejecutar acciones.</div>'}
@@ -3154,7 +3220,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
     el('modalBackdrop').dataset.curId = id;
     // poblar opciones de regreso (historial)
-    if(authUser){
+    if(authUser && !isLiberadoLike){
       const selBack = document.getElementById('d_back_to');
       if(selBack){
         selBack.innerHTML = '<option value="">Regresar a…</option>';
@@ -3409,6 +3475,203 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     applyColsHistorico();
     el('historicoMeta').textContent = `Registros: ${rows.length} (máx 2000 por consulta)`;
   }
+
+  // ------------------- ADMIN: Archivo de recibos (shipments) -------------------
+  let _archRows = [];
+
+  function renderArchiveSearch(){
+    const rows = _archRows || [];
+    if(el('arch_meta')) el('arch_meta').textContent = String(rows.length);
+    const tb = el('arch_body');
+    if(!tb) return;
+    tb.innerHTML = rows.map(r=>{
+      const active = r.is_active ? 'Sí' : 'No';
+      return `<tr>
+        <td>${esc(r.folio||'')}</td>
+        <td>${esc(r.arribo_ymd||'')} ${esc(fmtTime(r.arribo_at)||'')}</td>
+        <td>${esc(r.cedis||'')}</td>
+        <td>${esc(r.contenedor||'')}</td>
+        <td>${esc(statusLabel(r.status)||r.status||'')}</td>
+        <td>${esc(active)}</td>
+        <td>${esc(r.indicacion||'')}</td>
+        <td><button class="btn secondary tiny" data-arch-open="${r.id}">Abrir</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function searchArchiveShipments(){
+    try{
+      await ensureSupa();
+      const qtxt = (el('arch_search')?.value || '').trim();
+      if(!qtxt){
+        _archRows = [];
+        renderArchiveSearch();
+        return;
+      }
+      const s = await ensureSupabase();
+      let q = s.from('shipments').select('*').eq('is_deleted', false);
+      const num = Number(qtxt);
+      if(Number.isFinite(num) && String(num) === qtxt){
+        q = q.eq('folio', num);
+      }else{
+        const escq = qtxt.replace(/%/g,'').replace(/,/g,' ');
+        q = q.ilike('contenedor', `%${escq}%`);
+      }
+      q = q.order('arribo_at', {ascending:false}).limit(50);
+
+      const { data, error } = await q;
+      if(error) throw error;
+      _archRows = (data||[]).map(dbToRow);
+      renderArchiveSearch();
+    }catch(e){
+      console.warn('searchArchiveShipments', e);
+      alert('No se pudo buscar en archivo: ' + (e?.message || e));
+    }
+  }
+
+  async function openArchiveShipment(id){
+    try{
+      await ensureSupa();
+      const s = await ensureSupabase();
+      const q = await s.from('shipments').select('*').eq('id', id).single();
+      if(q.error) throw q.error;
+      const row = dbToRow(q.data);
+
+      // Enriquecer fechas de estatus si es posible (no bloquea)
+      try{
+        const [libMap, lib2Map, rejMap, descMap] = await Promise.all([
+          fetchStatusEventMap([row.id], 'LIBERADO'),
+          fetchStatusEventMap([row.id], 'LIBERADO_2'),
+          fetchStatusEventMap([row.id], 'RECHAZADO'),
+          fetchStatusEventMap([row.id], 'DESCARGA_CONCL'),
+        ]);
+        row.liberado_ymd = libMap[row.id] || '';
+        row.liberado2_ymd = lib2Map[row.id] || '';
+        row.rechazado_ymd = rejMap[row.id] || '';
+        row.descarga_concl_ymd = descMap[row.id] || '';
+      }catch(_e){}
+
+      const idx = (STATE.rows||[]).findIndex(x=>x.id===row.id);
+      if(idx<0) STATE.rows.push(row);
+      else STATE.rows[idx] = row;
+
+      openDetail(row.id);
+    }catch(e){
+      console.warn('openArchiveShipment', e);
+      alert('No se pudo abrir: ' + (e?.message || e));
+    }
+  }
+
+  async function cancelLiberadoToInspection(id){
+    if(!authUser){ alert('Necesitas iniciar sesión para cancelar LIBERADO.'); return; }
+    const row = (STATE.rows||[]).find(r=>r.id===id);
+    if(!row){ alert('No se encontró el registro en memoria.'); return; }
+    const cur = String(row.status||'').toUpperCase();
+    if(cur !== 'LIBERADO' && cur !== 'LIBERADO_2'){
+      alert('Solo aplica cuando el estatus es LIBERADO o LIBERADO 2.');
+      return;
+    }
+    const motivo = prompt('Motivo de cancelar LIBERADO (requerido):', 'Detección de plaga/contaminación');
+    if(motivo===null) return;
+    const note = (motivo||'').trim();
+    if(!note){ alert('Motivo requerido.'); return; }
+
+    const to = 'INSP_FUMIG_PEND';
+    const patch = { estatus: to, is_active: true };
+    const t = nowLocalIso();
+
+    const s = await ensureSupabase();
+    const up = await s.from('shipments').update(patch).eq('id', id);
+    if(up.error) throw up.error;
+
+    const ev = await s.from('shipment_events').insert([{
+      shipment_id: id,
+      event_at: t,
+      actor: authUser.email || authUser.id,
+      from_status: cur,
+      to_status: to,
+      note: 'CANCELA LIBERADO: ' + note,
+      patch,
+    }]);
+    if(ev.error) throw ev.error;
+
+    await reloadData(true);
+  }
+
+  async function rollbackNStepsCloud(id, steps){
+    steps = Math.max(1, Math.min(3, Number(steps)||1));
+    if(!authUser){ alert('Necesitas iniciar sesión para regresar.'); return; }
+    const row = (STATE.rows || []).find(r=>r.id===id);
+    if(!row){ alert('No se encontró el registro en memoria.'); return; }
+    const cur = String(row.status||'').toUpperCase();
+    if(cur==='LIBERADO' || cur==='LIBERADO_2'){
+      alert('No se permite regresar desde LIBERADO/LIBERADO 2. Usa "Cancelar LIBERADO" si aplica.');
+      return;
+    }
+
+    const s = await ensureSupabase();
+    const q = await s.from('shipment_events')
+      .select('from_status,to_status,event_at')
+      .eq('shipment_id', id)
+      .order('event_at', { ascending:false })
+      .limit(120);
+    if(q.error) throw q.error;
+
+    const evs = q.data || [];
+    let target = cur;
+    let moved = 0;
+    for(const e of evs){
+      if(moved >= steps) break;
+      if(e.to_status===target && e.from_status){
+        target = String(e.from_status||'').toUpperCase();
+        moved++;
+      }
+    }
+    if(moved < steps || !target || target===cur){
+      alert('No hay suficiente historial para regresar ' + steps + ' paso(s).');
+      return;
+    }
+    if(target==='LIBERADO' || target==='LIBERADO_2'){
+      alert('No se permite regresar a LIBERADO/LIBERADO 2. Usa "Cancelar LIBERADO" si aplica.');
+      return;
+    }
+
+    const motivo = prompt(`Motivo de regresar ${steps} paso(s) a "${statusLabel(target)}" (opcional):`, 'Corrección');
+    if(motivo===null) return;
+    const note = (motivo||'').trim();
+
+    const stage = (st)=>{
+      st = String(st||'').toUpperCase();
+      if(st==='LIBERADO' || st==='LIBERADO_2') return 4;
+      if(st==='DESCARGA_CONCL') return 3;
+      if(st==='DESCARGA_PROCESO') return 2;
+      if(st==='CORTINA_ASIGNADA' || st==='ESPERA_DESCARGA') return 1;
+      return 0;
+    };
+    const pStage = stage(target);
+
+    const patch = { estatus: target, is_active: (row.is_active || !CONCLUIDOS.has(target)) };
+    if(pStage < 3) patch.fin_descarga_at = null;
+    if(pStage < 2) patch.inicio_descarga_at = null;
+    if(pStage < 1) patch.asig_cortina_at = null;
+
+    const u = await s.from('shipments').update(patch).eq('id', id);
+    if(u.error) throw u.error;
+
+    const ins = await s.from('shipment_events').insert([{
+      shipment_id: id,
+      event_at: nowLocalIso(),
+      actor: authUser.email || authUser.id,
+      from_status: cur,
+      to_status: target,
+      note: note || (`Rollback ${steps} paso(s)`),
+      patch,
+    }]);
+    if(ins.error) throw ins.error;
+
+    await reloadData(true);
+  }
+
 
   function initSubViews(){
     _setDefaultSubRanges();
@@ -4867,6 +5130,17 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
   // Desconectar nube
   el('btnReset').addEventListener('click', clearCfg);
 
+  // Archivo de recibos (ADMIN)
+  if(el('arch_btn')) el('arch_btn').addEventListener('click', searchArchiveShipments);
+  if(el('arch_search')) el('arch_search').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); searchArchiveShipments(); } });
+  if(el('arch_body')) el('arch_body').addEventListener('click', (e)=>{
+    const b = e.target?.closest?.('[data-arch-open]');
+    if(!b) return;
+    const id = b.getAttribute('data-arch-open');
+    if(id) openArchiveShipment(id);
+  });
+
+
   // Modal detalle
   el('modalClose').addEventListener('click', closeDetail);
   el('modalBackdrop').addEventListener('click', (e)=>{ if(e.target===el('modalBackdrop')) closeDetail(); });
@@ -4891,10 +5165,25 @@ el('dateStart').addEventListener('change', ()=>setWorkRange(el('dateStart').valu
 
       if(t && t.id === 'd_back_apply'){
         try{
-          await rollbackOneStepCloud(id);
+          const target = el('d_back_to') ? el('d_back_to').value : '';
+          if(target){
+            await rollbackToStatusCloud(id, target);
+          }else{
+            const steps = el('d_back_steps') ? Number(el('d_back_steps').value||1) : 1;
+            await rollbackNStepsCloud(id, steps);
+          }
           openDetail(id);
         }catch(e){
-          alert('Error al regresar un paso: ' + (e?.message || e));
+          alert('Error al regresar: ' + (e?.message || e));
+        }
+      }
+
+      if(t && t.id === 'd_cancel_liberado'){
+        try{
+          await cancelLiberadoToInspection(id);
+          openDetail(id);
+        }catch(e){
+          alert('Error al cancelar LIBERADO: ' + (e?.message || e));
         }
       }
 
