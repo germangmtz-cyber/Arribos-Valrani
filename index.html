@@ -1762,6 +1762,10 @@ function ymd(d=new Date()){
         const d = row.liberado_ymd || (row.updated_at ? ymd(new Date(row.updated_at)) : '');
         return d === today;
       }
+      if(st === 'LIBERADO_2'){
+        const d = row.liberado2_ymd || (row.updated_at ? ymd(new Date(row.updated_at)) : '');
+        return d === today;
+      }
       if(st === 'RECHAZADO'){
         const d = row.rechazado_ymd || (row.updated_at ? ymd(new Date(row.updated_at)) : '');
         return d === today;
@@ -1808,7 +1812,7 @@ async function fetchRows(range){
       const qIds = s.from('shipment_events')
         .select('shipment_id,to_status,event_at')
         .gte('event_at', startIso).lte('event_at', endIso)
-        .in('to_status', ['LIBERADO','RECHAZADO'])
+        .in('to_status', ['LIBERADO','RECHAZADO','LIBERADO_2'])
         .order('event_at', {ascending:false})
         .limit(5000);
 
@@ -1855,19 +1859,21 @@ async function fetchRows(range){
 
       // Enriquecer: fechas de estatus (LIBERADO / RECHAZADO) desde shipment_events (para visibilidad y columna F. liberación)
       const ids = rows.map(r=>r.id).filter(Boolean);
-      let libMap = {}, rejMap = {}, descMap = {};
+      let libMap = {}, lib2Map = {}, rejMap = {}, descMap = {};
       try{
-        [libMap, rejMap, descMap] = await Promise.all([
+        [libMap, lib2Map, rejMap, descMap] = await Promise.all([
           fetchStatusEventMap(ids, 'LIBERADO'),
+          fetchStatusEventMap(ids, 'LIBERADO_2'),
           fetchStatusEventMap(ids, 'RECHAZADO'),
           fetchStatusEventMap(ids, 'DESCARGA_CONCL'),
         ]);
       }catch(_e){
         console.warn('No se pudo leer shipment_events; tablero continúa sin fechas enriquecidas.', _e);
-        libMap = libMap || {}; rejMap = rejMap || {}; descMap = descMap || {};
+        libMap = libMap || {}; lib2Map = lib2Map || {}; rejMap = rejMap || {}; descMap = descMap || {};
       }
       for(const r of rows){
         r.liberado_ymd = libMap[r.id] || '';
+        r.liberado2_ymd = lib2Map[r.id] || '';
         r.rechazado_ymd = rejMap[r.id] || '';
         r.descarga_concl_ymd = descMap[r.id] || '';
       }
@@ -2434,7 +2440,7 @@ async function fetchRows(range){
       const ok = confirm(`Cerrar día: ${label}.
 
 Esto archivará (is_active=false) los registros CONCLUIDOS de ese día.
-También limpiará del activo TODOS los LIBERADOS (aunque hayan sido del día).
+También limpiará del activo TODOS los LIBERADOS y RECHAZADOS (incluye LIBERADO 2), aunque hayan sido del día.
 No se borran: quedan disponibles en Histórico por fecha.
 
 ¿Continuar?`);
@@ -2454,7 +2460,7 @@ No se borran: quedan disponibles en Histórico por fecha.
     if(up.error) throw up.error;
 
     // Limpieza adicional: LIBERADOS (se sacan del tablero activo, se conserva huella)
-    const upLib = await s.from('shipments').update({ is_active: false }).in('estatus',['LIBERADO','LIBERADO_2']).eq('is_active', true);
+    const upLib = await s.from('shipments').update({ is_active: false }).in('estatus',['LIBERADO','LIBERADO_2','RECHAZADO']).eq('is_active', true);
     if(upLib.error) throw upLib.error;
 
     localStorage.setItem(LS_LAST_CLOSE, day);
