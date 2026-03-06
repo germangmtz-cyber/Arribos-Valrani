@@ -354,14 +354,55 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   .tab{padding:10px 12px;font-size:13px;border-radius:14px;}
   .controls{gap:8px;}
   .controls .input, .controls select{min-width:unset;}
-  /* TABLERO: mostrar 4 primeras columnas (No, Contenedor, Cuenta, Cedis). El resto se ve al tocar el renglón (detalle). */
-  #boardView #table thead th:not([data-key="folio"]):not([data-key="contenedor"]):not([data-key="cuenta"]):not([data-key="cedis"]){display:none;}
-  #boardView #table tbody td:not([data-key="folio"]):not([data-key="contenedor"]):not([data-key="cuenta"]):not([data-key="cedis"]){display:none;}
-  #boardView #tableWrap{overflow:auto;}
-  #boardView #table{width:100% !important; table-layout:fixed !important;}
-  #boardView #table td[data-key="contenedor"]{white-space:normal;}
+
+  /* TABLERO móvil: mostrar 8 primeras columnas con encabezados visibles.
+     El resto se consulta tocando el renglón para abrir el detalle. */
+  #boardView #table thead th:not([data-key="folio"]):not([data-key="contenedor"]):not([data-key="cuenta"]):not([data-key="cedis"]):not([data-key="status"]):not([data-key="fecha"]):not([data-key="indicacion"]):not([data-key="anden"]){display:none;}
+  #boardView #table tbody td:not([data-key="folio"]):not([data-key="contenedor"]):not([data-key="cuenta"]):not([data-key="cedis"]):not([data-key="status"]):not([data-key="fecha"]):not([data-key="indicacion"]):not([data-key="anden"]){display:none;}
+
+  #boardView #tableWrap{
+    overflow:auto;
+    -webkit-overflow-scrolling:touch;
+    border-radius:14px;
+  }
+  #boardView #table{
+    width:max-content !important;
+    min-width:100% !important;
+    table-layout:fixed !important;
+  }
+  #boardView #table thead th{
+    position:sticky;
+    top:0;
+    z-index:3;
+    background:rgba(7,16,35,.98);
+    box-shadow:0 1px 0 rgba(255,255,255,.06);
+  }
+  #boardView #table thead th, #boardView #table tbody td{
+    font-size:12px !important;
+    padding:9px 8px !important;
+    line-height:1.2;
+    vertical-align:top;
+  }
+
+  /* Anchos compactos e intuitivos para móvil */
+  #boardView #table th[data-key="folio"],
+  #boardView #table td[data-key="folio"]{min-width:72px;width:72px;}
+  #boardView #table th[data-key="contenedor"],
+  #boardView #table td[data-key="contenedor"]{min-width:150px;width:150px;white-space:normal;}
   #boardView #table td[data-key="contenedor"] .clamp2{-webkit-line-clamp:3;}
-  #boardView #table thead th, #boardView #table tbody td{font-size:14px !important; padding:10px 10px !important;}
+  #boardView #table th[data-key="cuenta"],
+  #boardView #table td[data-key="cuenta"]{min-width:120px;width:120px;}
+  #boardView #table th[data-key="cedis"],
+  #boardView #table td[data-key="cedis"]{min-width:120px;width:120px;}
+  #boardView #table th[data-key="status"],
+  #boardView #table td[data-key="status"]{min-width:160px;width:160px;white-space:normal;}
+  #boardView #table th[data-key="fecha"],
+  #boardView #table td[data-key="fecha"]{min-width:110px;width:110px;}
+  #boardView #table th[data-key="indicacion"],
+  #boardView #table td[data-key="indicacion"]{min-width:170px;width:170px;white-space:normal;}
+  #boardView #table th[data-key="anden"],
+  #boardView #table td[data-key="anden"]{min-width:88px;width:88px;}
+
   #boardView .table tbody tr{cursor:pointer;}
 }
 /* ================================ */
