@@ -345,6 +345,27 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 .svaMaqItem{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
 #svaView .btn.tiny{ padding:6px 10px; font-size:12px; }
 
+
+/* ===== Versión móvil (TABLERO) ===== */
+@media (max-width: 820px){
+  .brand{min-width:0;}
+  .brand img{height:54px;}
+  .brand b{font-size:28px;}
+  .tab{padding:10px 12px;font-size:13px;border-radius:14px;}
+  .controls{gap:8px;}
+  .controls .input, .controls select{min-width:unset;}
+  /* TABLERO: mostrar 4 primeras columnas (No, Contenedor, Cuenta, Cedis). El resto se ve al tocar el renglón (detalle). */
+  #boardView #table thead th:not([data-key="folio"]):not([data-key="contenedor"]):not([data-key="cuenta"]):not([data-key="cedis"]){display:none;}
+  #boardView #table tbody td:not([data-key="folio"]):not([data-key="contenedor"]):not([data-key="cuenta"]):not([data-key="cedis"]){display:none;}
+  #boardView #tableWrap{overflow:auto;}
+  #boardView #table{width:100% !important; table-layout:fixed !important;}
+  #boardView #table td[data-key="contenedor"]{white-space:normal;}
+  #boardView #table td[data-key="contenedor"] .clamp2{-webkit-line-clamp:3;}
+  #boardView #table thead th, #boardView #table tbody td{font-size:14px !important; padding:10px 10px !important;}
+  #boardView .table tbody tr{cursor:pointer;}
+}
+/* ================================ */
+
 </style>
 </head>
 <body>
@@ -779,6 +800,7 @@ MARIA LOPEZ
                 <th style="width:92px">Presente</th>
                 <th>Nombre</th>
                 <th style="width:150px">Hora llegada</th>
+                <th style="width:110px">Acciones</th>
               </tr>
             </thead>
             <tbody id="att_body"></tbody>
@@ -2295,6 +2317,140 @@ async function fetchRows(range){
   function requireAnden(to){ return to === 'CORTINA_ASIGNADA'; }
   function requireResp(to){ return to === 'CORTINA_ASIGNADA' || to === 'DESCARGA_PROCESO'; }
 
+  // --- Selector de RESPONSABLE (usa lista de asistencia como catálogo) ---
+  async function _attGetResponsableOptions(cedis){
+    const date = ymd(); // día actual (local)
+    const set = new Set();
+
+    // 1) present(es) de hoy (nube)
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(sb){
+        const r = await sb.from('attendance_entries')
+          .select('person')
+          .eq('cedis', cedis)
+          .eq('work_date', date)
+          .eq('present', true)
+          .order('person', {ascending:true});
+        if(!r.error){
+          for(const row of (r.data||[])){
+            const p = String(row.person||'').trim();
+            if(p) set.add(p);
+          }
+        }
+      }
+    }catch(_e){}
+
+    // 2) present(es) de hoy (local)
+    try{
+      const day = _attLoadLocalDay(cedis, date);
+      const ppl = (day && day.people) ? day.people : {};
+      for(const p of Object.keys(ppl)){
+        if(ppl[p] && ppl[p].present) set.add(String(p||'').trim());
+      }
+    }catch(_e){}
+
+    // 3) roster (catálogo) como respaldo
+    try{
+      const roster = await _attGetRoster(cedis);
+      for(const p of (roster||[])){
+        const s = String(p||'').trim();
+        if(s) set.add(s);
+      }
+    }catch(_e){}
+
+    return Array.from(set).filter(Boolean).sort((a,b)=>a.localeCompare(b,'es'));
+  }
+
+  async function _pickResponsableForTransition(row, currentValue){
+    const cedis = (row && row.cedis) ? String(row.cedis) : '';
+    const options = cedis ? await _attGetResponsableOptions(cedis) : [];
+    const cur = String(currentValue||'').trim();
+
+    return new Promise((resolve)=>{
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.style.zIndex = '70';
+
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.style.width = 'min(720px, 96vw)';
+
+      const title = (row && row.contenedor) ? `Responsable · ${row.contenedor}` : 'Responsable';
+
+      modal.innerHTML = `
+        <div class="hd">
+          <div style="font-weight:1000">${esc(title)}</div>
+          <button type="button" class="btn secondary tiny" data-act="x">Cerrar</button>
+        </div>
+        <div class="bd">
+          <div class="muted" style="font-size:12px;line-height:1.35;margin-bottom:10px">
+            ${cedis ? `CEDIS: <b>${esc(cedis)}</b> · ` : ''}Selecciona de la lista (asistencia/plantilla) o captura manualmente.
+          </div>
+
+          <div style="display:grid;gap:10px">
+            <input class="input" data-act="value" placeholder="Nombre del responsable" value="${esc(cur)}" />
+            <input class="input" data-act="search" placeholder="Buscar en catálogo..." />
+            <div data-act="list" style="max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+
+          <div style="height:12px"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+            <button type="button" class="btn secondary" data-act="cancel">Cancelar</button>
+            <button type="button" class="btn" data-act="ok">Aceptar</button>
+          </div>
+        </div>
+      `;
+
+      backdrop.appendChild(modal);
+      document.body.appendChild(backdrop);
+
+      const byAct = (a)=>modal.querySelector(`[data-act="${a}"]`);
+      const inp = byAct('value');
+      const search = byAct('search');
+      const list = byAct('list');
+
+      const renderList = ()=>{
+        const q = String(search.value||'').trim().toLowerCase();
+        const filtered = !q ? options : options.filter(n=>String(n).toLowerCase().includes(q));
+        list.innerHTML = filtered.length
+          ? filtered.map(n=>`<button type="button" class="msItem" style="text-align:left;color:var(--fg)" data-pick="${esc(n)}">${esc(n)}</button>`).join('')
+          : `<div class="muted" style="font-size:12px;padding:10px">Sin coincidencias.</div>`;
+        list.querySelectorAll('[data-pick]').forEach(b=>{
+          b.addEventListener('click', ()=>{
+            const v = b.getAttribute('data-pick') || '';
+            inp.value = v;
+          });
+        });
+      };
+
+      renderList();
+      if(search) search.addEventListener('input', renderList);
+
+      const close = (val)=>{
+        try{ document.body.removeChild(backdrop); }catch(_e){}
+        resolve(val);
+      };
+
+      // click afuera = cancelar (no aplica)
+      backdrop.addEventListener('click', (e)=>{ if(e.target === backdrop) close(null); });
+
+      byAct('x').addEventListener('click', ()=>close(null));
+      byAct('cancel').addEventListener('click', ()=>close(null));
+      byAct('ok').addEventListener('click', ()=>{
+        const v = String(inp.value||'').trim();
+        close(v);
+      });
+
+      // Enter en input = aceptar
+      inp.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); byAct('ok').click(); }
+      });
+    });
+  }
+  // --------------------------------------------------------------------
+
+
   // ------------------- Admin (Auth + acciones) -------------------
   function setAuthUI(){
     const st = el('authState');
@@ -2753,7 +2909,7 @@ No se borran: quedan disponibles en Histórico por fecha.
       newAnden = (a||'').trim();
     }
     if(requireResp(to)){
-      const r = prompt('Responsable:', newResp);
+      const r = await _pickResponsableForTransition(row, newResp);
       if(r===null) return;
       newResp = (r||'').trim();
     }
@@ -3955,55 +4111,93 @@ function renderFilters(){
 
   
   
-  function initCedisMulti(){
+  
+function initCedisMulti(){
     const btn = el('cedisBtn');
     const menu = el('cedisMenu');
     if(!btn || !menu) return;
-    if(menu.dataset.ready === '1'){ updateCedisBtnText(); return; }
-    menu.dataset.ready = '1';
 
     const items = (CEDIS_LIST||[]).map(c=>String(c)).filter(Boolean);
 
-    menu.innerHTML = `
-      <div class="msHead">
-        <button type="button" class="msAction" data-act="all">Todos</button>
-        <button type="button" class="msAction" data-act="close">Cerrar</button>
-      </div>
-      <div class="msList">
-        ${items.map(v => `
-          <label class="msItem">
-            <input type="checkbox" value="${esc(v)}" ${cedisFilter.has(v) ? 'checked' : ''} />
-            <span>${esc(v)}</span>
-          </label>
-        `).join('')}
-      </div>
-    `;
+    // Construye menú una sola vez
+    if(menu.dataset.ready !== '1'){
+      menu.dataset.ready = '1';
+      menu.innerHTML = `
+        <div class="msHead">
+          <button type="button" class="msAction" data-act="all">Todos</button>
+          <button type="button" class="msAction" data-act="close">Cerrar</button>
+        </div>
+        <div class="msList">
+          ${items.map(v => `
+            <label class="msItem">
+              <input type="checkbox" value="${esc(v)}" />
+              <span>${esc(v)}</span>
+            </label>
+          `).join('')}
+        </div>
+      `;
 
-    btn.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      menu.classList.toggle('hidden');
-    });
-    document.addEventListener('click', ()=>{
-      menu.classList.add('hidden');
-    });
-    menu.addEventListener('click', (e)=>e.stopPropagation());
+      // No cerrar por click interno
+      menu.addEventListener('click', (e)=>e.stopPropagation());
 
-    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
-      cedisFilter.clear();
-      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
-      updateCedisBtnText();
-      renderAllViews();
-    });
-    menu.querySelector('[data-act="close"]').addEventListener('click', ()=> menu.classList.add('hidden'));
+      // Acciones
+      const btnAll = menu.querySelector('[data-act="all"]');
+      const btnClose = menu.querySelector('[data-act="close"]');
 
-    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-      ch.addEventListener('change', ()=>{
-        if(ch.checked) cedisFilter.add(ch.value);
-        else cedisFilter.delete(ch.value);
-        updateCedisBtnText();
-        renderAllViews();
+      if(btnAll){
+        btnAll.addEventListener('click', ()=>{
+          menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=true);
+        });
+      }
+
+      if(btnClose){
+        btnClose.addEventListener('click', ()=>{
+          const selected = new Set(
+            Array.from(menu.querySelectorAll('input[type="checkbox"]'))
+              .filter(ch=>ch.checked)
+              .map(ch=>ch.value)
+          );
+
+          // Aplica SOLO al cerrar
+          cedisFilter.clear();
+          if(selected.size && selected.size < items.length){
+            for(const v of selected) cedisFilter.add(v);
+          }else{
+            // 0 ó todos = Todos (sin filtro)
+            cedisFilter.clear();
+          }
+
+          updateCedisBtnText();
+          menu.classList.add('hidden');
+          renderAllViews();
+        });
+      }
+    }
+
+    // Sincroniza checks con el filtro aplicado (al abrir)
+    const syncFromApplied = ()=>{
+      const all = !(cedisFilter && cedisFilter.size);
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+        ch.checked = all ? true : cedisFilter.has(ch.value);
       });
-    });
+    };
+
+    // Open/close
+    if(menu.dataset.bound !== '1'){
+      menu.dataset.bound = '1';
+
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const willOpen = menu.classList.contains('hidden');
+        if(willOpen) syncFromApplied();
+        menu.classList.toggle('hidden');
+      });
+
+      // Click fuera: solo cierra (NO aplica)
+      document.addEventListener('click', ()=>{
+        menu.classList.add('hidden');
+      });
+    }
 
     updateCedisBtnText();
   }
@@ -4016,60 +4210,93 @@ function renderFilters(){
     else btn.textContent = 'CEDIS: ' + n + ' seleccionados ▾';
   }
 
+
 function initStatusMulti(){
     const btn = el('estatusBtn');
     const menu = el('estatusMenu');
     if(!btn || !menu) return;
-    if(menu.dataset.ready === '1'){ updateStatusBtnText(); return; }
-    menu.dataset.ready = '1';
 
     const items = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
 
-    menu.innerHTML = `
-      <div class="msHead">
-        <button type="button" class="msAction" data-act="all">Todos</button>
-        <button type="button" class="msAction" data-act="close">Cerrar</button>
-      </div>
-      <div class="msList">
-        ${items.map(it => `
-          <label class="msItem">
-            <input type="checkbox" value="${esc(it.code)}" ${statusFilter.has(it.code) ? 'checked' : ''} />
-            <span>${esc(it.label)}</span>
-          </label>
-        `).join('')}
-      </div>
-    `;
+    // Construye menú una sola vez
+    if(menu.dataset.ready !== '1'){
+      menu.dataset.ready = '1';
+
+      menu.innerHTML = `
+        <div class="msHead">
+          <button type="button" class="msAction" data-act="all">Todos</button>
+          <button type="button" class="msAction" data-act="close">Cerrar</button>
+        </div>
+        <div class="msList">
+          ${items.map(it => `
+            <label class="msItem">
+              <input type="checkbox" value="${esc(it.code)}" />
+              <span>${esc(it.label)}</span>
+            </label>
+          `).join('')}
+        </div>
+      `;
+
+      // No cerrar por click interno
+      menu.addEventListener('click', (e)=>e.stopPropagation());
+
+      // Acciones
+      const btnAll = menu.querySelector('[data-act="all"]');
+      const btnClose = menu.querySelector('[data-act="close"]');
+
+      if(btnAll){
+        btnAll.addEventListener('click', ()=>{
+          menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=true);
+        });
+      }
+
+      if(btnClose){
+        btnClose.addEventListener('click', ()=>{
+          const selected = new Set(
+            Array.from(menu.querySelectorAll('input[type="checkbox"]'))
+              .filter(ch=>ch.checked)
+              .map(ch=>ch.value)
+          );
+
+          // Aplica SOLO al cerrar
+          statusFilter.clear();
+          if(selected.size && selected.size < items.length){
+            for(const v of selected) statusFilter.add(v);
+          }else{
+            // 0 ó todos = Todos (sin filtro)
+            statusFilter.clear();
+          }
+
+          updateStatusBtnText();
+          menu.classList.add('hidden');
+          renderAllViews();
+        });
+      }
+    }
+
+    const syncFromApplied = ()=>{
+      const all = !(statusFilter && statusFilter.size);
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+        ch.checked = all ? true : statusFilter.has(ch.value);
+      });
+    };
 
     // Open/close
-    btn.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      menu.classList.toggle('hidden');
-    });
-    document.addEventListener('click', ()=>{
-      menu.classList.add('hidden');
-    });
-    menu.addEventListener('click', (e)=>e.stopPropagation());
+    if(menu.dataset.bound !== '1'){
+      menu.dataset.bound = '1';
 
-    // Actions
-    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
-      statusFilter.clear();
-      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
-      updateStatusBtnText();
-      renderAllViews();
-    });
-    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{
-      menu.classList.add('hidden');
-    });
-
-    // Checkbox changes
-    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-      ch.addEventListener('change', ()=>{
-        if(ch.checked) statusFilter.add(ch.value);
-        else statusFilter.delete(ch.value);
-        updateStatusBtnText();
-        renderAllViews();
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const willOpen = menu.classList.contains('hidden');
+        if(willOpen) syncFromApplied();
+        menu.classList.toggle('hidden');
       });
-    });
+
+      // Click fuera: solo cierra (NO aplica)
+      document.addEventListener('click', ()=>{
+        menu.classList.add('hidden');
+      });
+    }
 
     updateStatusBtnText();
   }
@@ -6382,6 +6609,17 @@ const q = (el('q')?.value || '').trim();
     }).join('');
   }
 
+  
+function _attPushLocalEvent(day, msg){
+    try{
+      if(!day) return;
+      if(!Array.isArray(day.events)) day.events = [];
+      const t = (typeof nowLocalIso === 'function') ? nowLocalIso() : (new Date()).toISOString();
+      day.events.unshift({t, msg: String(msg||'')});
+      if(day.events.length > 80) day.events = day.events.slice(0,80);
+    }catch(_e){}
+  }
+
   function _attUpdateCount(){
     const pill = el('att_count');
     if(!pill) return;
@@ -6402,7 +6640,7 @@ const q = (el('q')?.value || '').trim();
     tbody.innerHTML = '';
 
     if(!cedis || !date){
-      tbody.innerHTML = `<tr><td colspan="3" class="muted" style="font-size:12px;padding:12px">Selecciona CEDIS y fecha.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="muted" style="font-size:12px;padding:12px">Selecciona CEDIS y fecha.</td></tr>`;
       return;
     }
 
@@ -6416,7 +6654,7 @@ const q = (el('q')?.value || '').trim();
     const names = [...new Set([...rosterClean, ...extras])];
 
     if(!names.length){
-      tbody.innerHTML = `<tr><td colspan="3" class="muted" style="font-size:12px;padding:12px">Sin registros de asistencia para este día. (Puedes cargar plantilla con “Editar plantilla”.)</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="muted" style="font-size:12px;padding:12px">Sin registros de asistencia para este día. (Puedes cargar plantilla con “Editar plantilla”.)</td></tr>`;
       return;
     }
 
@@ -6472,6 +6710,19 @@ const q = (el('q')?.value || '').trim();
       tr.appendChild(td0);
       tr.appendChild(td1);
       tr.appendChild(td2);
+
+      // Acciones: borrar integrante (solo asistencia de este día y opcionalmente de plantilla)
+      const td3 = document.createElement('td');
+      td3.style.width = '110px';
+      const del = document.createElement('button');
+      del.className = 'btn tiny danger';
+      del.textContent = 'Borrar';
+      del.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        _attDeletePerson(name);
+      });
+      td3.appendChild(del);
+      tr.appendChild(td3);
 
       tbody.appendChild(tr);
     });
@@ -6582,6 +6833,60 @@ const q = (el('q')?.value || '').trim();
 
     try{ refreshStaffKPIsDebounced(); }catch(_e){}
   }
+
+
+  async function _attDeletePerson(name){
+    const cedis = _attCurrent.cedis;
+    const date = _attCurrent.date;
+    name = String(name||'').trim();
+    if(!cedis || !date || !name) return;
+
+    const ok = confirm(`¿Eliminar a "${name}" de la asistencia del ${date} (${cedis})?`);
+    if(!ok) return;
+
+    const alsoRoster = confirm(`¿También quitar a "${name}" de la plantilla (catálogo) de ${cedis}?`);
+
+    // Local day
+    try{
+      const day = _attLoadLocalDay(cedis, date);
+      if(day && day.people && day.people[name]){
+        delete day.people[name];
+        _attPushLocalEvent(day, `${name}: eliminado de asistencia`);
+        _attPersistEventCloud('delete_person', name, 'activo', 'eliminado');
+        _attSaveLocalDay(cedis, date, day);
+        _attCurrent.day = day;
+        _attUpdateCount();
+        _attRenderAudit(day.events||[]);
+      }
+    }catch(_e){}
+
+    // Cloud: borra el registro del día (si hay permisos)
+    try{
+      const sb = await _attGetSupabaseSilent();
+      if(sb){
+        const r = await sb.from('attendance_entries')
+          .delete()
+          .eq('cedis', cedis)
+          .eq('work_date', date)
+          .eq('person', name);
+        if(r.error && !_attSchemaMissing(r.error)) console.warn(r.error);
+      }
+    }catch(_e){}
+
+    // Opcional: quitar de plantilla
+    if(alsoRoster){
+      try{
+        const roster = (_attCurrent.roster||[]).map(x=>String(x||'').trim()).filter(Boolean).filter(x=>x!==name);
+        _attSetRosterLocal(cedis, roster);
+        await _attSaveRosterCloud(cedis, roster);
+      }catch(_e){}
+    }
+
+    try{ await _attReload(); }catch(_e){}
+    try{ invalidateStaffKPIs(); }catch(_e){}
+    try{ refreshStaffKPIsDebounced(); }catch(_e){}
+  }
+
 
 
 
