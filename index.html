@@ -99,7 +99,39 @@ html,body{overflow-y:auto;overflow-x:hidden;}
     /* FECHA siempre activa (no desmarcable) */
     #cols input[data-locked="1"]{ cursor:not-allowed; opacity:.75; }
 
+    /* TABLERO móvil: primeras 2 columnas fijas */
+    #boardView{ --boardStickyLeft2: 64px; }
+    #boardView .mobileHint{display:none;}
+    @media (max-width: 900px){
+      #boardView .tableWrap{overflow:auto;-webkit-overflow-scrolling:touch;}
+      #boardView .table{min-width:1400px;}
+      #boardView .mobileHint{display:block;margin-top:8px;font-size:12px;color:var(--muted);}
+      #boardView .table thead th:nth-child(1),
+      #boardView .table tbody td:nth-child(1){
+        position:sticky;left:0;z-index:14;background:rgba(17,24,38,0.98);
+      }
+      #boardView .table thead th:nth-child(2),
+      #boardView .table tbody td:nth-child(2){
+        position:sticky;left:var(--boardStickyLeft2);z-index:13;background:rgba(17,24,38,0.98);
+        box-shadow:2px 0 0 rgba(34,48,68,0.95);
+      }
+      #boardView .table tbody tr:hover td:nth-child(1),
+      #boardView .table tbody tr:hover td:nth-child(2){
+        background:rgba(28,39,58,0.98);
+      }
+      #boardView .table th[data-key="folio"], #boardView .table td[data-key="folio"]{min-width:52px;width:52px;}
+      #boardView .table th[data-key="contenedor"], #boardView .table td[data-key="contenedor"]{min-width:180px;max-width:180px;}
+      .modal .bd .row{grid-template-columns:120px 1fr;}
+    }
 
+    /* Navegación de detalle */
+    .detailNav{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+    .detailNavInfo{font-size:12px;color:var(--muted);}
+    .detailNav .btn{min-width:120px;}
+
+    /* SVA: modos */
+    .svaModes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .svaModeBtn.active{background:var(--accent);color:#111;border-color:transparent;}
 
     .mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;}
 
@@ -344,68 +376,6 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 .svaHScrollInner{ height:1px; }
 .svaMaqItem{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
 #svaView .btn.tiny{ padding:6px 10px; font-size:12px; }
-
-
-/* ===== Versión móvil (TABLERO) ===== */
-@media (max-width: 820px){
-  .brand{min-width:0;}
-  .brand img{height:54px;}
-  .brand b{font-size:28px;}
-  .tab{padding:10px 12px;font-size:13px;border-radius:14px;}
-  .controls{gap:8px;}
-  .controls .input, .controls select{min-width:unset;}
-
-  /* TABLERO móvil: mostrar 8 primeras columnas con encabezados visibles.
-     El resto se consulta tocando el renglón para abrir el detalle. */
-  #boardView #table thead th:not([data-key="folio"]):not([data-key="contenedor"]):not([data-key="cuenta"]):not([data-key="cedis"]):not([data-key="status"]):not([data-key="fecha"]):not([data-key="indicacion"]):not([data-key="anden"]){display:none;}
-  #boardView #table tbody td:not([data-key="folio"]):not([data-key="contenedor"]):not([data-key="cuenta"]):not([data-key="cedis"]):not([data-key="status"]):not([data-key="fecha"]):not([data-key="indicacion"]):not([data-key="anden"]){display:none;}
-
-  #boardView #tableWrap{
-    overflow:auto;
-    -webkit-overflow-scrolling:touch;
-    border-radius:14px;
-  }
-  #boardView #table{
-    width:max-content !important;
-    min-width:100% !important;
-    table-layout:fixed !important;
-  }
-  #boardView #table thead th{
-    position:sticky;
-    top:0;
-    z-index:3;
-    background:rgba(7,16,35,.98);
-    box-shadow:0 1px 0 rgba(255,255,255,.06);
-  }
-  #boardView #table thead th, #boardView #table tbody td{
-    font-size:12px !important;
-    padding:9px 8px !important;
-    line-height:1.2;
-    vertical-align:top;
-  }
-
-  /* Anchos compactos e intuitivos para móvil */
-  #boardView #table th[data-key="folio"],
-  #boardView #table td[data-key="folio"]{min-width:72px;width:72px;}
-  #boardView #table th[data-key="contenedor"],
-  #boardView #table td[data-key="contenedor"]{min-width:150px;width:150px;white-space:normal;}
-  #boardView #table td[data-key="contenedor"] .clamp2{-webkit-line-clamp:3;}
-  #boardView #table th[data-key="cuenta"],
-  #boardView #table td[data-key="cuenta"]{min-width:120px;width:120px;}
-  #boardView #table th[data-key="cedis"],
-  #boardView #table td[data-key="cedis"]{min-width:120px;width:120px;}
-  #boardView #table th[data-key="status"],
-  #boardView #table td[data-key="status"]{min-width:160px;width:160px;white-space:normal;}
-  #boardView #table th[data-key="fecha"],
-  #boardView #table td[data-key="fecha"]{min-width:110px;width:110px;}
-  #boardView #table th[data-key="indicacion"],
-  #boardView #table td[data-key="indicacion"]{min-width:170px;width:170px;white-space:normal;}
-  #boardView #table th[data-key="anden"],
-  #boardView #table td[data-key="anden"]{min-width:88px;width:88px;}
-
-  #boardView .table tbody tr{cursor:pointer;}
-}
-/* ================================ */
 
 </style>
 </head>
@@ -841,7 +811,6 @@ MARIA LOPEZ
                 <th style="width:92px">Presente</th>
                 <th>Nombre</th>
                 <th style="width:150px">Hora llegada</th>
-                <th style="width:110px">Acciones</th>
               </tr>
             </thead>
             <tbody id="att_body"></tbody>
@@ -898,6 +867,13 @@ MARIA LOPEZ
             <button class="btn secondary" id="btnBackPorLlegar">Volver a ADMIN</button>
             <button class="btn secondary" id="toggleColsPorLlegar">Columnas</button>
             <button class="btn secondary" id="btnReloadPorLlegar">Actualizar</button>
+          </div>
+        </div>
+
+        <div class="filtersRow" style="margin-bottom:8px">
+          <div class="svaModes">
+            <button class="btn secondary svaModeBtn active" id="btnSvaModeLlegadas">Por arribo</button>
+            <button class="btn secondary svaModeBtn" id="btnSvaModeActivos">Procesos activos</button>
           </div>
         </div>
 
@@ -997,8 +973,8 @@ MARIA LOPEZ
       <div class="card compact" style="margin-bottom:12px">
         <div class="subview-head">
           <div>
-            <div class="h1">SVA · Reprocesos</div>
-            <div class="sub">Seguimiento de CAMBIO DE CORRUGADO / UVA / TI HI (tiempo real).</div>
+            <div class="h1" id="svaTitle">SVA · Reprocesos por arribo</div>
+            <div class="sub" id="svaSub">Contenedores que llegan para CAMBIO DE CORRUGADO / UVA / TI HI (tiempo real).</div>
           </div>
           <div class="subview-actions">
             <button class="btn secondary" id="toggleColsSVA">Columnas</button>
@@ -2286,6 +2262,19 @@ async function fetchRows(range){
 
   function isConfronta(ind){ return (ind ?? '').toString().toLowerCase().includes('confronta'); }
 
+  let currentBoardRows = [];
+  let svaViewMode = 'llegadas';
+
+  function updateBoardStickyOffsets(){
+    try{
+      const table = el('boardTable');
+      if(!table) return;
+      const first = table.querySelector('thead th:nth-child(1)');
+      const left2 = first ? Math.ceil(first.getBoundingClientRect().width || first.offsetWidth || 64) : 64;
+      el('boardView')?.style.setProperty('--boardStickyLeft2', `${left2}px`);
+    }catch(e){}
+  }
+
   function renderBoard(){
     const range = getWorkRange();
     const q = (el('q').value || '').trim();
@@ -2300,6 +2289,7 @@ async function fetchRows(range){
     if(q) rows = rows.filter(r=>matches(r, q));
 
     rows.sort(cmp);
+    currentBoardRows = rows.slice();
 
     renderKPIs(rows);
     refreshStaffKPIsDebounced();
@@ -2342,6 +2332,7 @@ async function fetchRows(range){
   });
 
     resizeTableWrap();
+    updateBoardStickyOffsets();
   }
 
   function renderStatusHelp(){
@@ -2357,140 +2348,6 @@ async function fetchRows(range){
   }
   function requireAnden(to){ return to === 'CORTINA_ASIGNADA'; }
   function requireResp(to){ return to === 'CORTINA_ASIGNADA' || to === 'DESCARGA_PROCESO'; }
-
-  // --- Selector de RESPONSABLE (usa lista de asistencia como catálogo) ---
-  async function _attGetResponsableOptions(cedis){
-    const date = ymd(); // día actual (local)
-    const set = new Set();
-
-    // 1) present(es) de hoy (nube)
-    try{
-      const sb = await _attGetSupabaseSilent();
-      if(sb){
-        const r = await sb.from('attendance_entries')
-          .select('person')
-          .eq('cedis', cedis)
-          .eq('work_date', date)
-          .eq('present', true)
-          .order('person', {ascending:true});
-        if(!r.error){
-          for(const row of (r.data||[])){
-            const p = String(row.person||'').trim();
-            if(p) set.add(p);
-          }
-        }
-      }
-    }catch(_e){}
-
-    // 2) present(es) de hoy (local)
-    try{
-      const day = _attLoadLocalDay(cedis, date);
-      const ppl = (day && day.people) ? day.people : {};
-      for(const p of Object.keys(ppl)){
-        if(ppl[p] && ppl[p].present) set.add(String(p||'').trim());
-      }
-    }catch(_e){}
-
-    // 3) roster (catálogo) como respaldo
-    try{
-      const roster = await _attGetRoster(cedis);
-      for(const p of (roster||[])){
-        const s = String(p||'').trim();
-        if(s) set.add(s);
-      }
-    }catch(_e){}
-
-    return Array.from(set).filter(Boolean).sort((a,b)=>a.localeCompare(b,'es'));
-  }
-
-  async function _pickResponsableForTransition(row, currentValue){
-    const cedis = (row && row.cedis) ? String(row.cedis) : '';
-    const options = cedis ? await _attGetResponsableOptions(cedis) : [];
-    const cur = String(currentValue||'').trim();
-
-    return new Promise((resolve)=>{
-      const backdrop = document.createElement('div');
-      backdrop.className = 'modal-backdrop';
-      backdrop.style.zIndex = '70';
-
-      const modal = document.createElement('div');
-      modal.className = 'modal';
-      modal.style.width = 'min(720px, 96vw)';
-
-      const title = (row && row.contenedor) ? `Responsable · ${row.contenedor}` : 'Responsable';
-
-      modal.innerHTML = `
-        <div class="hd">
-          <div style="font-weight:1000">${esc(title)}</div>
-          <button type="button" class="btn secondary tiny" data-act="x">Cerrar</button>
-        </div>
-        <div class="bd">
-          <div class="muted" style="font-size:12px;line-height:1.35;margin-bottom:10px">
-            ${cedis ? `CEDIS: <b>${esc(cedis)}</b> · ` : ''}Selecciona de la lista (asistencia/plantilla) o captura manualmente.
-          </div>
-
-          <div style="display:grid;gap:10px">
-            <input class="input" data-act="value" placeholder="Nombre del responsable" value="${esc(cur)}" />
-            <input class="input" data-act="search" placeholder="Buscar en catálogo..." />
-            <div data-act="list" style="max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
-          </div>
-
-          <div style="height:12px"></div>
-          <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-            <button type="button" class="btn secondary" data-act="cancel">Cancelar</button>
-            <button type="button" class="btn" data-act="ok">Aceptar</button>
-          </div>
-        </div>
-      `;
-
-      backdrop.appendChild(modal);
-      document.body.appendChild(backdrop);
-
-      const byAct = (a)=>modal.querySelector(`[data-act="${a}"]`);
-      const inp = byAct('value');
-      const search = byAct('search');
-      const list = byAct('list');
-
-      const renderList = ()=>{
-        const q = String(search.value||'').trim().toLowerCase();
-        const filtered = !q ? options : options.filter(n=>String(n).toLowerCase().includes(q));
-        list.innerHTML = filtered.length
-          ? filtered.map(n=>`<button type="button" class="msItem" style="text-align:left;color:var(--fg)" data-pick="${esc(n)}">${esc(n)}</button>`).join('')
-          : `<div class="muted" style="font-size:12px;padding:10px">Sin coincidencias.</div>`;
-        list.querySelectorAll('[data-pick]').forEach(b=>{
-          b.addEventListener('click', ()=>{
-            const v = b.getAttribute('data-pick') || '';
-            inp.value = v;
-          });
-        });
-      };
-
-      renderList();
-      if(search) search.addEventListener('input', renderList);
-
-      const close = (val)=>{
-        try{ document.body.removeChild(backdrop); }catch(_e){}
-        resolve(val);
-      };
-
-      // click afuera = cancelar (no aplica)
-      backdrop.addEventListener('click', (e)=>{ if(e.target === backdrop) close(null); });
-
-      byAct('x').addEventListener('click', ()=>close(null));
-      byAct('cancel').addEventListener('click', ()=>close(null));
-      byAct('ok').addEventListener('click', ()=>{
-        const v = String(inp.value||'').trim();
-        close(v);
-      });
-
-      // Enter en input = aceptar
-      inp.addEventListener('keydown', (e)=>{
-        if(e.key === 'Enter'){ e.preventDefault(); byAct('ok').click(); }
-      });
-    });
-  }
-  // --------------------------------------------------------------------
-
 
   // ------------------- Admin (Auth + acciones) -------------------
   function setAuthUI(){
@@ -2950,7 +2807,7 @@ No se borran: quedan disponibles en Histórico por fecha.
       newAnden = (a||'').trim();
     }
     if(requireResp(to)){
-      const r = await _pickResponsableForTransition(row, newResp);
+      const r = prompt('Responsable:', newResp);
       if(r===null) return;
       newResp = (r||'').trim();
     }
@@ -3551,6 +3408,15 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
 
   // ------------------- Detail modal -------------------
+  function openDetailRelative(step){
+    const ids = (currentBoardRows||[]).map(x=>x.id);
+    const curId = el('modalBackdrop')?.dataset?.curId || '';
+    const idx = ids.indexOf(curId);
+    if(idx<0) return;
+    const next = ids[idx + step];
+    if(next) openDetail(next);
+  }
+
   function openDetail(id){
     const r = (STATE.rows || []).find(x=>x.id===id);
     if(!r) return;
@@ -3572,7 +3438,18 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       ['Indicación', r.indicacion],
     ];
 
-    el('modalBody').innerHTML = fields.map(([k,v])=>`
+    const navIds = (currentBoardRows||[]).map(x=>x.id);
+    const navIdx = navIds.indexOf(id);
+    const hasPrev = navIdx > 0;
+    const hasNext = navIdx >= 0 && navIdx < (navIds.length - 1);
+
+    el('modalBody').innerHTML = `
+      <div class="detailNav">
+        <button class="btn secondary" id="d_prev" ${hasPrev ? '' : 'disabled'}>← Anterior</button>
+        <div class="detailNavInfo">${navIdx>=0 ? `Contenedor ${navIdx+1} de ${navIds.length} según el filtro actual` : 'Detalle del contenedor seleccionado'}</div>
+        <button class="btn secondary" id="d_next" ${hasNext ? '' : 'disabled'}>Siguiente →</button>
+      </div>
+    ` + fields.map(([k,v])=>`
       <div class="row"><div class="k">${esc(k)}</div><div class="v">${esc(v||'')}</div></div>
     `).join('');
 
@@ -3613,6 +3490,12 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     `;
 
     el('modalBackdrop').dataset.curId = id;
+
+    const prevBtn = document.getElementById('d_prev');
+    const nextBtn = document.getElementById('d_next');
+    if(prevBtn) prevBtn.addEventListener('click', ()=>openDetailRelative(-1));
+    if(nextBtn) nextBtn.addEventListener('click', ()=>openDetailRelative(1));
+
     // poblar opciones de regreso (historial)
     if(authUser && !isLiberadoLike){
       const selBack = document.getElementById('d_back_to');
@@ -4152,93 +4035,55 @@ function renderFilters(){
 
   
   
-  
-function initCedisMulti(){
+  function initCedisMulti(){
     const btn = el('cedisBtn');
     const menu = el('cedisMenu');
     if(!btn || !menu) return;
+    if(menu.dataset.ready === '1'){ updateCedisBtnText(); return; }
+    menu.dataset.ready = '1';
 
     const items = (CEDIS_LIST||[]).map(c=>String(c)).filter(Boolean);
 
-    // Construye menú una sola vez
-    if(menu.dataset.ready !== '1'){
-      menu.dataset.ready = '1';
-      menu.innerHTML = `
-        <div class="msHead">
-          <button type="button" class="msAction" data-act="all">Todos</button>
-          <button type="button" class="msAction" data-act="close">Cerrar</button>
-        </div>
-        <div class="msList">
-          ${items.map(v => `
-            <label class="msItem">
-              <input type="checkbox" value="${esc(v)}" />
-              <span>${esc(v)}</span>
-            </label>
-          `).join('')}
-        </div>
-      `;
+    menu.innerHTML = `
+      <div class="msHead">
+        <button type="button" class="msAction" data-act="all">Todos</button>
+        <button type="button" class="msAction" data-act="close">Cerrar</button>
+      </div>
+      <div class="msList">
+        ${items.map(v => `
+          <label class="msItem">
+            <input type="checkbox" value="${esc(v)}" ${cedisFilter.has(v) ? 'checked' : ''} />
+            <span>${esc(v)}</span>
+          </label>
+        `).join('')}
+      </div>
+    `;
 
-      // No cerrar por click interno
-      menu.addEventListener('click', (e)=>e.stopPropagation());
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      menu.classList.toggle('hidden');
+    });
+    document.addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
+    menu.addEventListener('click', (e)=>e.stopPropagation());
 
-      // Acciones
-      const btnAll = menu.querySelector('[data-act="all"]');
-      const btnClose = menu.querySelector('[data-act="close"]');
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
+      cedisFilter.clear();
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      updateCedisBtnText();
+      renderAllViews();
+    });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=> menu.classList.add('hidden'));
 
-      if(btnAll){
-        btnAll.addEventListener('click', ()=>{
-          menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=true);
-        });
-      }
-
-      if(btnClose){
-        btnClose.addEventListener('click', ()=>{
-          const selected = new Set(
-            Array.from(menu.querySelectorAll('input[type="checkbox"]'))
-              .filter(ch=>ch.checked)
-              .map(ch=>ch.value)
-          );
-
-          // Aplica SOLO al cerrar
-          cedisFilter.clear();
-          if(selected.size && selected.size < items.length){
-            for(const v of selected) cedisFilter.add(v);
-          }else{
-            // 0 ó todos = Todos (sin filtro)
-            cedisFilter.clear();
-          }
-
-          updateCedisBtnText();
-          menu.classList.add('hidden');
-          renderAllViews();
-        });
-      }
-    }
-
-    // Sincroniza checks con el filtro aplicado (al abrir)
-    const syncFromApplied = ()=>{
-      const all = !(cedisFilter && cedisFilter.size);
-      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-        ch.checked = all ? true : cedisFilter.has(ch.value);
+    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+      ch.addEventListener('change', ()=>{
+        if(ch.checked) cedisFilter.add(ch.value);
+        else cedisFilter.delete(ch.value);
+        updateCedisBtnText();
+        renderAllViews();
       });
-    };
-
-    // Open/close
-    if(menu.dataset.bound !== '1'){
-      menu.dataset.bound = '1';
-
-      btn.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        const willOpen = menu.classList.contains('hidden');
-        if(willOpen) syncFromApplied();
-        menu.classList.toggle('hidden');
-      });
-
-      // Click fuera: solo cierra (NO aplica)
-      document.addEventListener('click', ()=>{
-        menu.classList.add('hidden');
-      });
-    }
+    });
 
     updateCedisBtnText();
   }
@@ -4251,93 +4096,60 @@ function initCedisMulti(){
     else btn.textContent = 'CEDIS: ' + n + ' seleccionados ▾';
   }
 
-
 function initStatusMulti(){
     const btn = el('estatusBtn');
     const menu = el('estatusMenu');
     if(!btn || !menu) return;
+    if(menu.dataset.ready === '1'){ updateStatusBtnText(); return; }
+    menu.dataset.ready = '1';
 
     const items = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
 
-    // Construye menú una sola vez
-    if(menu.dataset.ready !== '1'){
-      menu.dataset.ready = '1';
-
-      menu.innerHTML = `
-        <div class="msHead">
-          <button type="button" class="msAction" data-act="all">Todos</button>
-          <button type="button" class="msAction" data-act="close">Cerrar</button>
-        </div>
-        <div class="msList">
-          ${items.map(it => `
-            <label class="msItem">
-              <input type="checkbox" value="${esc(it.code)}" />
-              <span>${esc(it.label)}</span>
-            </label>
-          `).join('')}
-        </div>
-      `;
-
-      // No cerrar por click interno
-      menu.addEventListener('click', (e)=>e.stopPropagation());
-
-      // Acciones
-      const btnAll = menu.querySelector('[data-act="all"]');
-      const btnClose = menu.querySelector('[data-act="close"]');
-
-      if(btnAll){
-        btnAll.addEventListener('click', ()=>{
-          menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=true);
-        });
-      }
-
-      if(btnClose){
-        btnClose.addEventListener('click', ()=>{
-          const selected = new Set(
-            Array.from(menu.querySelectorAll('input[type="checkbox"]'))
-              .filter(ch=>ch.checked)
-              .map(ch=>ch.value)
-          );
-
-          // Aplica SOLO al cerrar
-          statusFilter.clear();
-          if(selected.size && selected.size < items.length){
-            for(const v of selected) statusFilter.add(v);
-          }else{
-            // 0 ó todos = Todos (sin filtro)
-            statusFilter.clear();
-          }
-
-          updateStatusBtnText();
-          menu.classList.add('hidden');
-          renderAllViews();
-        });
-      }
-    }
-
-    const syncFromApplied = ()=>{
-      const all = !(statusFilter && statusFilter.size);
-      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-        ch.checked = all ? true : statusFilter.has(ch.value);
-      });
-    };
+    menu.innerHTML = `
+      <div class="msHead">
+        <button type="button" class="msAction" data-act="all">Todos</button>
+        <button type="button" class="msAction" data-act="close">Cerrar</button>
+      </div>
+      <div class="msList">
+        ${items.map(it => `
+          <label class="msItem">
+            <input type="checkbox" value="${esc(it.code)}" ${statusFilter.has(it.code) ? 'checked' : ''} />
+            <span>${esc(it.label)}</span>
+          </label>
+        `).join('')}
+      </div>
+    `;
 
     // Open/close
-    if(menu.dataset.bound !== '1'){
-      menu.dataset.bound = '1';
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      menu.classList.toggle('hidden');
+    });
+    document.addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
+    menu.addEventListener('click', (e)=>e.stopPropagation());
 
-      btn.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        const willOpen = menu.classList.contains('hidden');
-        if(willOpen) syncFromApplied();
-        menu.classList.toggle('hidden');
-      });
+    // Actions
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
+      statusFilter.clear();
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      updateStatusBtnText();
+      renderAllViews();
+    });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
 
-      // Click fuera: solo cierra (NO aplica)
-      document.addEventListener('click', ()=>{
-        menu.classList.add('hidden');
+    // Checkbox changes
+    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+      ch.addEventListener('change', ()=>{
+        if(ch.checked) statusFilter.add(ch.value);
+        else statusFilter.delete(ch.value);
+        updateStatusBtnText();
+        renderAllViews();
       });
-    }
+    });
 
     updateStatusBtnText();
   }
@@ -4486,6 +4298,17 @@ function initStatusMulti(){
     if(el(endId)) el(endId).value = t;
   }
 
+  function setSvaMode(mode){
+    svaViewMode = (mode === 'activos') ? 'activos' : 'llegadas';
+    const isAct = svaViewMode === 'activos';
+    if(el('btnSvaModeLlegadas')) el('btnSvaModeLlegadas').classList.toggle('active', !isAct);
+    if(el('btnSvaModeActivos')) el('btnSvaModeActivos').classList.toggle('active', isAct);
+    if(el('svaTitle')) el('svaTitle').textContent = isAct ? 'SVA · Procesos activos' : 'SVA · Reprocesos por arribo';
+    if(el('svaSub')) el('svaSub').textContent = isAct
+      ? 'Vista operativa de procesos activos en el rango seleccionado, con desglose de maquilas.'
+      : 'Contenedores que llegan para CAMBIO DE CORRUGADO / UVA / TI HI (tiempo real).';
+  }
+
   async function reloadSVA(){
     try{
       if(!el('svaStart') || !el('svaEnd')) return;
@@ -4511,9 +4334,17 @@ function initStatusMulti(){
       if(el('svaProcTIHI')?.checked) sel.add('TI HI');
 
       let q = supa.from('shipments')
-        .select('id,cedis,cuenta,contenedor,indicacion,arribo_at,asig_cortina_at,inicio_descarga_at,fin_descarga_at,estatus,cajas,pallets,tarimas')
-        .gte('arribo_at', startIso).lte('arribo_at', endIso)
-        .order('arribo_at', { ascending: true });
+        .select('id,cedis,cuenta,contenedor,indicacion,arribo_at,asig_cortina_at,inicio_descarga_at,fin_descarga_at,estatus,cajas,pallets,tarimas');
+
+      if(svaViewMode === 'activos'){
+        const lookback = new Date((d1 || ymd(new Date())) + 'T00:00:00');
+        lookback.setDate(lookback.getDate() - 90);
+        q = q.gte('arribo_at', lookback.toISOString()).lte('arribo_at', endIso);
+      } else {
+        q = q.gte('arribo_at', startIso).lte('arribo_at', endIso);
+      }
+
+      q = q.order('arribo_at', { ascending: true });
 
       const r = await q;
       if(r.error) throw r.error;
@@ -4647,6 +4478,30 @@ function initStatusMulti(){
       }catch(e){ console.warn(e); }
 
 
+      if(svaViewMode === 'activos'){
+        svaMerged = svaMerged.filter(x=>{
+          const maqInfo = Array.isArray(x.maquilas_info) ? x.maquilas_info : [];
+          const maqActive = maqInfo.some(m=>{
+            const est = String(m.estatus||'').toUpperCase();
+            return est === 'EN PROCESO' || (!!m.inicio_at && !m.fin_at);
+          });
+          const rowActive = String(x.estatus_sva||'').toUpperCase() === 'EN PROCESO' || maqActive;
+          if(!rowActive) return false;
+
+          let refDate = '';
+          if(x.inicio_proc) refDate = _isoToYMDLocal(x.inicio_proc);
+          if(!refDate){
+            const maqStarted = maqInfo.find(m=>m.inicio_at);
+            if(maqStarted?.inicio_at) refDate = _isoToYMDLocal(maqStarted.inicio_at);
+          }
+          if(!refDate) refDate = x.fecha || _isoToYMDLocal(x.sh?.arribo_at || '');
+          if(d1 && refDate < d1) return false;
+          if(d2 && refDate > d2) return false;
+          return true;
+        });
+        svaMerged.forEach((x,i)=>x.no=i+1);
+      }
+
       if(term){
         svaMerged = svaMerged.filter(x=>{
           const blob = [
@@ -4659,7 +4514,9 @@ function initStatusMulti(){
         svaMerged.forEach((x,i)=>x.no=i+1);
       }
 
-      el('svaMeta').textContent = `${svaMerged.length} contenedor(es) en SVA con los filtros actuales.`;
+      el('svaMeta').textContent = svaViewMode === 'activos'
+        ? `${svaMerged.length} contenedor(es) con proceso activo en SVA con los filtros actuales.`
+        : `${svaMerged.length} contenedor(es) en SVA con los filtros actuales.`;
       renderSVA();
     }catch(err){
       console.error(err);
@@ -5480,9 +5337,12 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
 
   // filtros SVA
   if(el('toggleColsSVA')) el('toggleColsSVA').addEventListener('click', ()=>_toggleCard('colsSVACard'));
+  if(el('btnSvaModeLlegadas')) el('btnSvaModeLlegadas').addEventListener('click', ()=>{ setSvaMode('llegadas'); reloadSVA(); });
+  if(el('btnSvaModeActivos')) el('btnSvaModeActivos').addEventListener('click', ()=>{ setSvaMode('activos'); reloadSVA(); });
   if(el('btnReloadSVA')) el('btnReloadSVA').addEventListener('click', reloadSVA);
   if(el('btnSVAHoy')) el('btnSVAHoy').addEventListener('click', ()=>{ const t = ymd(); el('svaStart').value = t; el('svaEnd').value = t; reloadSVA(); });
   if(el('svaSearch')) el('svaSearch').addEventListener('input', ()=>{ clearTimeout(_svaTimer); _svaTimer = setTimeout(reloadSVA, 80); });
+  setSvaMode('llegadas');
   if(el('svaStart')) el('svaStart').addEventListener('change', ()=>reloadSVA());
   if(el('svaEnd')) el('svaEnd').addEventListener('change', ()=>reloadSVA());
   if(el('svaProcCorr')) el('svaProcCorr').addEventListener('change', ()=>reloadSVA());
@@ -6650,17 +6510,6 @@ const q = (el('q')?.value || '').trim();
     }).join('');
   }
 
-  
-function _attPushLocalEvent(day, msg){
-    try{
-      if(!day) return;
-      if(!Array.isArray(day.events)) day.events = [];
-      const t = (typeof nowLocalIso === 'function') ? nowLocalIso() : (new Date()).toISOString();
-      day.events.unshift({t, msg: String(msg||'')});
-      if(day.events.length > 80) day.events = day.events.slice(0,80);
-    }catch(_e){}
-  }
-
   function _attUpdateCount(){
     const pill = el('att_count');
     if(!pill) return;
@@ -6681,7 +6530,7 @@ function _attPushLocalEvent(day, msg){
     tbody.innerHTML = '';
 
     if(!cedis || !date){
-      tbody.innerHTML = `<tr><td colspan="4" class="muted" style="font-size:12px;padding:12px">Selecciona CEDIS y fecha.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="3" class="muted" style="font-size:12px;padding:12px">Selecciona CEDIS y fecha.</td></tr>`;
       return;
     }
 
@@ -6695,7 +6544,7 @@ function _attPushLocalEvent(day, msg){
     const names = [...new Set([...rosterClean, ...extras])];
 
     if(!names.length){
-      tbody.innerHTML = `<tr><td colspan="4" class="muted" style="font-size:12px;padding:12px">Sin registros de asistencia para este día. (Puedes cargar plantilla con “Editar plantilla”.)</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="3" class="muted" style="font-size:12px;padding:12px">Sin registros de asistencia para este día. (Puedes cargar plantilla con “Editar plantilla”.)</td></tr>`;
       return;
     }
 
@@ -6751,19 +6600,6 @@ function _attPushLocalEvent(day, msg){
       tr.appendChild(td0);
       tr.appendChild(td1);
       tr.appendChild(td2);
-
-      // Acciones: borrar integrante (solo asistencia de este día y opcionalmente de plantilla)
-      const td3 = document.createElement('td');
-      td3.style.width = '110px';
-      const del = document.createElement('button');
-      del.className = 'btn tiny danger';
-      del.textContent = 'Borrar';
-      del.addEventListener('click', (ev)=>{
-        ev.stopPropagation();
-        _attDeletePerson(name);
-      });
-      td3.appendChild(del);
-      tr.appendChild(td3);
 
       tbody.appendChild(tr);
     });
@@ -6874,60 +6710,6 @@ function _attPushLocalEvent(day, msg){
 
     try{ refreshStaffKPIsDebounced(); }catch(_e){}
   }
-
-
-  async function _attDeletePerson(name){
-    const cedis = _attCurrent.cedis;
-    const date = _attCurrent.date;
-    name = String(name||'').trim();
-    if(!cedis || !date || !name) return;
-
-    const ok = confirm(`¿Eliminar a "${name}" de la asistencia del ${date} (${cedis})?`);
-    if(!ok) return;
-
-    const alsoRoster = confirm(`¿También quitar a "${name}" de la plantilla (catálogo) de ${cedis}?`);
-
-    // Local day
-    try{
-      const day = _attLoadLocalDay(cedis, date);
-      if(day && day.people && day.people[name]){
-        delete day.people[name];
-        _attPushLocalEvent(day, `${name}: eliminado de asistencia`);
-        _attPersistEventCloud('delete_person', name, 'activo', 'eliminado');
-        _attSaveLocalDay(cedis, date, day);
-        _attCurrent.day = day;
-        _attUpdateCount();
-        _attRenderAudit(day.events||[]);
-      }
-    }catch(_e){}
-
-    // Cloud: borra el registro del día (si hay permisos)
-    try{
-      const sb = await _attGetSupabaseSilent();
-      if(sb){
-        const r = await sb.from('attendance_entries')
-          .delete()
-          .eq('cedis', cedis)
-          .eq('work_date', date)
-          .eq('person', name);
-        if(r.error && !_attSchemaMissing(r.error)) console.warn(r.error);
-      }
-    }catch(_e){}
-
-    // Opcional: quitar de plantilla
-    if(alsoRoster){
-      try{
-        const roster = (_attCurrent.roster||[]).map(x=>String(x||'').trim()).filter(Boolean).filter(x=>x!==name);
-        _attSetRosterLocal(cedis, roster);
-        await _attSaveRosterCloud(cedis, roster);
-      }catch(_e){}
-    }
-
-    try{ await _attReload(); }catch(_e){}
-    try{ invalidateStaffKPIs(); }catch(_e){}
-    try{ refreshStaffKPIsDebounced(); }catch(_e){}
-  }
-
 
 
 
