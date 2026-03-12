@@ -287,6 +287,68 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 #screenView .tableWrap{ overflow:hidden; }
 #tableScreen{ width:100%; table-layout:auto; }
 #tableScreen thead th, #tableScreen tbody td{ text-align:center; white-space:nowrap; }
+#screenView #tableScreen thead th{ font-size:20px; padding-top:6px; padding-bottom:6px; vertical-align:middle; }
+#screenView #tableScreen tbody tr{ height:64px; }
+#screenView #tableScreen tbody td{ 
+  font-size:32px;
+  font-weight:700;
+  line-height:1.02;
+  padding-top:4px;
+  padding-bottom:4px;
+  vertical-align:middle;
+}
+#screenView #tableScreen tbody td[data-key="contenedor"],
+#screenView #tableScreen tbody td[data-key="cuenta"],
+#screenView #tableScreen tbody td[data-key="cedis"],
+#screenView #tableScreen tbody td[data-key="fecha"],
+#screenView #tableScreen tbody td[data-key="anden"],
+#screenView #tableScreen tbody td[data-key="arribo_at"],
+#screenView #tableScreen tbody td[data-key="inicio_at"],
+#screenView #tableScreen tbody td[data-key="fin_at"]{ font-size:32px; }
+#screenView td[data-key="status"]{ 
+  white-space:normal;
+  width:1%;
+  min-width:168px;
+  max-width:182px;
+  vertical-align:middle;
+}
+#screenView td[data-key="status"] .status-block{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  min-height:60px;
+  width:fit-content;
+  max-width:176px;
+  margin:0 auto;
+  padding:6px 8px;
+  border-radius:12px;
+  font-size:32px;
+  font-weight:1000;
+  line-height:0.96;
+  letter-spacing:0;
+  white-space:normal;
+  word-break:break-word;
+  overflow-wrap:anywhere;
+  box-sizing:border-box;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+#screenView td[data-key="status"] .status-line{ 
+  display:block;
+  white-space:normal;
+}
+#screenView td[data-key="status"] .status-line + .status-line{ margin-top:1px; }
+#screenView td[data-key="status"],
+#screenView td[data-key="fecha"],
+#screenView td[data-key="anden"],
+#screenView td[data-key="arribo"],
+#screenView td[data-key="inicio"],
+#screenView td[data-key="fin"],
+#screenView td[data-key="contenedor"],
+#screenView td[data-key="cuenta"],
+#screenView td[data-key="cedis"]{
+  vertical-align:middle;
+}
 /* --------------------------- */
 
 
@@ -1494,6 +1556,15 @@ function ymd(d=new Date()){
 
   function statusPill(code){
     return `<span class="status-block ${statusClass(code)}">${esc(statusLabel(code))}</span>`;
+  }
+
+  function statusPillScreen(code){
+    const label = statusLabel(code) || '';
+    const parts = label.split(/\s*-\s*/).filter(Boolean);
+    const lines = (parts.length >= 2)
+      ? parts.map(p => `<span class="status-line">${esc(p)}</span>`).join('')
+      : `<span class="status-line">${esc(label)}</span>`;
+    return `<span class="status-block ${statusClass(code)}">${lines}</span>`;
   }
 
   function toast(msg){
@@ -2784,39 +2855,6 @@ No se borran: quedan disponibles en Histórico por fecha.
     }
   }
 
-  async function pickResponsableFromAttendance(cedis, currentValue){
-    const cedisNorm = String(cedis||'').trim().toUpperCase();
-    const names = new Set();
-    try{
-      const raw = JSON.parse(localStorage.getItem(LS_ATT) || '[]');
-      (raw||[]).forEach(r=>{
-        if(String(r.cedis||'').trim().toUpperCase()===cedisNorm){
-          const n = String(r.nombre||r.name||'').trim().toUpperCase();
-          if(n) names.add(n);
-        }
-      });
-    }catch(_e){}
-    try{
-      const plantilla = JSON.parse(localStorage.getItem(ATT_PLANTILLA_PREFIX + cedisNorm) || '[]');
-      (plantilla||[]).forEach(n=>{
-        const v = String(n||'').trim().toUpperCase();
-        if(v) names.add(v);
-      });
-    }catch(_e){}
-    const ordered = Array.from(names).sort();
-    const preset = String(currentValue||'').trim().toUpperCase();
-    const extra = ordered.length
-      ? ('\n\nPersonal disponible:\n' + ordered.map((n,i)=>`${i+1}. ${n}`).join('\n'))
-      : '\n\nNo hay personal cargado; escribe el nombre manualmente.';
-    const ask = prompt(`Responsable (${cedis || 'CEDIS'})\nEscribe el número o el nombre.${extra}`, preset);
-    if(ask===null) return null;
-    const raw = String(ask||'').trim();
-    if(!raw) return '';
-    const idx = Number(raw);
-    if(Number.isFinite(idx) && idx>=1 && idx<=ordered.length) return ordered[idx-1];
-    return raw.toUpperCase();
-  }
-
   async function applyTransitionCloud(id, to){
     if(!authUser){ alert('Necesitas iniciar sesión para editar.'); return; }
 
@@ -2840,9 +2878,9 @@ No se borran: quedan disponibles en Histórico por fecha.
       newAnden = (a||'').trim();
     }
     if(requireResp(to)){
-      newResp = await pickResponsableFromAttendance(row.cedis, newResp);
-      if(newResp===null) return;
-      newResp = (newResp||'').trim();
+      const r = prompt('Responsable:', newResp);
+      if(r===null) return;
+      newResp = (r||'').trim();
     }
     if(requireNote(to)){
       const n = prompt('Nota / motivo:', '');
@@ -3332,41 +3370,20 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     await reloadData(true);
   }
 
-  function openEditRelative(step){
-    const ids = (currentBoardRows||[]).map(x=>x.id);
-    const curId = el('modalBackdrop')?.dataset?.curId || '';
-    const idx = ids.indexOf(curId);
-    if(idx<0) return;
-    const next = ids[idx + step];
-    if(next) openEdit(next);
-  }
-
   function openEdit(id){
     const r = (STATE.rows || []).find(x=>x.id===id);
     if(!r){ alert('No se encontró el registro.'); return; }
 
-    const navIds = (currentBoardRows||[]).map(x=>x.id);
-    const navIdx = navIds.indexOf(id);
-    const hasPrev = navIdx > 0;
-    const hasNext = navIdx >= 0 && navIdx < (navIds.length - 1);
-    const consecutive = navIdx >= 0 ? (navIdx + 1) : (r.folio || '');
-
-    el('modalTitle').textContent = `Editar · ${consecutive} · ${r.contenedor}`;
+    el('modalTitle').textContent = 'Editar registro';
     el('modalBody').innerHTML = `
-      <div class="detailNav" style="margin-bottom:12px">
-        <button class="btn secondary" id="e_prev_nav" ${hasPrev ? '' : 'disabled'}>← Anterior</button>
-        <div class="detailNavInfo">${navIdx>=0 ? `Contenedor ${navIdx+1} de ${navIds.length} según el filtro actual` : 'Edición del contenedor seleccionado'}</div>
-        <button class="btn secondary" id="e_next_nav" ${hasNext ? '' : 'disabled'}>Siguiente →</button>
-      </div>
-
       <div class="grid two">
         <div>
-          <div class="muted" style="font-size:12px">Consecutivo visible</div>
-          <input class="input" value="${esc(String(consecutive))}" disabled />
+          <div class="muted" style="font-size:12px">Folio</div>
+          <input class="input" value="${esc(r.folio)}" disabled />
         </div>
         <div>
           <div class="muted" style="font-size:12px">Estatus</div>
-          <input class="input" value="${esc(statusLabel(r.status))}" disabled />
+          <input class="input" value="${esc(r.status)}" disabled />
         </div>
 
         <div>
@@ -3421,21 +3438,14 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
         </div>
 
         <div style="grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
-          <button class="btn secondary" id="e_cancel">Cerrar edición</button>
+          <button class="btn secondary" id="e_cancel">Cancelar</button>
           <button class="btn" id="e_save">Guardar cambios</button>
         </div>
       </div>
     `;
-    el('modalBackdrop').dataset.curId = id;
-    el('modalBackdrop').dataset.mode = 'edit';
     el('modalBackdrop').classList.remove('hidden');
 
-    const prevBtn = document.getElementById('e_prev_nav');
-    const nextBtn = document.getElementById('e_next_nav');
-    if(prevBtn) prevBtn.addEventListener('click', ()=>openEditRelative(-1));
-    if(nextBtn) nextBtn.addEventListener('click', ()=>openEditRelative(1));
-
-    el('e_cancel').addEventListener('click', ()=>openDetail(id));
+    el('e_cancel').addEventListener('click', closeDetail);
     el('e_save').addEventListener('click', async ()=>{
       const note = (el('e_note').value || '').trim() || 'Edición';
       const cuenta = (el('e_cuenta').value || '').trim();
@@ -3460,7 +3470,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       };
       try{
         await updateFieldsCloud(id, patch, note);
-        openEdit(id);
+        closeDetail();
       }catch(e){
         alert('No se pudo guardar: ' + (e?.message || e));
       }
@@ -3482,13 +3492,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const r = (STATE.rows || []).find(x=>x.id===id);
     if(!r) return;
 
-    const navIds = (currentBoardRows||[]).map(x=>x.id);
-    const navIdx = navIds.indexOf(id);
-    const hasPrev = navIdx > 0;
-    const hasNext = navIdx >= 0 && navIdx < (navIds.length - 1);
-    const consecutive = navIdx >= 0 ? (navIdx + 1) : (r.folio || '');
-
-    el('modalTitle').textContent = `${consecutive} · ${r.contenedor}`;
+    el('modalTitle').textContent = `${r.folio} · ${r.contenedor}`;
     const fields = [
       ['CEDIS', r.cedis],
       ['Cuenta', r.cuenta],
@@ -3505,16 +3509,22 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       ['Indicación', r.indicacion],
     ];
 
+    const navIds = (currentBoardRows||[]).map(x=>x.id);
+    const navIdx = navIds.indexOf(id);
+    const hasPrev = navIdx > 0;
+    const hasNext = navIdx >= 0 && navIdx < (navIds.length - 1);
+
     el('modalBody').innerHTML = `
       <div class="detailNav">
-        <button class="btn secondary" id="d_prev_nav" ${hasPrev ? '' : 'disabled'}>← Anterior</button>
+        <button class="btn secondary" id="d_prev" ${hasPrev ? '' : 'disabled'}>← Anterior</button>
         <div class="detailNavInfo">${navIdx>=0 ? `Contenedor ${navIdx+1} de ${navIds.length} según el filtro actual` : 'Detalle del contenedor seleccionado'}</div>
-        <button class="btn secondary" id="d_next_nav" ${hasNext ? '' : 'disabled'}>Siguiente →</button>
+        <button class="btn secondary" id="d_next" ${hasNext ? '' : 'disabled'}>Siguiente →</button>
       </div>
     ` + fields.map(([k,v])=>`
       <div class="row"><div class="k">${esc(k)}</div><div class="v">${esc(v||'')}</div></div>
     `).join('');
 
+    // Acciones en TABLERO (requiere sesión)
     const opts = nextActions(r.status);
     const optHtml = opts.map(o=>`<option value="${o.to}">${esc(o.label)}</option>`).join('');
     const dis = authUser ? '' : 'disabled';
@@ -3529,7 +3539,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     el('modalBody').innerHTML += `
       <div class="sep" style="margin:10px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
       <div id="detailActions" class="admin-controls" style="gap:10px;flex-wrap:wrap">
-        <select class="input" id="d_status_next" ${dis} style="min-width:220px">
+        <select class="input" id="d_next" ${dis} style="min-width:220px">
           <option value="">Siguiente estatus…</option>
           ${optHtml}
         </select>
@@ -3551,13 +3561,13 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     `;
 
     el('modalBackdrop').dataset.curId = id;
-    el('modalBackdrop').dataset.mode = 'detail';
 
-    const prevBtn = document.getElementById('d_prev_nav');
-    const nextBtn = document.getElementById('d_next_nav');
+    const prevBtn = document.getElementById('d_prev');
+    const nextBtn = document.getElementById('d_next');
     if(prevBtn) prevBtn.addEventListener('click', ()=>openDetailRelative(-1));
     if(nextBtn) nextBtn.addEventListener('click', ()=>openDetailRelative(1));
 
+    // poblar opciones de regreso (historial)
     if(authUser && !isLiberadoLike){
       const selBack = document.getElementById('d_back_to');
       if(selBack){
@@ -3573,8 +3583,11 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       }
     }
 
+
+
     el('modalBackdrop').classList.remove('hidden');
   }
+
   function closeDetail(){
     el('modalBackdrop').classList.add('hidden');
   }
@@ -4093,24 +4106,15 @@ function renderFilters(){
 
   
   
-  function _menuSelectionFromFilter(items, setRef){
-  if(setRef && setRef.size) return new Set(Array.from(setRef));
-  return new Set((items||[]).map(v=>String(v)));
-}
-function _syncMenuChecks(menu, selected){
-  if(!menu) return;
-  menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-    ch.checked = selected.has(ch.value);
-  });
-}
+  function initCedisMulti(){
+    const btn = el('cedisBtn');
+    const menu = el('cedisMenu');
+    if(!btn || !menu) return;
+    if(menu.dataset.ready === '1'){ updateCedisBtnText(); return; }
+    menu.dataset.ready = '1';
 
-function initCedisMulti(){
-  const btn = el('cedisBtn');
-  const menu = el('cedisMenu');
-  if(!btn || !menu) return;
-  const items = (CEDIS_LIST||[]).map(c=>String(c)).filter(Boolean);
+    const items = (CEDIS_LIST||[]).map(c=>String(c)).filter(Boolean);
 
-  const buildMenu = ()=>{
     menu.innerHTML = `
       <div class="msHead">
         <button type="button" class="msAction" data-act="all">Todos</button>
@@ -4119,75 +4123,59 @@ function initCedisMulti(){
       <div class="msList">
         ${items.map(v => `
           <label class="msItem">
-            <input type="checkbox" value="${esc(v)}" />
+            <input type="checkbox" value="${esc(v)}" ${cedisFilter.has(v) ? 'checked' : ''} />
             <span>${esc(v)}</span>
           </label>
         `).join('')}
       </div>
     `;
-  };
-
-  const commit = ()=>{
-    const selected = new Set();
-    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-      if(ch.checked) selected.add(ch.value);
-    });
-    cedisFilter = (selected.size === items.length) ? new Set() : selected;
-    updateCedisBtnText();
-    renderAllViews();
-  };
-
-  const syncFromState = ()=>{
-    const selected = _menuSelectionFromFilter(items, cedisFilter);
-    _syncMenuChecks(menu, selected);
-  };
-
-  if(menu.dataset.ready !== '1'){
-    buildMenu();
-    menu.dataset.ready = '1';
 
     btn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      if(menu.classList.contains('hidden')){
-        syncFromState();
-        menu.classList.remove('hidden');
-      }else{
-        menu.classList.add('hidden');
-      }
+      menu.classList.toggle('hidden');
     });
-    document.addEventListener('click', ()=>{ menu.classList.add('hidden'); });
+    document.addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
     menu.addEventListener('click', (e)=>e.stopPropagation());
 
     menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
-      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=true);
+      cedisFilter.clear();
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      updateCedisBtnText();
+      renderAllViews();
     });
-    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{
-      commit();
-      menu.classList.add('hidden');
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=> menu.classList.add('hidden'));
+
+    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+      ch.addEventListener('change', ()=>{
+        if(ch.checked) cedisFilter.add(ch.value);
+        else cedisFilter.delete(ch.value);
+        updateCedisBtnText();
+        renderAllViews();
+      });
     });
+
+    updateCedisBtnText();
   }
 
-  syncFromState();
-  updateCedisBtnText();
-}
-
-function updateCedisBtnText(){
-  const btn = el('cedisBtn');
-  if(!btn) return;
-  const total = (CEDIS_LIST||[]).filter(Boolean).length;
-  const n = cedisFilter.size || total;
-  if(!cedisFilter.size || n===total) btn.textContent = 'CEDIS: Todos ▾';
-  else btn.textContent = 'CEDIS: ' + n + ' seleccionados ▾';
-}
+  function updateCedisBtnText(){
+    const btn = el('cedisBtn');
+    if(!btn) return;
+    const n = cedisFilter.size;
+    if(n===0) btn.textContent = 'CEDIS: Todos ▾';
+    else btn.textContent = 'CEDIS: ' + n + ' seleccionados ▾';
+  }
 
 function initStatusMulti(){
-  const btn = el('estatusBtn');
-  const menu = el('estatusMenu');
-  if(!btn || !menu) return;
-  const items = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
-  const itemCodes = items.map(it=>it.code);
+    const btn = el('estatusBtn');
+    const menu = el('estatusMenu');
+    if(!btn || !menu) return;
+    if(menu.dataset.ready === '1'){ updateStatusBtnText(); return; }
+    menu.dataset.ready = '1';
 
-  const buildMenu = ()=>{
+    const items = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
+
     menu.innerHTML = `
       <div class="msHead">
         <button type="button" class="msAction" data-act="all">Todos</button>
@@ -4196,65 +4184,53 @@ function initStatusMulti(){
       <div class="msList">
         ${items.map(it => `
           <label class="msItem">
-            <input type="checkbox" value="${esc(it.code)}" />
+            <input type="checkbox" value="${esc(it.code)}" ${statusFilter.has(it.code) ? 'checked' : ''} />
             <span>${esc(it.label)}</span>
           </label>
         `).join('')}
       </div>
     `;
-  };
 
-  const commit = ()=>{
-    const selected = new Set();
-    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-      if(ch.checked) selected.add(ch.value);
-    });
-    statusFilter = (selected.size === itemCodes.length) ? new Set() : selected;
-    updateStatusBtnText();
-    renderAllViews();
-  };
-
-  const syncFromState = ()=>{
-    const selected = _menuSelectionFromFilter(itemCodes, statusFilter);
-    _syncMenuChecks(menu, selected);
-  };
-
-  if(menu.dataset.ready !== '1'){
-    buildMenu();
-    menu.dataset.ready = '1';
-
+    // Open/close
     btn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      if(menu.classList.contains('hidden')){
-        syncFromState();
-        menu.classList.remove('hidden');
-      }else{
-        menu.classList.add('hidden');
-      }
+      menu.classList.toggle('hidden');
     });
-    document.addEventListener('click', ()=>{ menu.classList.add('hidden'); });
-    menu.addEventListener('click', (e)=>e.stopPropagation());
-
-    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
-      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=true);
-    });
-    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{
-      commit();
+    document.addEventListener('click', ()=>{
       menu.classList.add('hidden');
     });
-  }
+    menu.addEventListener('click', (e)=>e.stopPropagation());
 
-  syncFromState();
-  updateStatusBtnText();
-}
-function updateStatusBtnText(){
-  const btn = el('estatusBtn');
-  if(!btn) return;
-  const total = (STATUS||[]).length;
-  const n = statusFilter.size || total;
-  if(!statusFilter.size || n===total) btn.textContent = 'Estatus: Todos ▾';
-  else btn.textContent = 'Estatus: ' + n + ' seleccionados ▾';
-}
+    // Actions
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
+      statusFilter.clear();
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      updateStatusBtnText();
+      renderAllViews();
+    });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{
+      menu.classList.add('hidden');
+    });
+
+    // Checkbox changes
+    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+      ch.addEventListener('change', ()=>{
+        if(ch.checked) statusFilter.add(ch.value);
+        else statusFilter.delete(ch.value);
+        updateStatusBtnText();
+        renderAllViews();
+      });
+    });
+
+    updateStatusBtnText();
+  }
+  function updateStatusBtnText(){
+    const btn = el('estatusBtn');
+    if(!btn) return;
+    const n = statusFilter.size;
+    if(n===0) btn.textContent = 'Estatus: Todos ▾';
+    else btn.textContent = 'Estatus: ' + n + ' seleccionados ▾';
+  }
 
 
 
@@ -4463,13 +4439,11 @@ function updateStatusBtnText(){
 
       const conts = [...new Set(items.map(x=>x.contenedor_norm))];
       const recMap = new Map();
-      const activeKeySet = new Set();
-      const activeProdByKey = new Map();
 
       if(conts.length){
         let rq = supa.from('sva_reprocesos').select('*').in('contenedor_norm', conts);
-        if(svaViewMode !== 'activos' && d1) rq = rq.gte('arribo_ymd', d1);
-        if(svaViewMode !== 'activos' && d2) rq = rq.lte('arribo_ymd', d2);
+        if(d1) rq = rq.gte('arribo_ymd', d1);
+        if(d2) rq = rq.lte('arribo_ymd', d2);
         const rr = await rq;
         if(rr.error) throw rr.error;
         (rr.data||[]).forEach(rec=>{
@@ -4517,16 +4491,16 @@ function updateStatusBtnText(){
           let mqQ = supa.from('sva_reprocesos_maquilas')
             .select('contenedor_norm,arribo_ymd,proceso,maquila,personal,estatus,inicio_at,fin_at')
             .in('contenedor_norm', conts2);
-          if(svaViewMode !== 'activos' && d1) mqQ = mqQ.gte('arribo_ymd', d1);
-          if(svaViewMode !== 'activos' && d2) mqQ = mqQ.lte('arribo_ymd', d2);
+          if(d1) mqQ = mqQ.gte('arribo_ymd', d1);
+          if(d2) mqQ = mqQ.lte('arribo_ymd', d2);
           let mqR = await mqQ;
           // Fallback si la tabla aún no tiene columnas de estado por maquila
           if(mqR && mqR.error && String(mqR.error.message||'').toLowerCase().includes('column')){
             mqQ = supa.from('sva_reprocesos_maquilas')
               .select('contenedor_norm,arribo_ymd,proceso,maquila,personal')
               .in('contenedor_norm', conts2);
-            if(svaViewMode !== 'activos' && d1) mqQ = mqQ.gte('arribo_ymd', d1);
-            if(svaViewMode !== 'activos' && d2) mqQ = mqQ.lte('arribo_ymd', d2);
+            if(d1) mqQ = mqQ.gte('arribo_ymd', d1);
+            if(d2) mqQ = mqQ.lte('arribo_ymd', d2);
             mqR = await mqQ;
           }
           if(!mqR.error){
@@ -4554,8 +4528,8 @@ function updateStatusBtnText(){
           let prQ = supa.from('sva_prod_hora')
             .select('contenedor_norm,arribo_ymd,proceso,cajas')
             .in('contenedor_norm', conts2);
-          if(svaViewMode !== 'activos' && d1) prQ = prQ.gte('arribo_ymd', d1);
-          if(svaViewMode !== 'activos' && d2) prQ = prQ.lte('arribo_ymd', d2);
+          if(d1) prQ = prQ.gte('arribo_ymd', d1);
+          if(d2) prQ = prQ.lte('arribo_ymd', d2);
           const prR = await prQ;
           if(!prR.error){
             const mapP = new Map();
@@ -4576,36 +4550,14 @@ function updateStatusBtnText(){
 
 
       if(svaViewMode === 'activos'){
-        try{
-          let prActQ = supa.from('sva_prod_hora')
-            .select('contenedor_norm,arribo_ymd,proceso,work_ymd,cajas')
-            .in('contenedor_norm', conts2);
-          if(d1) prActQ = prActQ.gte('work_ymd', d1);
-          if(d2) prActQ = prActQ.lte('work_ymd', d2);
-          const prActR = await prActQ;
-          if(!prActR.error){
-            for(const row of (prActR.data||[])){
-              const k = `${row.contenedor_norm}|${row.arribo_ymd}|${row.proceso||''}`;
-              activeKeySet.add(k);
-              activeProdByKey.set(k, (activeProdByKey.get(k)||0) + Number(row.cajas||0));
-            }
-          }
-        }catch(e){ console.warn(e); }
-
-        svaMerged.forEach(r=>{
-          if(activeProdByKey.has(r.key)) r.prod_cajas_dia = activeProdByKey.get(r.key) || 0;
-        });
-
         svaMerged = svaMerged.filter(x=>{
           const maqInfo = Array.isArray(x.maquilas_info) ? x.maquilas_info : [];
           const maqActive = maqInfo.some(m=>{
             const est = String(m.estatus||'').toUpperCase();
             return est === 'EN PROCESO' || (!!m.inicio_at && !m.fin_at);
           });
-          const hasProdInRange = activeKeySet.has(x.key);
-          const rowActive = String(x.estatus_sva||'').toUpperCase() === 'EN PROCESO' || maqActive || hasProdInRange;
+          const rowActive = String(x.estatus_sva||'').toUpperCase() === 'EN PROCESO' || maqActive;
           if(!rowActive) return false;
-          if(hasProdInRange) return true;
 
           let refDate = '';
           if(x.inicio_proc) refDate = _isoToYMDLocal(x.inicio_proc);
@@ -4634,7 +4586,7 @@ function updateStatusBtnText(){
       }
 
       el('svaMeta').textContent = svaViewMode === 'activos'
-        ? `${svaMerged.length} contenedor(es) con actividad o producción en SVA dentro del rango seleccionado.`
+        ? `${svaMerged.length} contenedor(es) con proceso activo en SVA con los filtros actuales.`
         : `${svaMerged.length} contenedor(es) en SVA con los filtros actuales.`;
       renderSVA();
     }catch(err){
@@ -4699,13 +4651,9 @@ function updateStatusBtnText(){
 const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0);
       const done = (r.prod_cajas ?? 0);
       const pct = (r.prod_pct!=null) ? r.prod_pct : ((r.avance_pct!=='' && r.avance_pct!=null) ? Number(r.avance_pct) : null);
-      const avanceDia = Number(r.prod_cajas_dia||0);
-      const avanceMetaTxt = totalCajas ? `${done} / ${totalCajas} cajas` : `${done} cajas`;
-      const avanceDiaTxt = avanceDia>0 ? `<div class="muted" style="font-size:11px">día: ${avanceDia} cajas</div>` : '';
       const avanceIn = `<div class="svaPctWrap" data-sva-pctwrap="${escapeHtml(r.key)}" style="min-width:110px">
           <div class="svaPctVal" style="font-weight:900">${pct==null ? '—' : (String(pct)+'%')}</div>
-          <div class="muted svaPctMeta" style="font-size:12px">${avanceMetaTxt}</div>
-          ${avanceDiaTxt}
+          <div class="muted svaPctMeta" style="font-size:12px">${totalCajas ? `${done} / ${totalCajas} cajas` : `${done} cajas`}</div>
         </div>`;
 
       const persTxt = Array.isArray(r.maquilas_info)
@@ -5666,7 +5614,7 @@ if(btnAddBulk) btnAddBulk.addEventListener('click', async ()=>{
       if(!id) return;
 
       if(t && t.id === 'd_apply'){
-        const to = el('d_status_next') ? el('d_status_next').value : '';
+        const to = el('d_next') ? el('d_next').value : '';
         if(!to){ alert('Selecciona un estatus'); return; }
         try{
           await applyTransitionCloud(id, to);
@@ -5675,9 +5623,6 @@ if(btnAddBulk) btnAddBulk.addEventListener('click', async ()=>{
           alert('Error al actualizar: ' + (e?.message || e));
         }
       }
-
-      if(t && t.id === 'd_prev_nav'){ openDetailRelative(-1); return; }
-      if(t && t.id === 'd_next_nav'){ openDetailRelative(1); return; }
 
       if(t && t.id === 'd_back_apply'){
         try{
@@ -6302,7 +6247,7 @@ const q = (el('q')?.value || '').trim();
   function renderScreen(){
     const rows = getFilteredRows();
     const total = rows.length;
-    const pageSize = 9;
+    const pageSize = 6;
 
     const wr = getWorkRange();
     const dateStr = ((wr.start===wr.end) ? wr.start : `${wr.start} - ${wr.end}`).replaceAll('-', '/');
@@ -6332,7 +6277,7 @@ const q = (el('q')?.value || '').trim();
         <td data-key="contenedor" class="mono"><div class="clamp2">${esc(r.contenedor)}</div></td>
         <td data-key="cuenta">${esc(r.cuenta)}</td>
         <td data-key="cedis">${esc(r.cedis)}</td>
-        <td data-key="status">${statusPill(r.status)}</td>
+        <td data-key="status">${statusPillScreen(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
         <td data-key="indicacion">${indicacionHTML(r.indicacion)}</td>
         <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
@@ -6358,8 +6303,8 @@ const q = (el('q')?.value || '').trim();
     renderScreen();
     screenTimer = setInterval(()=>{
       const total = getFilteredRows().length;
-      if(total<=9){ renderScreen(); return; }
-      screenOffset += 9;
+      if(total<=6){ renderScreen(); return; }
+      screenOffset += 6;
       if(screenOffset >= total) screenOffset = 0;
       renderScreen();
     }, 10000);
