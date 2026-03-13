@@ -502,6 +502,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <button class="tab" id="tabScreen">PANTALLA</button>
       <button class="tab" id="tabAdmin">ADMIN</button>
       <button class="tab" id="tabSVA">SVA</button>
+      <button class="tab" id="tabReprocesos">REPROCESOS</button>
       <button class="tab" id="tabLogistica">LOGÍSTICA</button>
     </div>
 
@@ -1141,6 +1142,73 @@ MARIA LOPEZ
     </section>
 
 
+    <section id="reproView" class="hidden">
+      <div class="card compact" style="margin-bottom:12px">
+        <div class="subview-head">
+          <div>
+            <div class="h1" id="reproTitle">REPROCESOS · Producción por inicio de proceso</div>
+            <div class="sub" id="reproSub">Contenedores con maquila iniciada en el rango seleccionado. La productividad se captura por hora, por maquila y por contenedor.</div>
+          </div>
+          <div class="subview-actions">
+            <button class="btn secondary" id="toggleColsRepro">Columnas</button>
+            <button class="btn secondary" id="btnReloadRepro">Actualizar</button>
+          </div>
+        </div>
+
+        <div class="filtersRow">
+          <input class="input" id="reproSearch" placeholder="Buscar: contenedor / proceso / maquila / indicación" style="min-width:320px;flex:1" />
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="muted">Inicio</span><input class="input" id="reproStart" type="date" style="min-width:160px" />
+            <span class="muted">Fin</span><input class="input" id="reproEnd" type="date" style="min-width:160px" />
+          </div>
+          <button class="btn secondary" id="btnReproHoy">Hoy</button>
+        </div>
+
+        <div class="filtersRow" style="margin-top:8px">
+          <div class="chip" style="background:rgba(255,255,255,.06)">Procesos:</div>
+          <label class="chip"><input type="checkbox" id="reproProcCorr" checked> CORRUGADO</label>
+          <label class="chip"><input type="checkbox" id="reproProcUVA" checked> UVA</label>
+          <label class="chip"><input type="checkbox" id="reproProcTIHI" checked> TI HI</label>
+        </div>
+
+        <div class="card colsCardSmall hidden" id="colsReproCard">
+          <div class="muted" style="font-size:12px;margin-bottom:8px">Selecciona columnas a mostrar (se guarda en este dispositivo).</div>
+          <div id="colsRepro"></div>
+        </div>
+
+        <div class="muted" id="reproMeta" style="margin-top:8px"></div>
+      </div>
+
+      <div class="svaTableWrapOuter">
+      <div class="tableWrap" id="reproTableWrap">
+        <table class="table" id="reproTable">
+          <thead>
+            <tr>
+              <th data-key="no">NO</th>
+              <th data-key="contenedor">CONTENEDOR</th>
+              <th data-key="cedis">CEDIS</th>
+              <th data-key="fecha">FECHA ARRIBO</th>
+              <th data-key="proceso">PROCESO</th>
+              <th data-key="estatus_sva">ESTATUS</th>
+              <th data-key="maquilas">MAQUILA(S)</th>
+              <th data-key="avance_pct">% AVANCE</th>
+              <th data-key="inicio_proc">INICIO PROC</th>
+              <th data-key="fin_proc">FIN PROC</th>
+              <th data-key="tiempo_proc">TIEMPO</th>
+              <th data-key="personal_maquila">PERSONAL POR MAQUILA</th>
+              <th data-key="indicacion">INDICACIÓN</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyRepro"></tbody>
+        </table>
+      </div>
+      <div class="svaHScroll" id="reproHScroll" aria-label="Desplazamiento horizontal">
+        <div class="svaHScrollInner" id="reproHScrollInner"></div>
+      </div>
+    </div>
+    </section>
+
+
     <section id="logisticaView" class="hidden">
       <div class="card compact" style="margin-bottom:12px">
         <div class="subview-head">
@@ -1360,7 +1428,7 @@ function applyViewOnlyMode(){
 
   // Deshabilita navegación y controles (visibles pero inactivos)
   const disableIds = [
-    'tabAdmin','tabSummary','tabDashboard','tabScreen','tabSVA','tabLogistica',
+    'tabAdmin','tabSummary','tabDashboard','tabScreen','tabSVA','tabReprocesos','tabLogistica',
     'btnExport','btnToday','toggleCols','toggleFullscreen','btnCloud',
     'q','dateStart','dateEnd','cedisBtn','estatusBtn',
     'btnAdd','btnAddBulk','btnSeed','btnCloseDay','btnReset'
@@ -1374,7 +1442,7 @@ function applyViewOnlyMode(){
   }
 
   // Evita salir del tablero por clicks en tabs (si algo queda habilitado)
-  ['tabAdmin','tabSummary','tabDashboard','tabScreen','tabSVA','tabLogistica'].forEach(id=>{
+  ['tabAdmin','tabSummary','tabDashboard','tabScreen','tabSVA','tabReprocesos','tabLogistica'].forEach(id=>{
     const n = el(id);
     if(n) n.addEventListener('click', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); setTab('board'); });
   });
@@ -4108,6 +4176,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const isSummary = which==='summary';
     const isDashboard = which==='dashboard';
     const isSVA = which==='sva';
+    const isRepro = which==='reprocesos';
     const isLogistica = which==='logistica';
 
     el('boardView').classList.toggle('hidden', !isBoard);
@@ -4118,6 +4187,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(el('porLlegarView')) el('porLlegarView').classList.toggle('hidden', !isPorLlegar);
     if(el('historicoView')) el('historicoView').classList.toggle('hidden', !isHistorico);
     if(el('svaView')) el('svaView').classList.toggle('hidden', !isSVA);
+    if(el('reproView')) el('reproView').classList.toggle('hidden', !isRepro);
     if(el('logisticaView')) el('logisticaView').classList.toggle('hidden', !isLogistica);
 
     el('tabBoard').classList.toggle('active', isBoard);
@@ -4126,6 +4196,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(el('tabSummary')) el('tabSummary').classList.toggle('active', isSummary);
     if(el('tabDashboard')) el('tabDashboard').classList.toggle('active', isDashboard);
     if(el('tabSVA')) el('tabSVA').classList.toggle('active', isSVA);
+    if(el('tabReprocesos')) el('tabReprocesos').classList.toggle('active', isRepro);
     if(el('tabLogistica')) el('tabLogistica').classList.toggle('active', isLogistica);
 
     const modeLabel = isBoard ? 'Tablero'
@@ -4133,7 +4204,10 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       : (isHistorico ? 'Admin · Histórico'
       : (isAdmin ? 'Admin'
       : (isSummary ? 'Resumen'
-      : (isDashboard ? 'Dashboard' : 'Pantalla')))));
+      : (isDashboard ? 'Dashboard'
+      : (isSVA ? 'SVA'
+      : (isRepro ? 'Reprocesos'
+      : (isLogistica ? 'Logística' : 'Pantalla'))))))));
     el('chipMode').textContent = `Modo: ${modeLabel}`;
 
     if(isBoard) closeAuthDialog();
@@ -4150,6 +4224,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(isPorLlegar){ reloadPorLlegar(); }
     if(isHistorico){ reloadHistorico(); }
     if(isSVA){ reloadSVA(); }
+    if(isRepro){ reloadRepro(); }
     if(isLogistica){ reloadLogistica(); }
   }
 
@@ -4328,6 +4403,9 @@ function initStatusMulti(){
     { key:'indicacion', label:'INDICACIÓN' },
   ];
 
+  const LS_COLS_REPRO = 'cols_repro_v1';
+  const COLS_REPRO = [...COLS_SVA];
+
   const LS_COLS_LOG = 'cols_log_v1';
   const COLS_LOG = [
     { key:'cita_ymd', label:'FECHA' },
@@ -4343,6 +4421,7 @@ function initStatusMulti(){
   ];
 
   let svaMerged = [];
+  let reproMerged = [];
   let logRows = [];
   let _svaTimer = null;
   let _logTimer = null;
@@ -4415,6 +4494,11 @@ function initStatusMulti(){
     applyColsSVA();
   }
 
+  function _initReproCols(){
+    _renderColsGeneric('colsRepro', COLS_REPRO, LS_COLS_REPRO, () => renderRepro());
+    applyColsRepro();
+  }
+
   function _initLogCols(){
     _renderColsGeneric('colsLog', COLS_LOG, LS_COLS_LOG, () => renderLogistica());
     applyColsLog();
@@ -4425,6 +4509,8 @@ function initStatusMulti(){
     if(!c) return;
     c.classList.toggle('hidden');
   }
+
+  function applyColsRepro(){ _applyColsToTable('#reproTable', '#tbodyRepro', LS_COLS_REPRO, COLS_REPRO); }
 
   function _setTodayRange(startId, endId){
     const t = ymd(new Date());
@@ -4786,8 +4872,210 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
     };
   }
 
+  async function reloadRepro(){
+    try{
+      if(!el('reproStart') || !el('reproEnd')) return;
+      if(!el('reproStart').value || !el('reproEnd').value){ _setTodayRange('reproStart','reproEnd'); }
+      await ensureSupa();
+      if(!supa){
+        if(el('reproMeta')) el('reproMeta').textContent = 'Nube no conectada.';
+        if(el('tbodyRepro')) el('tbodyRepro').innerHTML = '';
+        return;
+      }
+      _ensureRealtimeSVA();
+
+      const d1 = el('reproStart').value;
+      const d2 = el('reproEnd').value;
+      const term = (el('reproSearch').value||'').trim().toUpperCase();
+
+      const sel = new Set();
+      if(el('reproProcCorr')?.checked) sel.add('CAMBIO DE CORRUGADO');
+      if(el('reproProcUVA')?.checked) sel.add('UVA');
+      if(el('reproProcTIHI')?.checked) sel.add('TI HI');
+
+      const lookback = new Date((d1 || ymd(new Date())) + 'T00:00:00');
+      lookback.setDate(lookback.getDate() - 120);
+      const endIso = new Date((d2 || ymd(new Date())) + 'T23:59:59.999').toISOString();
+
+      const q = await supa.from('shipments')
+        .select('id,cedis,cuenta,contenedor,indicacion,arribo_at,asig_cortina_at,inicio_descarga_at,fin_descarga_at,estatus,cajas,pallets,tarimas')
+        .gte('arribo_at', lookback.toISOString())
+        .lte('arribo_at', endIso)
+        .order('arribo_at', { ascending: true });
+      if(q.error) throw q.error;
+      const ships = q.data || [];
+
+      const items = [];
+      for(const sh of ships){
+        const procs = _detectSvaProcesos(sh.indicacion||'');
+        if(!procs.length) continue;
+        for(const p of procs){
+          if(!sel.has(p)) continue;
+          const cont = _normCont(sh.contenedor);
+          const fecha = _isoToYMDLocal(sh.arribo_at);
+          items.push({ key: `${cont}|${fecha}|${p}`, contenedor_norm: cont, arribo_ymd: fecha, proceso: p, sh });
+        }
+      }
+
+      const conts = [...new Set(items.map(x=>x.contenedor_norm))];
+      const recMap = new Map();
+      if(conts.length){
+        let rq = supa.from('sva_reprocesos').select('*').in('contenedor_norm', conts);
+        const rr = await rq;
+        if(rr.error) throw rr.error;
+        (rr.data||[]).forEach(rec=>{ recMap.set(`${rec.contenedor_norm}|${rec.arribo_ymd}|${rec.proceso||''}`, rec); });
+      }
+
+      reproMerged = items.map((it)=>{
+        const rec = recMap.get(it.key) || {};
+        const sh = it.sh;
+        const estatus_sva = rec.estatus_sva || (sh.fin_descarga_at ? 'PENDIENTE' : '');
+        const inicio_proc = rec.inicio_proc || null;
+        const fin_proc = rec.fin_proc || null;
+        const tproc = (inicio_proc && fin_proc) ? _fmtDur(new Date(fin_proc) - new Date(inicio_proc)) : '';
+        return {
+          no: 0,
+          key: it.key,
+          contenedor_norm: it.contenedor_norm,
+          contenedor: it.contenedor_norm,
+          cedis: sh.cedis || '',
+          fecha: it.arribo_ymd || '',
+          proceso: it.proceso,
+          estatus_sva,
+          maquilas: rec.maquilas || '',
+          avance_pct: (rec.avance_pct ?? ''),
+          inicio_proc,
+          fin_proc,
+          tiempo_proc: tproc,
+          personal_maquila: rec.personal_maquila || '',
+          indicacion: sh.indicacion || '',
+          sh
+        };
+      });
+
+      try{
+        if(conts.length){
+          let mqQ = supa.from('sva_reprocesos_maquilas')
+            .select('contenedor_norm,arribo_ymd,proceso,maquila,personal,estatus,inicio_at,fin_at')
+            .in('contenedor_norm', conts);
+          let mqR = await mqQ;
+          if(mqR && mqR.error && String(mqR.error.message||'').toLowerCase().includes('column')){
+            mqQ = supa.from('sva_reprocesos_maquilas')
+              .select('contenedor_norm,arribo_ymd,proceso,maquila,personal')
+              .in('contenedor_norm', conts);
+            mqR = await mqQ;
+          }
+          if(!mqR.error){
+            const mapM = new Map();
+            for(const row of (mqR.data||[])){
+              const k = `${row.contenedor_norm}|${row.arribo_ymd}|${row.proceso||''}`;
+              if(!mapM.has(k)) mapM.set(k, []);
+              mapM.get(k).push({ maquila:(row.maquila||'').toUpperCase(), personal:(row.personal==null?null:Number(row.personal)), estatus:(row.estatus||'')?String(row.estatus).toUpperCase():null, inicio_at:row.inicio_at||null, fin_at:row.fin_at||null });
+            }
+            for(const r of reproMerged){
+              const lst = mapM.get(r.key) || [];
+              r.maquilas_info = lst;
+              r.maquilas_list = [...new Set(lst.map(x=>x.maquila).filter(Boolean))];
+              r.maquilas_state = Object.fromEntries(lst.map(x=>[x.maquila, {estatus:x.estatus, inicio_at:x.inicio_at, fin_at:x.fin_at}]));
+            }
+          }
+
+          let prQ = supa.from('sva_prod_hora').select('contenedor_norm,arribo_ymd,proceso,work_ymd,cajas').in('contenedor_norm', conts);
+          const prR = await prQ;
+          if(!prR.error){
+            const sumMap = new Map();
+            const dayMap = new Map();
+            for(const row of (prR.data||[])){
+              const k = `${row.contenedor_norm}|${row.arribo_ymd}|${row.proceso||''}`;
+              const c = Number(row.cajas||0);
+              if(!Number.isFinite(c)) continue;
+              sumMap.set(k, (sumMap.get(k)||0) + c);
+              const wy = String(row.work_ymd||'');
+              if(wy >= d1 && wy <= d2) dayMap.set(k, (dayMap.get(k)||0) + c);
+            }
+            for(const r of reproMerged){
+              const total = Math.max(0, Math.round(Number(sumMap.get(r.key)||0)));
+              const day = Math.max(0, Math.round(Number(dayMap.get(r.key)||0)));
+              r.prod_cajas = total;
+              r.prod_cajas_day = day;
+              r.prod_total_cajas = _svaTotalCajasFromShipment(r.sh) ?? 0;
+              r.prod_pct = r.prod_total_cajas>0 ? Math.round((total/r.prod_total_cajas)*100) : null;
+            }
+          }
+        }
+      }catch(e){ console.warn(e); }
+
+      reproMerged = reproMerged.filter(r=>{
+        const hasMaq = !!((r.maquilas_list && r.maquilas_list.length) || String(r.maquilas||'').trim());
+        if(!hasMaq) return false;
+        const ini = _isoToYMDLocal(r.inicio_proc || '');
+        if(!ini || ini < d1 || ini > d2) return false;
+        if(!term) return true;
+        const blob = [r.contenedor, r.cedis, r.proceso, (r.maquilas_list||[]).join(', '), r.maquilas, String(r.prod_pct ?? r.avance_pct ?? ''), r.personal_maquila, r.indicacion].join(' | ').toUpperCase();
+        return blob.includes(term);
+      }).sort((a,b)=> String(a.inicio_proc||'').localeCompare(String(b.inicio_proc||'')) || String(a.contenedor||'').localeCompare(String(b.contenedor||'')));
+
+      reproMerged.forEach((r,i)=>r.no=i+1);
+      if(el('reproMeta')) el('reproMeta').textContent = `${reproMerged.length} contenedor(es) iniciados en reproceso en el rango seleccionado.`;
+      renderRepro();
+    }catch(err){
+      console.error(err);
+      if(el('reproMeta')) el('reproMeta').textContent = `Error al cargar REPROCESOS: ${err?.message||err}`;
+      if(el('tbodyRepro')) el('tbodyRepro').innerHTML = '';
+    }
+  }
+
+  function renderRepro(){
+    if(!el('tbodyRepro')) return;
+    const rows = reproMerged || [];
+    const visible = _loadColsGeneric(LS_COLS_REPRO, COLS_REPRO.map(c=>c.key));
+    const td = (key, inner) => `<td data-key="${key}">${inner}</td>`;
+    let html = '';
+    for(const r of rows){
+      const disabled = (!r.sh.fin_descarga_at) ? 'disabled' : '';
+      const statusSel = `<select class="input" data-sva="estatus_sva" data-key="${r.key}" ${disabled}>
+          <option value="PENDIENTE" ${r.estatus_sva==='PENDIENTE'?'selected':''}>PENDIENTE</option>
+          <option value="EN PROCESO" ${r.estatus_sva==='EN PROCESO'?'selected':''}>EN PROCESO</option>
+          <option value="TERMINADO" ${r.estatus_sva==='TERMINADO'?'selected':''}>TERMINADO</option>
+        </select>`;
+      const maqList = (Array.isArray(r.maquilas_list) && r.maquilas_list.length) ? r.maquilas_list : String(r.maquilas||'').split(',').map(s=>s.trim()).filter(Boolean);
+      const maqCount = maqList.length;
+      const maqItems = maqList.map(m=>{
+        const mm = escapeHtml(m);
+        const st = (r.maquilas_state||{})[(String(m||'').toUpperCase())] || {};
+        const disStart = (disabled || st.inicio_at || st.estatus==='EN PROCESO' || st.estatus==='TERMINADO') ? 'disabled' : '';
+        const disEnd = (disabled || st.fin_at || st.estatus==='TERMINADO' || (!st.inicio_at && st.estatus!=='EN PROCESO')) ? 'disabled' : '';
+        const badge = st.estatus ? `<span class="chip" style="opacity:.9">${esc(st.estatus)}</span>` : '';
+        return `<div class="svaMaqItem"><span class="chip">${mm}</span>${badge}<button class="btn secondary tiny" data-sva-act="maqStart" data-key="${r.key}" data-maq="${mm}" ${disStart}>Iniciar</button><button class="btn secondary tiny" data-sva-act="maqEnd" data-key="${r.key}" data-maq="${mm}" ${disEnd}>Terminar</button><button class="btn secondary tiny" data-sva-act="prod" data-key="${r.key}" data-maq="${mm}" title="Capturar productividad / cajas">Productividad</button></div>`;
+      }).join('');
+      const topBtns = `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn secondary tiny" data-sva-act="addMaq" data-key="${r.key}" ${disabled}>Agregar maquila</button><button class="btn secondary tiny" data-sva-act="prodAll" data-key="${r.key}" ${(disabled || !maqCount) ? 'disabled' : ''}>Productividad</button><button class="btn tiny" data-sva-act="saveRow" data-key="${r.key}" ${disabled}>Guardar</button></div>`;
+      const maquilasIn = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between"><div class="muted" style="font-size:12px">${maqCount ? (maqCount + ' maquila(s)') : 'Sin maquilas'}</div>${topBtns}</div>${maqCount ? `<details class="svaDetails" style="margin-top:8px"><summary>Ver maquilas</summary><div style="margin-top:8px">${maqItems}</div></details>` : `<div class="muted" style="margin-top:8px;font-size:12px">Agrega una maquila para iniciar y capturar productividad.</div>`}`;
+      const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0);
+      const done = (r.prod_cajas ?? 0);
+      const pct = (r.prod_pct!=null) ? r.prod_pct : ((r.avance_pct!=='' && r.avance_pct!=null) ? Number(r.avance_pct) : null);
+      const doneDay = Number(r.prod_cajas_day||0);
+      const avanceIn = `<div class="svaPctWrap" data-sva-pctwrap="${escapeHtml(r.key)}" style="min-width:110px"><div class="svaPctVal" style="font-weight:900">${pct==null ? '—' : (String(pct)+'%')}</div><div class="muted svaPctMeta" style="font-size:12px">${totalCajas ? `${done} / ${totalCajas} cajas` : `${done} cajas`}${doneDay ? `<br>Día: ${doneDay} cajas` : ''}</div></div>`;
+      const persTxt = Array.isArray(r.maquilas_info) ? r.maquilas_info.map(x=>`${x.maquila}:${(x.personal==null?'':x.personal)}`).join(', ') : (r.personal_maquila||'');
+      const persIn = `<span class="muted" style="font-size:12px">${escapeHtml(persTxt||'')}</span>`;
+      const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
+      const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
+      const rowCells = [['no', r.no],['contenedor', escapeHtml(r.contenedor)],['cedis', escapeHtml(r.cedis)],['fecha', escapeHtml(r.fecha)],['proceso', escapeHtml(r.proceso)],['estatus_sva', statusSel],['maquilas', maquilasIn],['avance_pct', avanceIn],['inicio_proc', escapeHtml(inicioTxt)],['fin_proc', escapeHtml(finTxt)],['tiempo_proc', escapeHtml(r.tiempo_proc||'')],['personal_maquila', persIn],['indicacion', `<span class="muted">${escapeHtml(r.indicacion||'')}</span>`]];
+      let tr='<tr>';
+      for(const [k,v] of rowCells){ if(!visible.includes(k)) continue; tr += td(k, String(v)); }
+      tr += '</tr>'; html += tr;
+    }
+    const colCount = Math.max(1, (visible||[]).length || COLS_REPRO.length);
+    el('tbodyRepro').innerHTML = html || `<tr><td class="muted" colspan="${colCount}">Sin resultados.</td></tr>`;
+    applyColsRepro();
+    try{ _setupTwinHScroll('reproTableWrap','reproHScroll','reproHScrollInner'); }catch(_e){}
+    const body = el('tbodyRepro');
+    body.oninput = (ev)=>{ const t=ev.target; if(!t||!t.dataset) return; const field=t.dataset.sva; const key=t.dataset.key; if(!field||!key) return; _queueSaveSva(key,{[field]:(field==='avance_pct'?(t.value===''? null : Number(t.value)):t.value)}); };
+    body.onchange = body.oninput;
+    body.onclick = (ev)=>{ const t=ev.target; if(!t||!t.dataset) return; const act=t.dataset.svaAct; const key=t.dataset.key; if(!act||!key) return; if(act==='saveRow'){ _saveSvaNow(key); } if(act==='addMaq'){ _svaAddMaquila(key); } if(act==='prodAll'){ openSvaProductividad(key, null); } if(act==='maqStart'){ _svaMaqStart(key, t.dataset.maq||null); } if(act==='maqEnd'){ _svaMaqEnd(key, t.dataset.maq||null); } if(act==='prod'){ openSvaProductividad(key, t.dataset.maq || null); } };
+  }
+
   function _findSvaRow(key){
-    return (svaMerged||[]).find(x=>x.key===key);
+    return (svaMerged||[]).find(x=>x.key===key) || (reproMerged||[]).find(x=>x.key===key);
   }
 
 
@@ -4864,6 +5152,7 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
 
       toastOk('Maquila agregada.');
       await reloadSVA();
+      if(el('reproView')){ try{ await reloadRepro(); }catch(_e){} }
     }catch(err){
       console.error(err);
       toastErr('No se pudo agregar maquila.');
@@ -4957,6 +5246,7 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
 
       // refresh row view quickly
       await reloadSVA();
+      if(el('reproView')){ try{ await reloadRepro(); }catch(_e){} }
     }catch(err){
       console.error(err);
       alert(`Error al guardar SVA: ${err?.message||err}`);
@@ -5054,12 +5344,14 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
         });
         toastErr('Falta esquema de estado por maquila en la nube (sva_reprocesos_maquilas.inicio_at/fin_at/estatus).');
         await reloadSVA();
+      if(el('reproView')){ try{ await reloadRepro(); }catch(_e){} }
         return;
       }
 
       await _svaRecalcMasterFromMaquilas(key);
 
       await reloadSVA();
+      if(el('reproView')){ try{ await reloadRepro(); }catch(_e){} }
       toastOk(`Iniciado: ${mq}`);
     }catch(err){
       console.error(err);
@@ -5128,12 +5420,14 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
         });
         toastErr('Falta esquema de estado por maquila en la nube (sva_reprocesos_maquilas.inicio_at/fin_at/estatus).');
         await reloadSVA();
+      if(el('reproView')){ try{ await reloadRepro(); }catch(_e){} }
         return;
       }
 
 
 
       await reloadSVA();
+      if(el('reproView')){ try{ await reloadRepro(); }catch(_e){} }
       toastOk(`Terminado: ${mq}`);
     }catch(err){
       console.error(err);
@@ -5437,6 +5731,7 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
   if(el('tabSummary')) el('tabSummary').addEventListener('click', ()=>setTab('summary'));
   if(el('tabDashboard')) el('tabDashboard').addEventListener('click', ()=>setTab('dashboard'));
   if(el('tabSVA')) el('tabSVA').addEventListener('click', ()=>setTab('sva'));
+  if(el('tabReprocesos')) el('tabReprocesos').addEventListener('click', ()=>setTab('reprocesos'));
   if(el('tabLogistica')) el('tabLogistica').addEventListener('click', ()=>setTab('logistica'));
   el('toScreen').addEventListener('click', ()=>setTab('screen'));
 
@@ -5475,6 +5770,9 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
   if(el('btnSvaModeActivos')) el('btnSvaModeActivos').addEventListener('click', ()=>{ setSvaMode('activos'); reloadSVA(); });
   if(el('btnReloadSVA')) el('btnReloadSVA').addEventListener('click', reloadSVA);
   if(el('btnSVAHoy')) el('btnSVAHoy').addEventListener('click', ()=>{ const t = ymd(); el('svaStart').value = t; el('svaEnd').value = t; reloadSVA(); });
+  if(el('toggleColsRepro')) el('toggleColsRepro').addEventListener('click', ()=>_toggleCard('colsReproCard'));
+  if(el('btnReloadRepro')) el('btnReloadRepro').addEventListener('click', reloadRepro);
+  if(el('btnReproHoy')) el('btnReproHoy').addEventListener('click', ()=>{ const t = ymd(); el('reproStart').value = t; el('reproEnd').value = t; reloadRepro(); });
   if(el('svaSearch')) el('svaSearch').addEventListener('input', ()=>{ clearTimeout(_svaTimer); _svaTimer = setTimeout(reloadSVA, 80); });
   setSvaMode('llegadas');
   if(el('svaStart')) el('svaStart').addEventListener('change', ()=>reloadSVA());
@@ -5778,6 +6076,12 @@ if(btnAddBulk) btnAddBulk.addEventListener('click', async ()=>{
     applyCfgFromUrl();
     renderFilters();
     renderStatusHelp();
+    _initSvaCols();
+    _initReproCols();
+    _initLogCols();
+    _setTodayRange('svaStart','svaEnd');
+    _setTodayRange('reproStart','reproEnd');
+    _setTodayRange('logStart','logEnd');
     setCloudChip();
     setAuthUI();
 
@@ -7434,7 +7738,7 @@ async function openSvaDetail(key, focusMaq){
 
     const startTime = (r.inicio_proc ? _isoToHM(r.inicio_proc) : '08:00');
     const startHour = _svaParseHour(startTime, SVA_HOUR_START);
-    const workYmd = (el('svaDetWorkDate')?.value) || today;
+    const workYmd = (el('svaDetWorkDate')?.value) || (currentTab==='reprocesos' ? (el('reproStart')?.value || today) : today);
 
     // State
     const state = {
@@ -7927,6 +8231,7 @@ async function _svaDetSave(state){
 
     // refresca tabla SVA
     await reloadSVA();
+      if(el('reproView')){ try{ await reloadRepro(); }catch(_e){} }
 
     // refresca baseline de otros días y UI
     state.prodOther = Math.max(0, Math.round(doneAll - (()=>{
