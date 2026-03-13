@@ -305,13 +305,14 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   border-collapse:separate;
   border-spacing:0;
 }
-#tableScreen col[data-key="contenedor"]{ width:18%; }
-#tableScreen col[data-key="status"]{ width:18%; }
+#tableScreen col[data-key="no"]{ width:6%; }
+#tableScreen col[data-key="contenedor"]{ width:28%; }
+#tableScreen col[data-key="status"]{ width:20%; }
 #tableScreen col[data-key="fecha"]{ width:12%; }
-#tableScreen col[data-key="anden"]{ width:10%; }
-#tableScreen col[data-key="arribo_at"]{ width:14%; }
-#tableScreen col[data-key="inicio_at"]{ width:14%; }
-#tableScreen col[data-key="fin_at"]{ width:14%; }
+#tableScreen col[data-key="anden"]{ width:8%; }
+#tableScreen col[data-key="arribo_at"]{ width:9%; }
+#tableScreen col[data-key="inicio_at"]{ width:8.5%; }
+#tableScreen col[data-key="fin_at"]{ width:8.5%; }
 #tableScreen thead,
 #tableScreen thead th{
   position:sticky;
@@ -349,6 +350,19 @@ html,body{overflow-y:auto;overflow-x:hidden;}
   line-height:1.0;
   padding:4px 8px;
   white-space:nowrap;
+}
+#screenView td[data-key="no"]{ font-weight:900; }
+#screenView td[data-key="contenedor"]{
+  white-space:normal;
+  word-break:keep-all;
+  overflow-wrap:normal;
+  line-height:1.04;
+}
+#screenView td[data-key="contenedor"] .screen-cont{
+  display:block;
+  white-space:normal;
+  word-break:keep-all;
+  overflow-wrap:normal;
 }
 #screenView td[data-key="status"]{ white-space:normal; }
 #screenView td[data-key="status"] .status-block{
@@ -652,6 +666,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
       <div class="tableWrap" id="screenWrap" style="overflow:hidden">
         <table class="table" id="tableScreen">
           <colgroup>
+            <col data-key="no">
             <col data-key="contenedor">
             <col data-key="status">
             <col data-key="fecha">
@@ -662,6 +677,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
           </colgroup>
           <thead>
             <tr>
+              <th data-key="no">NO</th>
               <th data-key="contenedor">CONTENEDOR</th>
               <th data-key="status">ESTATUS</th>
               <th data-key="fecha">FECHA</th>
@@ -3399,8 +3415,18 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const r = (STATE.rows || []).find(x=>x.id===id);
     if(!r){ alert('No se encontró el registro.'); return; }
 
-    el('modalTitle').textContent = 'Editar registro';
+    const navIds = (currentBoardRows||[]).map(x=>x.id);
+    const navIdx = navIds.indexOf(id);
+    el('modalTitle').textContent = `${navIdx>=0 ? (navIdx+1) : r.folio} · ${r.contenedor} · Editar`;
+    const hasPrev = navIdx > 0;
+    const hasNext = navIdx >= 0 && navIdx < (navIds.length - 1);
+
     el('modalBody').innerHTML = `
+      <div class="detailNav">
+        <button class="btn secondary" id="e_prev" ${hasPrev ? '' : 'disabled'}>← Anterior</button>
+        <div class="detailNavInfo">${navIdx>=0 ? `Contenedor ${navIdx+1} de ${navIds.length} según el filtro actual` : 'Edición del contenedor seleccionado'}</div>
+        <button class="btn secondary" id="e_next" ${hasNext ? '' : 'disabled'}>Siguiente →</button>
+      </div>
       <div class="grid two">
         <div>
           <div class="muted" style="font-size:12px">Folio</div>
@@ -3470,7 +3496,9 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     `;
     el('modalBackdrop').classList.remove('hidden');
 
-    el('e_cancel').addEventListener('click', closeDetail);
+    const ep = el('e_prev'); if(ep) ep.addEventListener('click', ()=>openEditRelative(-1));
+    const en = el('e_next'); if(en) en.addEventListener('click', ()=>openEditRelative(1));
+    el('e_cancel').addEventListener('click', ()=>openDetail(id));
     el('e_save').addEventListener('click', async ()=>{
       const note = (el('e_note').value || '').trim() || 'Edición';
       const cuenta = (el('e_cuenta').value || '').trim();
@@ -3495,7 +3523,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       };
       try{
         await updateFieldsCloud(id, patch, note);
-        closeDetail();
+        await reloadData(true);
+        openEdit(id);
       }catch(e){
         alert('No se pudo guardar: ' + (e?.message || e));
       }
@@ -3513,11 +3542,25 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     if(next) openDetail(next);
   }
 
+  function openEditRelative(step){
+    const ids = (currentBoardRows||[]).map(x=>x.id);
+    const curId = el('modalBackdrop')?.dataset?.curId || '';
+    const idx = ids.indexOf(curId);
+    if(idx<0) return;
+    const next = ids[idx + step];
+    if(next) openEdit(next);
+  }
+
   function openDetail(id){
     const r = (STATE.rows || []).find(x=>x.id===id);
     if(!r) return;
 
-    el('modalTitle').textContent = `${r.folio} · ${r.contenedor}`;
+    const navIds = (currentBoardRows||[]).map(x=>x.id);
+    const navIdx = navIds.indexOf(id);
+    const hasPrev = navIdx > 0;
+    const hasNext = navIdx >= 0 && navIdx < (navIds.length - 1);
+
+    el('modalTitle').textContent = `${navIdx>=0 ? (navIdx+1) : r.folio} · ${r.contenedor}`;
     const fields = [
       ['CEDIS', r.cedis],
       ['Cuenta', r.cuenta],
@@ -3534,16 +3577,11 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       ['Indicación', r.indicacion],
     ];
 
-    const navIds = (currentBoardRows||[]).map(x=>x.id);
-    const navIdx = navIds.indexOf(id);
-    const hasPrev = navIdx > 0;
-    const hasNext = navIdx >= 0 && navIdx < (navIds.length - 1);
-
     el('modalBody').innerHTML = `
       <div class="detailNav">
-        <button class="btn secondary" id="d_prev" ${hasPrev ? '' : 'disabled'}>← Anterior</button>
+        <button class="btn secondary" id="d_prev_nav" ${hasPrev ? '' : 'disabled'}>← Anterior</button>
         <div class="detailNavInfo">${navIdx>=0 ? `Contenedor ${navIdx+1} de ${navIds.length} según el filtro actual` : 'Detalle del contenedor seleccionado'}</div>
-        <button class="btn secondary" id="d_next" ${hasNext ? '' : 'disabled'}>Siguiente →</button>
+        <button class="btn secondary" id="d_next_nav" ${hasNext ? '' : 'disabled'}>Siguiente →</button>
       </div>
     ` + fields.map(([k,v])=>`
       <div class="row"><div class="k">${esc(k)}</div><div class="v">${esc(v||'')}</div></div>
@@ -3564,7 +3602,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     el('modalBody').innerHTML += `
       <div class="sep" style="margin:10px 0;border-top:1px solid rgba(255,255,255,.08)"></div>
       <div id="detailActions" class="admin-controls" style="gap:10px;flex-wrap:wrap">
-        <select class="input" id="d_next" ${dis} style="min-width:220px">
+        <select class="input" id="d_next_status" ${dis} style="min-width:220px">
           <option value="">Siguiente estatus…</option>
           ${optHtml}
         </select>
@@ -3587,8 +3625,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
 
     el('modalBackdrop').dataset.curId = id;
 
-    const prevBtn = document.getElementById('d_prev');
-    const nextBtn = document.getElementById('d_next');
+    const prevBtn = document.getElementById('d_prev_nav');
+    const nextBtn = document.getElementById('d_next_nav');
     if(prevBtn) prevBtn.addEventListener('click', ()=>openDetailRelative(-1));
     if(nextBtn) nextBtn.addEventListener('click', ()=>openDetailRelative(1));
 
@@ -5639,7 +5677,7 @@ if(btnAddBulk) btnAddBulk.addEventListener('click', async ()=>{
       if(!id) return;
 
       if(t && t.id === 'd_apply'){
-        const to = el('d_next') ? el('d_next').value : '';
+        const to = el('d_next_status') ? el('d_next_status').value : '';
         if(!to){ alert('Selecciona un estatus'); return; }
         try{
           await applyTransitionCloud(id, to);
@@ -6269,6 +6307,14 @@ const q = (el('q')?.value || '').trim();
   }
 
 
+  function screenContenedorHtml(v){
+    const txt = String(v || '').trim();
+    return esc(txt)
+      .replace(/\s+\(/g, '<br>(')
+      .replace(/\s+\/\s+/g, '<br>/ ')
+      .replace(/\s+-\s+/g, '<br>- ');
+  }
+
   function renderScreen(){
     const rows = getFilteredRows();
     const total = rows.length;
@@ -6301,9 +6347,10 @@ const q = (el('q')?.value || '').trim();
 
     tbody.classList.remove('page-show');
     tbody.classList.add('page-enter');
-    tbody.innerHTML = slice.map((r)=>`
+    tbody.innerHTML = slice.map((r, i)=>`
       <tr data-id="${r.id}">
-        <td data-key="contenedor" class="mono">${esc(r.contenedor||'')}</td>
+        <td data-key="no" class="mono">${screenOffset + i + 1}</td>
+        <td data-key="contenedor" class="mono"><span class="screen-cont">${screenContenedorHtml(r.contenedor||'')}</span></td>
         <td data-key="status">${statusPillScreen(r.status)}</td>
         <td data-key="fecha" class="mono">${fmtYMD(r.arribo_ymd)}</td>
         <td data-key="anden" class="mono">${esc(r.anden||'')}</td>
@@ -6338,7 +6385,7 @@ const q = (el('q')?.value || '').trim();
   }
 
   function applyColsToScreen(){
-    const selected = new Set(['contenedor','status','fecha','anden','arribo_at','inicio_at','fin_at']);
+    const selected = new Set(['no','contenedor','status','fecha','anden','arribo_at','inicio_at','fin_at']);
     document.querySelectorAll('#tableScreen thead th[data-key]').forEach(th=>{
       const key = th.dataset.key;
       th.classList.toggle('hidden-col', !selected.has(key));
