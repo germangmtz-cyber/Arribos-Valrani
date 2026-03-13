@@ -1147,7 +1147,7 @@ MARIA LOPEZ
         <div class="subview-head">
           <div>
             <div class="h1" id="reproTitle">REPROCESOS · Producción por inicio de proceso</div>
-            <div class="sub" id="reproSub">Contenedores con maquila iniciada en el rango seleccionado. La productividad se captura por hora, por maquila y por contenedor.</div>
+            <div class="sub" id="reproSub">Contenedores con maquila activa iniciada en el rango seleccionado. La productividad se captura por hora (08:00 a 19:00), por maquila y por contenedor.</div>
           </div>
           <div class="subview-actions">
             <button class="btn secondary" id="toggleColsRepro">Columnas</button>
@@ -1595,29 +1595,30 @@ let authUser = null;
     }catch(e){}
   }
 
-function ymd(d=new Date()){
-    const y=d.getFullYear();
-    const m=String(d.getMonth()+1).padStart(2,'0');
-    const day=String(d.getDate()).padStart(2,'0');
-    return `${y}-${m}-${day}`;
+const APP_TIMEZONE = 'America/Mexico_City';
+
+function _tzParts(dateLike=new Date()){
+    const d = (dateLike instanceof Date) ? dateLike : new Date(dateLike);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: APP_TIMEZONE,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(d);
+    const out = {};
+    for(const p of parts){ if(p.type!=='literal') out[p.type] = p.value; }
+    return out;
   }
 
-  // ISO local con offset (para guardar movimientos con hora local real)
+  function ymd(d=new Date()){
+    const p = _tzParts(d);
+    return `${p.year}-${p.month}-${p.day}`;
+  }
+
+  // ISO fijo en hora de operación (CDMX), sin depender de la configuración del equipo cliente
   function nowLocalIso(){
-    const d = new Date();
-    const pad = (n)=>String(n).padStart(2,'0');
-    const y = d.getFullYear();
-    const m = pad(d.getMonth()+1);
-    const day = pad(d.getDate());
-    const hh = pad(d.getHours());
-    const mm = pad(d.getMinutes());
-    const ss = pad(d.getSeconds());
-    const ms = String(d.getMilliseconds()).padStart(3,'0');
-    const off = -d.getTimezoneOffset();
-    const sign = off>=0 ? '+' : '-';
-    const oh = pad(Math.floor(Math.abs(off)/60));
-    const om = pad(Math.abs(off)%60);
-    return `${y}-${m}-${day}T${hh}:${mm}:${ss}.${ms}${sign}${oh}:${om}`;
+    const p = _tzParts(new Date());
+    return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000-06:00`;
   }
 
   function fmtYMD(ymdStr){
@@ -1630,8 +1631,8 @@ function ymd(d=new Date()){
 
   function fmtTime(iso){
     if(!iso) return '';
-    const d = new Date(iso);
-    return d.toLocaleTimeString('es-MX',{hour12:false,hour:'2-digit',minute:'2-digit'});
+    const p = _tzParts(iso);
+    return `${p.hour}:${p.minute}`;
   }
 
   // Alias utilizado por PANTALLA (HH:MM)
@@ -2964,6 +2965,27 @@ No se borran: quedan disponibles en Histórico por fecha.
     }
   }
 
+
+  function chooseResponsableFromAttendance(cedis, currentValue=''){
+    const roster = (_attGetRosterLocal ? _attGetRosterLocal(cedis) : []) || [];
+    const day = _attLoadLocalDay(cedis, ymd()) || {people:{}};
+    const names = roster.filter(Boolean).map(x=>String(x).trim()).filter(Boolean);
+    const present = Object.entries(day.people||{}).filter(([_,v])=>v && v.present).map(([k])=>String(k).trim());
+    const merged = [...new Set([...present, ...names])];
+    if(!merged.length){
+      const r = prompt('Responsable:', currentValue || '');
+      return r===null ? null : (r||'').trim();
+    }
+    const msg = 'Responsable (' + cedis + '):\n' + merged.map((n,i)=>`${i+1}) ${n}`).join('\n') + '\n\nEscribe número o nombre:';
+    const ans = prompt(msg, currentValue || merged[0] || '');
+    if(ans===null) return null;
+    const s = String(ans||'').trim();
+    const idx = Number(s);
+    if(Number.isFinite(idx) && idx>=1 && idx<=merged.length) return merged[idx-1];
+    const exact = merged.find(n=>n.toUpperCase()===s.toUpperCase());
+    return exact || s;
+  }
+
   async function applyTransitionCloud(id, to){
     if(!authUser){ alert('Necesitas iniciar sesión para editar.'); return; }
 
@@ -2987,7 +3009,7 @@ No se borran: quedan disponibles en Histórico por fecha.
       newAnden = (a||'').trim();
     }
     if(requireResp(to)){
-      const r = prompt('Responsable:', newResp);
+      const r = chooseResponsableFromAttendance(row.cedis || '', newResp);
       if(r===null) return;
       newResp = (r||'').trim();
     }
@@ -4248,7 +4270,7 @@ function renderFilters(){
     const btn = el('cedisBtn');
     const menu = el('cedisMenu');
     if(!btn || !menu) return;
-    if(menu.dataset.ready === '1'){ updateCedisBtnText(); return; }
+    if(menu.dataset.ready === '1'){ _syncCedisMenuChecks(); updateCedisBtnText(); return; }
     menu.dataset.ready = '1';
 
     const items = (CEDIS_LIST||[]).map(c=>String(c)).filter(Boolean);
@@ -4261,39 +4283,55 @@ function renderFilters(){
       <div class="msList">
         ${items.map(v => `
           <label class="msItem">
-            <input type="checkbox" value="${esc(v)}" ${cedisFilter.has(v) ? 'checked' : ''} />
+            <input type="checkbox" value="${esc(v)}" />
             <span>${esc(v)}</span>
           </label>
         `).join('')}
       </div>
     `;
 
-    btn.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      menu.classList.toggle('hidden');
-    });
-    document.addEventListener('click', ()=>{
-      menu.classList.add('hidden');
-    });
-    menu.addEventListener('click', (e)=>e.stopPropagation());
-
-    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
+    const getPending = ()=>{
+      if(menu._pending instanceof Set) return new Set(menu._pending);
+      return new Set(cedisFilter);
+    };
+    const setPending = (set)=>{ menu._pending = new Set(set); _syncCedisMenuChecks(); };
+    window._syncCedisMenuChecks = function(){
+      const pending = getPending();
+      const all = pending.size===0;
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{ ch.checked = all || pending.has(ch.value); });
+    };
+    const applyPending = ()=>{
+      const pending = getPending();
       cedisFilter.clear();
-      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      pending.forEach(v=>cedisFilter.add(v));
       updateCedisBtnText();
       renderAllViews();
+    };
+
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      menu._pending = new Set(cedisFilter);
+      _syncCedisMenuChecks();
+      menu.classList.toggle('hidden');
     });
-    menu.querySelector('[data-act="close"]').addEventListener('click', ()=> menu.classList.add('hidden'));
+    document.addEventListener('click', ()=>{ menu.classList.add('hidden'); });
+    menu.addEventListener('click', (e)=>e.stopPropagation());
+
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{ setPending(new Set()); updateCedisBtnText(); });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{ applyPending(); menu.classList.add('hidden'); });
 
     menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
       ch.addEventListener('change', ()=>{
-        if(ch.checked) cedisFilter.add(ch.value);
-        else cedisFilter.delete(ch.value);
-        updateCedisBtnText();
-        renderAllViews();
+        let pending = getPending();
+        if(pending.size===0) pending = new Set(items);
+        if(ch.checked) pending.add(ch.value);
+        else pending.delete(ch.value);
+        if(pending.size===items.length) pending = new Set();
+        setPending(pending);
       });
     });
 
+    _syncCedisMenuChecks();
     updateCedisBtnText();
   }
 
@@ -4309,10 +4347,11 @@ function initStatusMulti(){
     const btn = el('estatusBtn');
     const menu = el('estatusMenu');
     if(!btn || !menu) return;
-    if(menu.dataset.ready === '1'){ updateStatusBtnText(); return; }
+    if(menu.dataset.ready === '1'){ _syncStatusMenuChecks(); updateStatusBtnText(); return; }
     menu.dataset.ready = '1';
 
     const items = (STATUS||[]).map(s=>({code:s.code,label:s.label})).filter(x=>x.code && x.label);
+    const codes = items.map(x=>x.code);
 
     menu.innerHTML = `
       <div class="msHead">
@@ -4322,44 +4361,55 @@ function initStatusMulti(){
       <div class="msList">
         ${items.map(it => `
           <label class="msItem">
-            <input type="checkbox" value="${esc(it.code)}" ${statusFilter.has(it.code) ? 'checked' : ''} />
+            <input type="checkbox" value="${esc(it.code)}" />
             <span>${esc(it.label)}</span>
           </label>
         `).join('')}
       </div>
     `;
 
-    // Open/close
-    btn.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      menu.classList.toggle('hidden');
-    });
-    document.addEventListener('click', ()=>{
-      menu.classList.add('hidden');
-    });
-    menu.addEventListener('click', (e)=>e.stopPropagation());
-
-    // Actions
-    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{
+    const getPending = ()=>{
+      if(menu._pending instanceof Set) return new Set(menu._pending);
+      return new Set(statusFilter);
+    };
+    const setPending = (set)=>{ menu._pending = new Set(set); _syncStatusMenuChecks(); };
+    window._syncStatusMenuChecks = function(){
+      const pending = getPending();
+      const all = pending.size===0;
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{ ch.checked = all || pending.has(ch.value); });
+    };
+    const applyPending = ()=>{
+      const pending = getPending();
       statusFilter.clear();
-      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>ch.checked=false);
+      pending.forEach(v=>statusFilter.add(v));
       updateStatusBtnText();
       renderAllViews();
-    });
-    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{
-      menu.classList.add('hidden');
-    });
+    };
 
-    // Checkbox changes
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      menu._pending = new Set(statusFilter);
+      _syncStatusMenuChecks();
+      menu.classList.toggle('hidden');
+    });
+    document.addEventListener('click', ()=>{ menu.classList.add('hidden'); });
+    menu.addEventListener('click', (e)=>e.stopPropagation());
+
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{ setPending(new Set()); updateStatusBtnText(); });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{ applyPending(); menu.classList.add('hidden'); });
+
     menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
       ch.addEventListener('change', ()=>{
-        if(ch.checked) statusFilter.add(ch.value);
-        else statusFilter.delete(ch.value);
-        updateStatusBtnText();
-        renderAllViews();
+        let pending = getPending();
+        if(pending.size===0) pending = new Set(codes);
+        if(ch.checked) pending.add(ch.value);
+        else pending.delete(ch.value);
+        if(pending.size===codes.length) pending = new Set();
+        setPending(pending);
       });
     });
 
+    _syncStatusMenuChecks();
     updateStatusBtnText();
   }
   function updateStatusBtnText(){
@@ -5006,17 +5056,23 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
       }catch(e){ console.warn(e); }
 
       reproMerged = reproMerged.filter(r=>{
-        const hasMaq = !!((r.maquilas_list && r.maquilas_list.length) || String(r.maquilas||'').trim());
+        const maqList = (r.maquilas_list && r.maquilas_list.length) ? r.maquilas_list : String(r.maquilas||'').split(',').map(s=>s.trim()).filter(Boolean);
+        const hasMaq = !!maqList.length;
         if(!hasMaq) return false;
-        const ini = _isoToYMDLocal(r.inicio_proc || '');
+        const states = Object.values(r.maquilas_state||{}).filter(Boolean);
+        const active = states.some(st=>String(st.estatus||'').toUpperCase()==='EN PROCESO' || !!st.inicio_at);
+        const iniCandidates = [r.inicio_proc, ...states.map(st=>st.inicio_at).filter(Boolean)].filter(Boolean).sort();
+        const ini = iniCandidates.length ? _isoToYMDLocal(iniCandidates[0]) : '';
         if(!ini || ini < d1 || ini > d2) return false;
+        if(!(active || String(r.estatus_sva||'').toUpperCase()==='EN PROCESO' || Number(r.prod_cajas_day||0)>0)) return false;
+        r.inicio_proc = r.inicio_proc || (iniCandidates[0] || null);
         if(!term) return true;
-        const blob = [r.contenedor, r.cedis, r.proceso, (r.maquilas_list||[]).join(', '), r.maquilas, String(r.prod_pct ?? r.avance_pct ?? ''), r.personal_maquila, r.indicacion].join(' | ').toUpperCase();
+        const blob = [r.contenedor, r.cedis, r.proceso, maqList.join(', '), r.maquilas, String(r.prod_pct ?? r.avance_pct ?? ''), r.personal_maquila, r.indicacion].join(' | ').toUpperCase();
         return blob.includes(term);
       }).sort((a,b)=> String(a.inicio_proc||'').localeCompare(String(b.inicio_proc||'')) || String(a.contenedor||'').localeCompare(String(b.contenedor||'')));
 
       reproMerged.forEach((r,i)=>r.no=i+1);
-      if(el('reproMeta')) el('reproMeta').textContent = `${reproMerged.length} contenedor(es) iniciados en reproceso en el rango seleccionado.`;
+      if(el('reproMeta')) el('reproMeta').textContent = `${reproMerged.length} contenedor(es) con proceso activo iniciado en el rango seleccionado.`;
       renderRepro();
     }catch(err){
       console.error(err);
@@ -5133,7 +5189,7 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
           contenedor_norm, arribo_ymd, proceso,
           maquilas: list.join(', '),
           personal_maquila: persTxt || null,
-          updated_at: new Date().toISOString(),
+          updated_at: nowLocalIso(),
         }], { onConflict: 'contenedor_norm,arribo_ymd,proceso' });
       if(up2.error) throw up2.error;
 
@@ -5213,9 +5269,11 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
         maquilas: pull('maquilas') ?? row.maquilas,
         avance_pct: toInt(pull('avance_pct') ?? row.avance_pct),
         personal_maquila: pull('personal_maquila') ?? row.personal_maquila,
-        updated_at: new Date().toISOString(),
+        updated_at: nowLocalIso(),
         ...patch2,
       };
+      if(String(payload.estatus_sva||'').toUpperCase()==='EN PROCESO' && !payload.inicio_proc) payload.inicio_proc = nowLocalIso();
+      if(String(payload.estatus_sva||'').toUpperCase()==='TERMINADO' && !payload.fin_proc) payload.fin_proc = nowLocalIso();
 
       const resp = await supa.from('sva_reprocesos')
         .upsert(payload, { onConflict: 'contenedor_norm,arribo_ymd,proceso' })
@@ -5720,7 +5778,7 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
   }
 
 // Clock
-  function tick(){ el('clock').textContent = new Date().toLocaleString('es-MX',{hour12:false}); }
+  function tick(){ const p=_tzParts(new Date()); el('clock').textContent = `${p.year}/${p.month}/${p.day}, ${p.hour}:${p.minute}:${p.second}`; }
   setInterval(tick, 1000); tick();
 
   // Eventos
@@ -6622,7 +6680,7 @@ const q = (el('q')?.value || '').trim();
   function renderScreen(){
     const rows = getFilteredRows();
     const total = rows.length;
-    const pageSize = 6;
+    const pageSize = 5;
 
     const wr = getWorkRange();
     const dateStr = ((wr.start===wr.end) ? wr.start : `${wr.start} - ${wr.end}`).replaceAll('-', '/');
@@ -6677,8 +6735,8 @@ const q = (el('q')?.value || '').trim();
     renderScreen();
     screenTimer = setInterval(()=>{
       const total = getFilteredRows().length;
-      if(total<=6){ renderScreen(); return; }
-      screenOffset += 6;
+      if(total<=5){ renderScreen(); return; }
+      screenOffset += 5;
       if(screenOffset >= total) screenOffset = 0;
       renderScreen();
     }, 10000);
@@ -6718,26 +6776,21 @@ const q = (el('q')?.value || '').trim();
   function _attTodayYMD(){ return ymd(); } // usa fecha local
   function _attDispDate(ymdStr){ return String(ymdStr||''); }
   function _attNowHHMM(){
-    const d = new Date();
-    const hh = String(d.getHours()).padStart(2,'0');
-    const mm = String(d.getMinutes()).padStart(2,'0');
-    return `${hh}:${mm}`;
+    const p = _tzParts(new Date());
+    return `${p.hour}:${p.minute}`;
   }
   function _attHHMMFromTS(ts){
     try{
-      const d = new Date(ts);
-      const hh = String(d.getHours()).padStart(2,'0');
-      const mm = String(d.getMinutes()).padStart(2,'0');
-      return `${hh}:${mm}`;
+      const p = _tzParts(ts);
+      return `${p.hour}:${p.minute}`;
     }catch(_e){ return ''; }
   }
   function _attLocalDateTimeISO(dateYMD, hhmm){
-    // dateYMD: YYYY-MM-DD, hhmm: HH:MM (local)
     try{
-      const [y,m,d] = dateYMD.split('-').map(n=>parseInt(n,10));
-      const [hh,mm] = hhmm.split(':').map(n=>parseInt(n,10));
-      const dt = new Date(y, (m||1)-1, d||1, hh||0, mm||0, 0, 0);
-      return dt.toISOString();
+      const d = String(dateYMD||'').trim() || ymd();
+      const hm = String(hhmm||'').trim() || _attNowHHMM();
+      const [hh,mm] = hm.split(':').map(n=>String(parseInt(n,10)||0).padStart(2,'0'));
+      return `${d}T${hh}:${mm}:00.000-06:00`;
     }catch(_e){ return nowLocalIso ? nowLocalIso() : (new Date()).toISOString(); }
   }
 
@@ -7736,8 +7789,8 @@ async function openSvaDetail(key, focusMaq){
     const totalCajas = _svaTotalCajasFromShipment(r.sh);
     const today = _todayYMD();
 
-    const startTime = (r.inicio_proc ? _isoToHM(r.inicio_proc) : '08:00');
-    const startHour = _svaParseHour(startTime, SVA_HOUR_START);
+    const startTime = '08:00';
+    const startHour = SVA_HOUR_START;
     const workYmd = (el('svaDetWorkDate')?.value) || (currentTab==='reprocesos' ? (el('reproStart')?.value || today) : today);
 
     // State
@@ -7774,8 +7827,8 @@ async function openSvaDetail(key, focusMaq){
         </div>
 
         <div style="min-width:200px">
-          <div class="muted" style="font-size:12px;margin-bottom:6px">Hora inicio (del proceso)</div>
-          <input type="time" class="input" id="svaDetStartTime" value="${esc(startTime)}">
+          <div class="muted" style="font-size:12px;margin-bottom:6px">Rango horario fijo</div>
+          <input type="text" class="input" id="svaDetStartTime" value="08:00 a 19:00" readonly>
         </div>
 
         <div style="flex:1;min-width:260px">
@@ -7835,13 +7888,7 @@ async function openSvaDetail(key, focusMaq){
 
     const startTimeEl = el('svaDetStartTime');
     if(startTimeEl){
-      startTimeEl.onchange = ()=>{
-        state.startTime = startTimeEl.value || '08:00';
-        state.startHour = _svaParseHour(state.startTime, SVA_HOUR_START);
-        _svaDetRender(state);
-        _svaDetQuickUpdate(state);
-        _svaDetRefreshAgg(state);
-      };
+      startTimeEl.onchange = ()=>{};
     }
 
     const addMaqBtn = el('svaDetAddMaq');
