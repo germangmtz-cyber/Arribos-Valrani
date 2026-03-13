@@ -1621,6 +1621,21 @@ function _tzParts(dateLike=new Date()){
     return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000-06:00`;
   }
 
+  function coerceOperationalArriboAt(rowLike){
+    const arr = rowLike?.arribo_at || '';
+    const created = rowLike?.created_at || '';
+    if(!arr) return arr;
+    const today = ymd();
+    const arrYmd = ymd(arr);
+    const createdYmd = created ? ymd(created) : '';
+    // Si el registro se capturó hoy pero trae una fecha anterior, se corrige a la fecha operativa del día.
+    if(createdYmd === today && arrYmd !== today){
+      const p = _tzParts(arr);
+      return `${today}T${p.hour}:${p.minute}:${p.second}.000-06:00`;
+    }
+    return arr;
+  }
+
   function fmtYMD(ymdStr){
     if(!ymdStr) return '';
     // acepta 'YYYY-MM-DD' o ISO
@@ -2040,8 +2055,8 @@ function _tzParts(dateLike=new Date()){
 
 
   function dbToRow(d){
-    const arr = d.arribo_at;
-    const arrDate = arr ? ymd(new Date(arr)) : '';
+    const arr = coerceOperationalArriboAt(d);
+    const arrDate = arr ? ymd(arr) : '';
     return {
       id: d.id,
       is_active: (d.is_active !== undefined ? d.is_active : true),
@@ -2058,7 +2073,7 @@ function _tzParts(dateLike=new Date()){
       tarimas: d.tarimas ?? '',
       pallets: (d.pallets ?? d.PALLETS ?? ''),
       playos_utilizados: (d.playos_utilizados ?? d.PLAYOS_UTILIZADOS ?? ''),
-      arribo_at: d.arribo_at ?? '',
+      arribo_at: arr || '',
       asignacion_at: d.asig_cortina_at ?? '',
       inicio_at: d.inicio_descarga_at ?? '',
       fin_at: d.fin_descarga_at ?? '',
@@ -2592,15 +2607,15 @@ async function fetchRows(range){
     if(!authUser){ alert('Necesitas iniciar sesión para capturar.'); return; }
     if(isViewOnlyUser()){ alert('Usuario de solo lectura.'); return; }
     const s = await ensureSupabase();
-    const range = getWorkRange();
-    const { startIso, endIso } = rangeISO(range.start);
+    const workToday = ymd();
+    const { startIso, endIso } = rangeISO(workToday);
 
     // folio siguiente (por día)
     const maxq = await s.from('shipments').select('folio').gte('arribo_at', startIso).lte('arribo_at', endIso).order('folio', {ascending:false}).limit(1);
     if(maxq.error) throw maxq.error;
     const nextFolio = (maxq.data && maxq.data[0] && maxq.data[0].folio) ? (Number(maxq.data[0].folio)+1) : 1;
 
-    const now = new Date();
+    const now = nowLocalIso();
     const cuenta = (payload.cuenta || '').trim();
     if(!cuenta) throw new Error('CUENTA es obligatoria');
     const playosRaw = (payload.playos_utilizados == null ? '' : String(payload.playos_utilizados)).trim();
@@ -2619,7 +2634,7 @@ async function fetchRows(range){
       tarimas: payload.tarimas || null,
       pallets: payload.pallets ? Number(payload.pallets) : null,
       playos_utilizados: playosN,
-      arribo_at: (payload.arribo_at || now.toISOString()),
+      arribo_at: now,
     };
     if(!Number.isFinite(playosN)) delete row.playos_utilizados;
 
@@ -2660,7 +2675,7 @@ async function fetchRows(range){
     // evento
     await s.from('shipment_events').insert([{
       shipment_id: ins.data.id,
-      event_at: ins.data.arribo_at || nowLocalIso(),
+      event_at: ins.data.arribo_at || now,
       actor: authUser.email || authUser.id,
       from_status: null,
       to_status: 'REPORTADO_PATIO',
@@ -5955,8 +5970,7 @@ if(btnAddBulk) btnAddBulk.addEventListener('click', async ()=>{
   if(!cuenta){ alert('CUENTA es obligatoria'); return; }
   if(!txt){ alert('Pega la lista de contenedores (1 por renglón).'); return; }
 
-  const range = getWorkRange();
-  const workYMD = range.start || ymd();
+  const workYMD = ymd();
 
   const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   if(!lines.length){ alert('No hay líneas válidas.'); return; }
