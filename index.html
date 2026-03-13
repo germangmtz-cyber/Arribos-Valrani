@@ -1100,7 +1100,7 @@ MARIA LOPEZ
           <label class="chip"><input type="checkbox" id="svaProcCorr" checked> CORRUGADO</label>
           <label class="chip"><input type="checkbox" id="svaProcUVA" checked> UVA</label>
           <label class="chip"><input type="checkbox" id="svaProcTIHI" checked> TI HI</label>
-          <label class="chip" title="Incluye contenedores que aún no terminan descarga"><input type="checkbox" id="svaIncluyeDescarga"> incluir en descarga</label>
+          <label class="chip" title="Incluye contenedores activos en TABLERO aunque sigan en patio, confronta o descarga"><input type="checkbox" id="svaIncluyeDescarga" checked> incluir activos en tablero</label>
         </div>
 
         <div class="card colsCardSmall hidden" id="colsSVACard">
@@ -4628,6 +4628,8 @@ function initStatusMulti(){
         for(const p of procs){
           if(!sel.has(p)) continue;
           if(!includeDesc && !sh.fin_descarga_at) continue;
+          // Cuando está activado, SVA considera cualquier contenedor vigente en TABLERO
+          // (reportado en patio, confronta, descarga en proceso, etc.) siempre que tenga proceso detectado.
 
           const cont = _normCont(sh.contenedor);
           const fecha = _isoToYMDLocal(sh.arribo_at);
