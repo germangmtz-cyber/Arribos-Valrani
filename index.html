@@ -2091,10 +2091,7 @@ function _tzParts(dateLike=new Date()){
   }
 
   
-  function isVisible(row, range){
-    if(row.is_deleted) return false;
-
-    // Soporta compat: si llega string, se trata como una sola fecha
+  function _normRange(range){
     let start, end;
     if(typeof range === 'string'){
       start = range; end = range;
@@ -2102,7 +2099,41 @@ function _tzParts(dateLike=new Date()){
       start = range?.start || ymd();
       end = range?.end || start;
     }
-    if(end < start){ const tmp=start; start=end; end=tmp; }
+    if(end < start){ const tmp = start; start = end; end = tmp; }
+    return { start, end };
+  }
+
+  function isBoardFinalStatus(status){
+    const st = String(status||'').trim().toUpperCase();
+    if(!st) return false;
+    if(st === 'CANCELADO') return true;
+    if(st.includes('LIBERADO')) return true;
+    if(st.includes('CONCL')) return true;
+    return false;
+  }
+
+  function getBoardPendingStatusCodes(){
+    return Array.from(new Set(
+      (STATUS || [])
+        .map(s => String(s?.code || '').trim().toUpperCase())
+        .filter(Boolean)
+        .filter(code => !isBoardFinalStatus(code))
+    ));
+  }
+
+  function isBoardVisible(row, range){
+    if(row.is_deleted) return false;
+    const { start, end } = _normRange(range);
+    const a = row.arribo_ymd || '';
+    const inRange = !!a && a >= start && a <= end;
+    if(inRange) return true;
+    if(!a || a >= start) return false;
+    return !isBoardFinalStatus(row.status);
+  }
+
+  function isVisible(row, range){
+    if(row.is_deleted) return false;
+    const { start, end } = _normRange(range);
 
     const today = ymd();
 
@@ -2144,56 +2175,36 @@ async function fetchRows(range){
     const today = ymd();
 
     // Normaliza rango
-    let start, end;
-    if(typeof range === 'string'){
-      start = range; end = range;
-    }else{
-      start = range?.start || today;
-      end = range?.end || start;
-    }
-    if(end < start){ const tmp=start; start=end; end=tmp; }
-
+    const { start, end } = _normRange(range || { start: today, end: today });
     const { startIso, endIso } = rangeISO2(start, end);
 
-    // HOY (una sola fecha = hoy): trae lo del día + pendientes activos de días previos + (LIBERADO/RECHAZADO) que cambiaron hoy
-    if(start === today && end === today){
-      const qDay = s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
-      const qPend = s.from('shipments').select('*').eq('is_deleted', false).eq('is_active', true);
+    // TABLERO necesita dos grupos de datos:
+    // 1) arribos dentro del rango filtrado, según la fecha/hora reportada de arribo
+    // 2) pendientes no concluidos de días anteriores (estatus distinto a LIBERADO / CONCLUIDO / CANCELADO)
+    const pendingCodes = getBoardPendingStatusCodes();
+    const pendingOlderOr = ['estatus.is.null', ...pendingCodes.map(code => `estatus.eq.${code}`)].join(',');
 
-      const qIds = s.from('shipment_events')
-        .select('shipment_id,to_status,event_at')
-        .gte('event_at', startIso).lte('event_at', endIso)
-        .in('to_status', ['LIBERADO','RECHAZADO','LIBERADO_2'])
-        .order('event_at', {ascending:false})
-        .limit(5000);
+    const qRange = s.from('shipments')
+      .select('*')
+      .eq('is_deleted', false)
+      .gte('arribo_at', startIso)
+      .lte('arribo_at', endIso);
 
-      const [r1, r2, r3] = await Promise.all([qDay, qPend, qIds]);
-      if(r1.error) throw r1.error;
-      if(r2.error) throw r2.error;
-      if(r3.error) throw r3.error;
+    const qPendingOlder = s.from('shipments')
+      .select('*')
+      .eq('is_deleted', false)
+      .lt('arribo_at', startIso)
+      .or(pendingOlderOr);
 
-      const map = new Map();
-      for(const d of (r1.data||[])) map.set(d.id, dbToRow(d));
-      for(const d of (r2.data||[])) map.set(d.id, dbToRow(d));
+    const [r1, r2] = await Promise.all([qRange, qPendingOlder]);
+    if(r1.error) throw r1.error;
+    if(r2.error) throw r2.error;
 
-      const extraIds = Array.from(new Set((r3.data||[]).map(x=>x.shipment_id).filter(Boolean)));
-      if(extraIds.length){
-        const chunk = 200;
-        for(let i=0;i<extraIds.length;i+=chunk){
-          const part = extraIds.slice(i,i+chunk);
-          const q = await s.from('shipments').select('*').eq('is_deleted', false).in('id', part);
-          if(q.error) throw q.error;
-          for(const d of (q.data||[])) map.set(d.id, dbToRow(d));
-        }
-      }
+    const map = new Map();
+    for(const d of (r1.data||[])) map.set(d.id, dbToRow(d));
+    for(const d of (r2.data||[])) map.set(d.id, dbToRow(d));
 
-      return Array.from(map.values());
-    }
-
-    // Histórico / rango: solo por fecha de arribo (sin mezclar pendientes fuera del rango)
-    const r = await s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
-    if(r.error) throw r.error;
-    return (r.data||[]).map(dbToRow);
+    return Array.from(map.values());
   }
 
   async function reloadData(force){
@@ -2207,7 +2218,6 @@ async function fetchRows(range){
       }
 
       const rows = await fetchRows(range);
-      await loadBoardReproHiddenSet(range);
 
       // Enriquecer: fechas de estatus (LIBERADO / RECHAZADO) desde shipment_events (para visibilidad y columna F. liberación)
       const ids = rows.map(r=>r.id).filter(Boolean);
@@ -2576,13 +2586,15 @@ async function fetchRows(range){
 
     let rows = (STATE.rows || []).slice();
 
-    rows = rows.filter(r=>isVisible(r, range));
+    rows = rows.filter(r=>isBoardVisible(r, range));
     if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
     if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
     if(q) rows = rows.filter(r=>matches(r, q));
 
-    // TABLERO debe mostrarse solo por fecha/hora de arribo reportado según el filtro elegido.
-    // Los contenedores con reproceso en curso se siguen visualizando en la vista REPROCESOS.
+    // Regla operativa TABLERO:
+    // - arribos del rango filtrado, según arribo reportado
+    // - más pendientes no concluidos de días anteriores
+    // REPROCESOS queda solo para el seguimiento operativo de maquilas / reproceso.
 
     rows.sort(cmp);
     currentBoardRows = rows.slice();
