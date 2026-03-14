@@ -1621,6 +1621,27 @@ function _tzParts(dateLike=new Date()){
     return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000-06:00`;
   }
 
+
+  function opIsoWithDate(dateYmd, baseIso){
+    const base = (baseIso && String(baseIso).includes('T')) ? String(baseIso) : nowLocalIso();
+    const timePart = base.split('T')[1] || '00:00:00.000-06:00';
+    return `${dateYmd}T${timePart}`;
+  }
+
+  async function verifyCurrentAdminPassword(pass){
+    if(!authUser || !authUser.email) throw new Error('Inicia sesión como administrador para validar la contraseña.');
+    const p = String(pass || '').trim();
+    if(!p) throw new Error('Debes escribir la contraseña de administrador.');
+    const s = await ensureSupabase();
+    const rv = await s.auth.signInWithPassword({ email: authUser.email, password: p });
+    if(rv.error) throw rv.error;
+    const who = rv.data?.user || null;
+    authUser = who || authUser;
+    setAuthUI();
+    setCloudChip();
+    return true;
+  }
+
   function fmtYMD(ymdStr){
     if(!ymdStr) return '';
     // acepta 'YYYY-MM-DD' o ISO
@@ -2592,15 +2613,17 @@ async function fetchRows(range){
     if(!authUser){ alert('Necesitas iniciar sesión para capturar.'); return; }
     if(isViewOnlyUser()){ alert('Usuario de solo lectura.'); return; }
     const s = await ensureSupabase();
-    const range = getWorkRange();
-    const { startIso, endIso } = rangeISO(range.start);
 
-    // folio siguiente (por día)
+    // La captura nueva SIEMPRE usa el día operativo actual, sin depender del rango seleccionado en TABLERO.
+    const todayOp = ymd();
+    const { startIso, endIso } = rangeISO(todayOp);
+
+    // folio siguiente del día operativo actual
     const maxq = await s.from('shipments').select('folio').gte('arribo_at', startIso).lte('arribo_at', endIso).order('folio', {ascending:false}).limit(1);
     if(maxq.error) throw maxq.error;
     const nextFolio = (maxq.data && maxq.data[0] && maxq.data[0].folio) ? (Number(maxq.data[0].folio)+1) : 1;
 
-    const now = new Date();
+    const nowIso = nowLocalIso();
     const cuenta = (payload.cuenta || '').trim();
     if(!cuenta) throw new Error('CUENTA es obligatoria');
     const playosRaw = (payload.playos_utilizados == null ? '' : String(payload.playos_utilizados)).trim();
@@ -2619,7 +2642,7 @@ async function fetchRows(range){
       tarimas: payload.tarimas || null,
       pallets: payload.pallets ? Number(payload.pallets) : null,
       playos_utilizados: playosN,
-      arribo_at: (payload.arribo_at || now.toISOString()),
+      arribo_at: nowIso,
     };
     if(!Number.isFinite(playosN)) delete row.playos_utilizados;
 
@@ -3546,6 +3569,10 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
           <input class="input" id="e_anden" value="${esc(r.anden)}" />
         </div>
         <div>
+          <div class="muted" style="font-size:12px">Fecha de arribo (editable con contraseña)</div>
+          <input class="input" id="e_arribo_ymd" type="date" value="${esc(r.arribo_ymd || '')}" />
+        </div>
+        <div>
           <div class="muted" style="font-size:12px">Responsable</div>
           <input class="input" id="e_responsable" value="${esc(r.responsable)}" />
         </div>
@@ -3590,7 +3617,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
     const en = el('e_next'); if(en) en.addEventListener('click', ()=>openEditRelative(1));
     el('e_cancel').addEventListener('click', ()=>openDetail(id));
     el('e_save').addEventListener('click', async ()=>{
-      const note = (el('e_note').value || '').trim() || 'Edición';
+      let note = (el('e_note').value || '').trim() || 'Edición';
       const cuenta = (el('e_cuenta').value || '').trim();
       if(!cuenta){ alert('CUENTA es obligatoria'); return; }
       const cajasRaw = (el('e_cajas').value || '').trim();
@@ -3599,6 +3626,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       const palletsN = palletsRaw ? Number(palletsRaw) : null;
       const playosRaw = (el('e_playos').value || '').trim();
       const playosN = playosRaw ? Number(playosRaw) : null;
+      const arriboYmdNew = (el('e_arribo_ymd').value || '').trim();
+      const arriboYmdOld = (r.arribo_ymd || '').trim();
       const patch = {
         cedis: (el('e_cedis').value || '').trim(),
         cuenta: cuenta,
@@ -3612,6 +3641,18 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
         playos_utilizados: (Number.isFinite(playosN) ? playosN : null),
       };
       try{
+        if(arriboYmdNew){
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(arriboYmdNew)){
+            alert('La fecha de arribo debe tener formato YYYY-MM-DD.');
+            return;
+          }
+          if(arriboYmdNew !== arriboYmdOld){
+            const pass = prompt('Para cambiar la fecha de arribo, escribe tu contraseña de administrador:') || '';
+            await verifyCurrentAdminPassword(pass);
+            patch.arribo_at = opIsoWithDate(arriboYmdNew, r.arribo_at);
+            note = `${note} | Cambio fecha arribo: ${arriboYmdOld || '(vacía)'} -> ${arriboYmdNew}`;
+          }
+        }
         await updateFieldsCloud(id, patch, note);
         await reloadData(true);
         openEdit(id);
