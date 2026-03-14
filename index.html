@@ -2091,7 +2091,10 @@ function _tzParts(dateLike=new Date()){
   }
 
   
-  function _normRange(range){
+  function isVisible(row, range){
+    if(row.is_deleted) return false;
+
+    // Soporta compat: si llega string, se trata como una sola fecha
     let start, end;
     if(typeof range === 'string'){
       start = range; end = range;
@@ -2099,65 +2102,30 @@ function _tzParts(dateLike=new Date()){
       start = range?.start || ymd();
       end = range?.end || start;
     }
-    if(end < start){ const tmp = start; start = end; end = tmp; }
-    return { start, end };
-  }
-
-  const BOARD_PENDING_EXCLUDED_STATUSES = new Set(['LIBERADO','DESCARGA_CONCL','DESCARGA_CONCLUIDA','CANCELADO','RECHAZADO']);
-
-  function normalizeBoardStatus(status){
-    const st = String(status || '').trim().toUpperCase();
-    if(st === 'DESCARGA CONCLUIDA') return 'DESCARGA_CONCL';
-    return st;
-  }
-
-  function isBoardFinalStatus(status){
-    const st = normalizeBoardStatus(status);
-    if(!st) return false;
-    return BOARD_PENDING_EXCLUDED_STATUSES.has(st);
-  }
-
-  function getBoardPendingStatusCodes(){
-    return Array.from(new Set(
-      (STATUS || [])
-        .map(s => normalizeBoardStatus(s?.code || ''))
-        .filter(Boolean)
-        .filter(code => !isBoardFinalStatus(code))
-    ));
-  }
-
-  function isBoardVisible(row, range){
-    if(row.is_deleted) return false;
-    const { start, end } = _normRange(range);
-    const a = row.arribo_ymd || '';
-    const inRange = !!a && a >= start && a <= end;
-    if(inRange) return true;
-    if(!a || a >= start) return false;
-    return !isBoardFinalStatus(row.status);
-  }
-
-  function isVisible(row, range){
-    if(row.is_deleted) return false;
-    const { start, end } = _normRange(range);
+    if(end < start){ const tmp=start; start=end; end=tmp; }
 
     const today = ymd();
 
-    // Modo HOY (una sola fecha = hoy): mezcla pendientes previos + regla especial LIBERADO/RECHAZADO
+    // Modo HOY (una sola fecha = hoy):
+    // muestra arribos de hoy + pendientes previos + unidades con movimiento operativo hoy
+    // aunque hayan arribado días atrás (inicio/fin/liberación/actualización).
     if(start === today && end === today){
       const st = String(row.status||'').toUpperCase();
-      if(st === 'LIBERADO'){
-        const d = row.liberado_ymd || (row.updated_at ? ymd(new Date(row.updated_at)) : '');
-        return d === today;
-      }
-      if(st === 'LIBERADO_2'){
-        const d = row.liberado2_ymd || (row.updated_at ? ymd(new Date(row.updated_at)) : '');
-        return d === today;
-      }
-      if(st === 'RECHAZADO'){
-        const d = row.rechazado_ymd || (row.updated_at ? ymd(new Date(row.updated_at)) : '');
-        return d === today;
-      }
-      return (row.arribo_ymd === today) || !!row.is_active;
+      const arriboYmd = row.arribo_ymd || '';
+      const inicioYmd = row.inicio_at ? ymd(new Date(row.inicio_at)) : '';
+      const finYmd = row.fin_at ? ymd(new Date(row.fin_at)) : '';
+      const asigYmd = row.asignacion_at ? ymd(new Date(row.asignacion_at)) : '';
+      const updatedYmd = row.updated_at ? ymd(new Date(row.updated_at)) : '';
+      const liberadoYmd = row.liberado_ymd || updatedYmd;
+      const liberado2Ymd = row.liberado2_ymd || updatedYmd;
+      const rechazadoYmd = row.rechazado_ymd || updatedYmd;
+      const movedToday = [arriboYmd, inicioYmd, finYmd, asigYmd, updatedYmd].includes(today);
+
+      if(st === 'LIBERADO') return liberadoYmd === today;
+      if(st === 'LIBERADO_2') return liberado2Ymd === today;
+      if(st === 'RECHAZADO') return rechazadoYmd === today;
+
+      return (arriboYmd === today) || !!row.is_active || movedToday;
     }
 
     // Rango histórico / multi-día: solo por FECHA DE ARRIBO
@@ -2180,36 +2148,56 @@ async function fetchRows(range){
     const today = ymd();
 
     // Normaliza rango
-    const { start, end } = _normRange(range || { start: today, end: today });
+    let start, end;
+    if(typeof range === 'string'){
+      start = range; end = range;
+    }else{
+      start = range?.start || today;
+      end = range?.end || start;
+    }
+    if(end < start){ const tmp=start; start=end; end=tmp; }
+
     const { startIso, endIso } = rangeISO2(start, end);
 
-    // TABLERO necesita dos grupos de datos:
-    // 1) arribos dentro del rango filtrado, según la fecha/hora reportada de arribo
-    // 2) pendientes no concluidos de días anteriores (estatus distinto a LIBERADO / CONCLUIDO / CANCELADO)
-    const pendingCodes = getBoardPendingStatusCodes();
-    const pendingOlderOr = ['estatus.is.null', ...pendingCodes.map(code => `estatus.eq.${code}`)].join(',');
+    // HOY (una sola fecha = hoy): trae lo del día + pendientes activos de días previos + (LIBERADO/RECHAZADO) que cambiaron hoy
+    if(start === today && end === today){
+      const qDay = s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
+      const qPend = s.from('shipments').select('*').eq('is_deleted', false).eq('is_active', true);
 
-    const qRange = s.from('shipments')
-      .select('*')
-      .eq('is_deleted', false)
-      .gte('arribo_at', startIso)
-      .lte('arribo_at', endIso);
+      const qIds = s.from('shipment_events')
+        .select('shipment_id,to_status,event_at')
+        .gte('event_at', startIso).lte('event_at', endIso)
+        .in('to_status', ['LIBERADO','RECHAZADO','LIBERADO_2'])
+        .order('event_at', {ascending:false})
+        .limit(5000);
 
-    const qPendingOlder = s.from('shipments')
-      .select('*')
-      .eq('is_deleted', false)
-      .lt('arribo_at', startIso)
-      .or(pendingOlderOr);
+      const [r1, r2, r3] = await Promise.all([qDay, qPend, qIds]);
+      if(r1.error) throw r1.error;
+      if(r2.error) throw r2.error;
+      if(r3.error) throw r3.error;
 
-    const [r1, r2] = await Promise.all([qRange, qPendingOlder]);
-    if(r1.error) throw r1.error;
-    if(r2.error) throw r2.error;
+      const map = new Map();
+      for(const d of (r1.data||[])) map.set(d.id, dbToRow(d));
+      for(const d of (r2.data||[])) map.set(d.id, dbToRow(d));
 
-    const map = new Map();
-    for(const d of (r1.data||[])) map.set(d.id, dbToRow(d));
-    for(const d of (r2.data||[])) map.set(d.id, dbToRow(d));
+      const extraIds = Array.from(new Set((r3.data||[]).map(x=>x.shipment_id).filter(Boolean)));
+      if(extraIds.length){
+        const chunk = 200;
+        for(let i=0;i<extraIds.length;i+=chunk){
+          const part = extraIds.slice(i,i+chunk);
+          const q = await s.from('shipments').select('*').eq('is_deleted', false).in('id', part);
+          if(q.error) throw q.error;
+          for(const d of (q.data||[])) map.set(d.id, dbToRow(d));
+        }
+      }
 
-    return Array.from(map.values());
+      return Array.from(map.values());
+    }
+
+    // Histórico / rango: solo por fecha de arribo (sin mezclar pendientes fuera del rango)
+    const r = await s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
+    if(r.error) throw r.error;
+    return (r.data||[]).map(dbToRow);
   }
 
   async function reloadData(force){
@@ -2223,6 +2211,7 @@ async function fetchRows(range){
       }
 
       const rows = await fetchRows(range);
+      await loadBoardReproHiddenSet(range);
 
       // Enriquecer: fechas de estatus (LIBERADO / RECHAZADO) desde shipment_events (para visibilidad y columna F. liberación)
       const ids = rows.map(r=>r.id).filter(Boolean);
@@ -2591,15 +2580,13 @@ async function fetchRows(range){
 
     let rows = (STATE.rows || []).slice();
 
-    rows = rows.filter(r=>isBoardVisible(r, range));
+    rows = rows.filter(r=>isVisible(r, range));
     if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
     if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
     if(q) rows = rows.filter(r=>matches(r, q));
 
-    // Regla operativa TABLERO:
-    // - arribos del rango filtrado, según arribo reportado
-    // - más pendientes no concluidos de días anteriores
-    // REPROCESOS queda solo para el seguimiento operativo de maquilas / reproceso.
+    // TABLERO debe mostrarse solo por fecha/hora de arribo reportado según el filtro elegido.
+    // Los contenedores con reproceso en curso se siguen visualizando en la vista REPROCESOS.
 
     rows.sort(cmp);
     currentBoardRows = rows.slice();
@@ -3100,111 +3087,24 @@ No se borran: quedan disponibles en Histórico por fecha.
   }
 
 
-  function getResponsableCatalog(cedis, currentValue=''){
+  function chooseResponsableFromAttendance(cedis, currentValue=''){
     const roster = (_attGetRosterLocal ? _attGetRosterLocal(cedis) : []) || [];
     const day = _attLoadLocalDay(cedis, ymd()) || {people:{}};
     const names = roster.filter(Boolean).map(x=>String(x).trim()).filter(Boolean);
     const present = Object.entries(day.people||{}).filter(([_,v])=>v && v.present).map(([k])=>String(k).trim());
-    const current = String(currentValue || '').trim();
-    return [...new Set([current, ...present, ...names].filter(Boolean))];
-  }
-
-  function ensureResponsablePicker(){
-    let node = document.getElementById('responsablePickerBackdrop');
-    if(node) return node;
-    node = document.createElement('div');
-    node.id = 'responsablePickerBackdrop';
-    node.className = 'modal-backdrop hidden';
-    node.setAttribute('role', 'dialog');
-    node.setAttribute('aria-modal', 'true');
-    node.innerHTML = `
-      <div class="modal" style="width:min(560px,96vw)">
-        <div class="hd">
-          <div style="font-weight:1000" id="responsablePickerTitle">Seleccionar responsable</div>
-          <button class="btn secondary" type="button" id="responsablePickerClose">Cerrar</button>
-        </div>
-        <div class="bd">
-          <div class="muted" id="responsablePickerMeta" style="font-size:12px;margin-bottom:10px"></div>
-          <div style="display:grid;gap:10px">
-            <select class="input" id="responsablePickerSelect" style="width:100%"></select>
-            <input class="input hidden" id="responsablePickerText" placeholder="Escribe responsable" style="width:100%" />
-          </div>
-          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
-            <button class="btn secondary" type="button" id="responsablePickerCancel">Cancelar</button>
-            <button class="btn" type="button" id="responsablePickerAccept">Aceptar</button>
-          </div>
-        </div>
-      </div>`;
-    document.body.appendChild(node);
-    return node;
-  }
-
-  function chooseResponsableFromAttendance(cedis, currentValue='', ctx={}){
-    const merged = getResponsableCatalog(cedis, currentValue);
-    const backdrop = ensureResponsablePicker();
-    const title = document.getElementById('responsablePickerTitle');
-    const meta = document.getElementById('responsablePickerMeta');
-    const select = document.getElementById('responsablePickerSelect');
-    const input = document.getElementById('responsablePickerText');
-    const btnAccept = document.getElementById('responsablePickerAccept');
-    const btnCancel = document.getElementById('responsablePickerCancel');
-    const btnClose = document.getElementById('responsablePickerClose');
-
-    title.textContent = 'Seleccionar responsable';
-    const fromLbl = ctx?.from ? statusLabel(ctx.from) : '';
-    const toLbl = ctx?.to ? statusLabel(ctx.to) : '';
-    meta.innerHTML = `CEDIS: <b>${esc(cedis || 'N/D')}</b>${toLbl ? ` · Cambio: <b>${esc(fromLbl || 'Actual')}</b> → <b>${esc(toLbl)}</b>` : ''}`;
-
-    if(merged.length){
-      select.innerHTML = merged.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
-      select.classList.remove('hidden');
-      input.classList.add('hidden');
-      const current = String(currentValue || '').trim();
-      if(current && merged.includes(current)) select.value = current;
-      else select.selectedIndex = 0;
-    }else{
-      select.innerHTML = '';
-      select.classList.add('hidden');
-      input.classList.remove('hidden');
-      input.value = String(currentValue || '').trim();
+    const merged = [...new Set([...present, ...names])];
+    if(!merged.length){
+      const r = prompt('Responsable:', currentValue || '');
+      return r===null ? null : (r||'').trim();
     }
-
-    backdrop.classList.remove('hidden');
-
-    return new Promise(resolve=>{
-      const cleanup = (value)=>{
-        backdrop.classList.add('hidden');
-        btnAccept.removeEventListener('click', onAccept);
-        btnCancel.removeEventListener('click', onCancel);
-        btnClose.removeEventListener('click', onCancel);
-        backdrop.removeEventListener('click', onBackdrop);
-        document.removeEventListener('keydown', onKey);
-        resolve(value);
-      };
-      const onAccept = ()=>{
-        const value = merged.length ? String(select.value || '').trim() : String(input.value || '').trim();
-        cleanup(value);
-      };
-      const onCancel = ()=>cleanup(null);
-      const onBackdrop = (ev)=>{ if(ev.target === backdrop) cleanup(null); };
-      const onKey = (ev)=>{
-        if(backdrop.classList.contains('hidden')) return;
-        if(ev.key === 'Escape'){ ev.preventDefault(); cleanup(null); }
-        if(ev.key === 'Enter'){
-          const tag = document.activeElement?.tagName || '';
-          if(tag !== 'TEXTAREA'){ ev.preventDefault(); onAccept(); }
-        }
-      };
-      btnAccept.addEventListener('click', onAccept);
-      btnCancel.addEventListener('click', onCancel);
-      btnClose.addEventListener('click', onCancel);
-      backdrop.addEventListener('click', onBackdrop);
-      document.addEventListener('keydown', onKey);
-      setTimeout(()=>{
-        if(merged.length) select.focus();
-        else input.focus();
-      }, 0);
-    });
+    const msg = 'Catálogo de responsables (' + cedis + '):\n' + merged.map((n,i)=>`${i+1}) ${n}`).join('\n') + '\n\nEscribe número o nombre:';
+    const ans = prompt(msg, currentValue || merged[0] || '');
+    if(ans===null) return null;
+    const s = String(ans||'').trim();
+    const idx = Number(s);
+    if(Number.isFinite(idx) && idx>=1 && idx<=merged.length) return merged[idx-1];
+    const exact = merged.find(n=>n.toUpperCase()===s.toUpperCase());
+    return exact || s;
   }
 
   async function applyTransitionCloud(id, to){
@@ -3229,9 +3129,11 @@ No se borran: quedan disponibles en Histórico por fecha.
       if(a===null) return;
       newAnden = (a||'').trim();
     }
-    const r = await chooseResponsableFromAttendance(row.cedis || '', newResp, { from, to });
-    if(r===null) return;
-    newResp = (r||'').trim();
+    if(requireResp(to)){
+      const r = chooseResponsableFromAttendance(row.cedis || '', newResp);
+      if(r===null) return;
+      newResp = (r||'').trim();
+    }
     if(requireNote(to)){
       const n = prompt('Nota / motivo:', '');
       if(n===null) return;
