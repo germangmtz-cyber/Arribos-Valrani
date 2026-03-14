@@ -1459,6 +1459,7 @@ let authUser = null;
   let realtime = null;
   let currentTab = 'board';
   let realtimeSva = null;
+  let boardReproHiddenSet = new Set();
   let realtimeLog = null;
   // Multi-select filter state (TABLERO)
   let statusFilter = new Set();
@@ -2206,6 +2207,7 @@ async function fetchRows(range){
       }
 
       const rows = await fetchRows(range);
+      await loadBoardReproHiddenSet(range);
 
       // Enriquecer: fechas de estatus (LIBERADO / RECHAZADO) desde shipment_events (para visibilidad y columna F. liberación)
       const ids = rows.map(r=>r.id).filter(Boolean);
@@ -2477,6 +2479,95 @@ async function fetchRows(range){
     }catch(e){}
   }
 
+
+  async function loadBoardReproHiddenSet(range){
+    boardReproHiddenSet = new Set();
+    try{
+      await ensureSupa();
+      if(!supa) return boardReproHiddenSet;
+
+      const d1 = range?.start || ymd();
+      const d2 = range?.end || d1;
+      const lookback = new Date((d1 || ymd()) + 'T00:00:00');
+      lookback.setDate(lookback.getDate() - 120);
+      const endIso = new Date((d2 || ymd()) + 'T23:59:59.999').toISOString();
+
+      const q = await supa.from('shipments')
+        .select('contenedor,indicacion,arribo_at')
+        .gte('arribo_at', lookback.toISOString())
+        .lte('arribo_at', endIso);
+      if(q.error) throw q.error;
+      const ships = q.data || [];
+
+      const items = [];
+      for(const sh of ships){
+        const procs = _detectSvaProcesos(sh.indicacion||'');
+        if(!procs.length) continue;
+        const cont = _normCont(sh.contenedor);
+        const fecha = _isoToYMDLocal(sh.arribo_at);
+        for(const p of procs){
+          items.push({ key:`${cont}|${fecha}|${p}`, contenedor_norm:cont, arribo_ymd:fecha, proceso:p });
+        }
+      }
+      const conts = [...new Set(items.map(x=>x.contenedor_norm).filter(Boolean))];
+      if(!conts.length) return boardReproHiddenSet;
+
+      const recMap = new Map();
+      let rr = await supa.from('sva_reprocesos').select('*').in('contenedor_norm', conts);
+      if(rr.error) throw rr.error;
+      (rr.data||[]).forEach(rec=>recMap.set(`${rec.contenedor_norm}|${rec.arribo_ymd}|${rec.proceso||''}`, rec));
+
+      const mapM = new Map();
+      let mqR = await supa.from('sva_reprocesos_maquilas')
+        .select('contenedor_norm,arribo_ymd,proceso,estatus,inicio_at,fin_at')
+        .in('contenedor_norm', conts);
+      if(mqR && mqR.error && String(mqR.error.message||'').toLowerCase().includes('column')){
+        mqR = await supa.from('sva_reprocesos_maquilas')
+          .select('contenedor_norm,arribo_ymd,proceso')
+          .in('contenedor_norm', conts);
+      }
+      if(mqR && !mqR.error){
+        for(const row of (mqR.data||[])){
+          const k = `${row.contenedor_norm}|${row.arribo_ymd}|${row.proceso||''}`;
+          if(!mapM.has(k)) mapM.set(k, []);
+          mapM.get(k).push({estatus:(row.estatus||'')?String(row.estatus).toUpperCase():'', inicio_at:row.inicio_at||null, fin_at:row.fin_at||null});
+        }
+      }
+
+      const dayMap = new Map();
+      let prR = await supa.from('sva_prod_hora').select('contenedor_norm,arribo_ymd,proceso,work_ymd,cajas').in('contenedor_norm', conts);
+      if(prR && !prR.error){
+        for(const row of (prR.data||[])){
+          const wy = String(row.work_ymd||'');
+          if(wy < d1 || wy > d2) continue;
+          const k = `${row.contenedor_norm}|${row.arribo_ymd}|${row.proceso||''}`;
+          dayMap.set(k, (dayMap.get(k)||0) + Number(row.cajas||0));
+        }
+      }
+
+      for(const it of items){
+        const rec = recMap.get(it.key) || {};
+        const states = mapM.get(it.key) || [];
+        const active = states.some(st=>String(st.estatus||'').toUpperCase()==='EN PROCESO' || !!st.inicio_at);
+        const iniCandidates = [rec.inicio_proc, ...states.map(st=>st.inicio_at).filter(Boolean)].filter(Boolean).sort();
+        const ini = iniCandidates.length ? _isoToYMDLocal(iniCandidates[0]) : '';
+        const hasDayProd = Number(dayMap.get(it.key)||0) > 0;
+        const rowActive = active || String(rec.estatus_sva||'').toUpperCase()==='EN PROCESO' || hasDayProd;
+        if(!ini || ini < d1 || ini > d2) continue;
+        if(!rowActive) continue;
+        boardReproHiddenSet.add(it.contenedor_norm);
+      }
+    }catch(e){ console.warn('No se pudo calcular ocultamiento por REPROCESOS', e); }
+    return boardReproHiddenSet;
+  }
+
+  function isBoardHiddenByReproceso(row){
+    try{
+      const cont = _normCont(row?.contenedor || '');
+      return !!(cont && boardReproHiddenSet && boardReproHiddenSet.has(cont));
+    }catch(e){ return false; }
+  }
+
   function renderBoard(){
     const range = getWorkRange();
     const q = (el('q').value || '').trim();
@@ -2489,6 +2580,7 @@ async function fetchRows(range){
     if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
     if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
     if(q) rows = rows.filter(r=>matches(r, q));
+    rows = rows.filter(r=>!isBoardHiddenByReproceso(r));
 
     rows.sort(cmp);
     currentBoardRows = rows.slice();
@@ -2999,7 +3091,7 @@ No se borran: quedan disponibles en Histórico por fecha.
       const r = prompt('Responsable:', currentValue || '');
       return r===null ? null : (r||'').trim();
     }
-    const msg = 'Responsable (' + cedis + '):\n' + merged.map((n,i)=>`${i+1}) ${n}`).join('\n') + '\n\nEscribe número o nombre:';
+    const msg = 'Catálogo de responsables (' + cedis + '):\n' + merged.map((n,i)=>`${i+1}) ${n}`).join('\n') + '\n\nEscribe número o nombre:';
     const ans = prompt(msg, currentValue || merged[0] || '');
     if(ans===null) return null;
     const s = String(ans||'').trim();
