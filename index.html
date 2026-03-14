@@ -2103,19 +2103,24 @@ function _tzParts(dateLike=new Date()){
     return { start, end };
   }
 
+  const BOARD_PENDING_EXCLUDED_STATUSES = new Set(['LIBERADO','DESCARGA_CONCL','DESCARGA_CONCLUIDA','CANCELADO','RECHAZADO']);
+
+  function normalizeBoardStatus(status){
+    const st = String(status || '').trim().toUpperCase();
+    if(st === 'DESCARGA CONCLUIDA') return 'DESCARGA_CONCL';
+    return st;
+  }
+
   function isBoardFinalStatus(status){
-    const st = String(status||'').trim().toUpperCase();
+    const st = normalizeBoardStatus(status);
     if(!st) return false;
-    if(st === 'CANCELADO') return true;
-    if(st.includes('LIBERADO')) return true;
-    if(st.includes('CONCL')) return true;
-    return false;
+    return BOARD_PENDING_EXCLUDED_STATUSES.has(st);
   }
 
   function getBoardPendingStatusCodes(){
     return Array.from(new Set(
       (STATUS || [])
-        .map(s => String(s?.code || '').trim().toUpperCase())
+        .map(s => normalizeBoardStatus(s?.code || ''))
         .filter(Boolean)
         .filter(code => !isBoardFinalStatus(code))
     ));
@@ -3095,24 +3100,111 @@ No se borran: quedan disponibles en Histórico por fecha.
   }
 
 
-  function chooseResponsableFromAttendance(cedis, currentValue=''){
+  function getResponsableCatalog(cedis, currentValue=''){
     const roster = (_attGetRosterLocal ? _attGetRosterLocal(cedis) : []) || [];
     const day = _attLoadLocalDay(cedis, ymd()) || {people:{}};
     const names = roster.filter(Boolean).map(x=>String(x).trim()).filter(Boolean);
     const present = Object.entries(day.people||{}).filter(([_,v])=>v && v.present).map(([k])=>String(k).trim());
-    const merged = [...new Set([...present, ...names])];
-    if(!merged.length){
-      const r = prompt('Responsable:', currentValue || '');
-      return r===null ? null : (r||'').trim();
+    const current = String(currentValue || '').trim();
+    return [...new Set([current, ...present, ...names].filter(Boolean))];
+  }
+
+  function ensureResponsablePicker(){
+    let node = document.getElementById('responsablePickerBackdrop');
+    if(node) return node;
+    node = document.createElement('div');
+    node.id = 'responsablePickerBackdrop';
+    node.className = 'modal-backdrop hidden';
+    node.setAttribute('role', 'dialog');
+    node.setAttribute('aria-modal', 'true');
+    node.innerHTML = `
+      <div class="modal" style="width:min(560px,96vw)">
+        <div class="hd">
+          <div style="font-weight:1000" id="responsablePickerTitle">Seleccionar responsable</div>
+          <button class="btn secondary" type="button" id="responsablePickerClose">Cerrar</button>
+        </div>
+        <div class="bd">
+          <div class="muted" id="responsablePickerMeta" style="font-size:12px;margin-bottom:10px"></div>
+          <div style="display:grid;gap:10px">
+            <select class="input" id="responsablePickerSelect" style="width:100%"></select>
+            <input class="input hidden" id="responsablePickerText" placeholder="Escribe responsable" style="width:100%" />
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
+            <button class="btn secondary" type="button" id="responsablePickerCancel">Cancelar</button>
+            <button class="btn" type="button" id="responsablePickerAccept">Aceptar</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(node);
+    return node;
+  }
+
+  function chooseResponsableFromAttendance(cedis, currentValue='', ctx={}){
+    const merged = getResponsableCatalog(cedis, currentValue);
+    const backdrop = ensureResponsablePicker();
+    const title = document.getElementById('responsablePickerTitle');
+    const meta = document.getElementById('responsablePickerMeta');
+    const select = document.getElementById('responsablePickerSelect');
+    const input = document.getElementById('responsablePickerText');
+    const btnAccept = document.getElementById('responsablePickerAccept');
+    const btnCancel = document.getElementById('responsablePickerCancel');
+    const btnClose = document.getElementById('responsablePickerClose');
+
+    title.textContent = 'Seleccionar responsable';
+    const fromLbl = ctx?.from ? statusLabel(ctx.from) : '';
+    const toLbl = ctx?.to ? statusLabel(ctx.to) : '';
+    meta.innerHTML = `CEDIS: <b>${esc(cedis || 'N/D')}</b>${toLbl ? ` · Cambio: <b>${esc(fromLbl || 'Actual')}</b> → <b>${esc(toLbl)}</b>` : ''}`;
+
+    if(merged.length){
+      select.innerHTML = merged.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
+      select.classList.remove('hidden');
+      input.classList.add('hidden');
+      const current = String(currentValue || '').trim();
+      if(current && merged.includes(current)) select.value = current;
+      else select.selectedIndex = 0;
+    }else{
+      select.innerHTML = '';
+      select.classList.add('hidden');
+      input.classList.remove('hidden');
+      input.value = String(currentValue || '').trim();
     }
-    const msg = 'Catálogo de responsables (' + cedis + '):\n' + merged.map((n,i)=>`${i+1}) ${n}`).join('\n') + '\n\nEscribe número o nombre:';
-    const ans = prompt(msg, currentValue || merged[0] || '');
-    if(ans===null) return null;
-    const s = String(ans||'').trim();
-    const idx = Number(s);
-    if(Number.isFinite(idx) && idx>=1 && idx<=merged.length) return merged[idx-1];
-    const exact = merged.find(n=>n.toUpperCase()===s.toUpperCase());
-    return exact || s;
+
+    backdrop.classList.remove('hidden');
+
+    return new Promise(resolve=>{
+      const cleanup = (value)=>{
+        backdrop.classList.add('hidden');
+        btnAccept.removeEventListener('click', onAccept);
+        btnCancel.removeEventListener('click', onCancel);
+        btnClose.removeEventListener('click', onCancel);
+        backdrop.removeEventListener('click', onBackdrop);
+        document.removeEventListener('keydown', onKey);
+        resolve(value);
+      };
+      const onAccept = ()=>{
+        const value = merged.length ? String(select.value || '').trim() : String(input.value || '').trim();
+        cleanup(value);
+      };
+      const onCancel = ()=>cleanup(null);
+      const onBackdrop = (ev)=>{ if(ev.target === backdrop) cleanup(null); };
+      const onKey = (ev)=>{
+        if(backdrop.classList.contains('hidden')) return;
+        if(ev.key === 'Escape'){ ev.preventDefault(); cleanup(null); }
+        if(ev.key === 'Enter'){
+          const tag = document.activeElement?.tagName || '';
+          if(tag !== 'TEXTAREA'){ ev.preventDefault(); onAccept(); }
+        }
+      };
+      btnAccept.addEventListener('click', onAccept);
+      btnCancel.addEventListener('click', onCancel);
+      btnClose.addEventListener('click', onCancel);
+      backdrop.addEventListener('click', onBackdrop);
+      document.addEventListener('keydown', onKey);
+      setTimeout(()=>{
+        if(merged.length) select.focus();
+        else input.focus();
+      }, 0);
+    });
   }
 
   async function applyTransitionCloud(id, to){
@@ -3137,11 +3229,9 @@ No se borran: quedan disponibles en Histórico por fecha.
       if(a===null) return;
       newAnden = (a||'').trim();
     }
-    if(requireResp(to)){
-      const r = chooseResponsableFromAttendance(row.cedis || '', newResp);
-      if(r===null) return;
-      newResp = (r||'').trim();
-    }
+    const r = await chooseResponsableFromAttendance(row.cedis || '', newResp, { from, to });
+    if(r===null) return;
+    newResp = (r||'').trim();
     if(requireNote(to)){
       const n = prompt('Nota / motivo:', '');
       if(n===null) return;
