@@ -2580,7 +2580,9 @@ async function fetchRows(range){
     if(cSet && cSet.size) rows = rows.filter(r=>cSet.has(r.cedis));
     if(stSet && stSet.size) rows = rows.filter(r=>stSet.has(r.status));
     if(q) rows = rows.filter(r=>matches(r, q));
-    rows = rows.filter(r=>!isBoardHiddenByReproceso(r));
+
+    // TABLERO debe mostrarse solo por fecha/hora de arribo reportado según el filtro elegido.
+    // Los contenedores con reproceso en curso se siguen visualizando en la vista REPROCESOS.
 
     rows.sort(cmp);
     currentBoardRows = rows.slice();
