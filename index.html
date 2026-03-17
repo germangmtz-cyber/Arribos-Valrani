@@ -2094,7 +2094,6 @@ function _tzParts(dateLike=new Date()){
   function isVisible(row, range){
     if(row.is_deleted) return false;
 
-    // Soporta compat: si llega string, se trata como una sola fecha
     let start, end;
     if(typeof range === 'string'){
       start = range; end = range;
@@ -2105,33 +2104,37 @@ function _tzParts(dateLike=new Date()){
     if(end < start){ const tmp=start; start=end; end=tmp; }
 
     const today = ymd();
+    const st = String(row.status||'').toUpperCase();
+    const arriboYmd = row.arribo_ymd || '';
+    const inicioYmd = row.inicio_at ? ymd(new Date(row.inicio_at)) : '';
+    const finYmd = row.fin_at ? ymd(new Date(row.fin_at)) : '';
+    const asigYmd = row.asignacion_at ? ymd(new Date(row.asignacion_at)) : '';
+    const liberadoYmd = row.liberado_ymd || '';
+    const liberado2Ymd = row.liberado2_ymd || '';
+    const rechazadoYmd = row.rechazado_ymd || '';
 
-    // Modo HOY (una sola fecha = hoy):
-    // muestra arribos de hoy + pendientes previos + unidades con movimiento operativo real hoy
-    // aunque hayan arribado días atrás (asignación/inicio/fin/liberación/rechazo).
-    // NO debe incluir contenedores solo por edición o actualización general de datos.
+    const finalStatuses = new Set(['LIBERADO','LIBERADO_2','CANCELADO','RECHAZADO']);
+    const pendingNonConcluded = !finalStatuses.has(st);
+    const inSelectedArribo = !!arriboYmd && arriboYmd >= start && arriboYmd <= end;
+    const olderPending = pendingNonConcluded && !!arriboYmd && arriboYmd < start;
+
+    // Para HOY: mostrar arribos de hoy + pendientes no concluidos previos
+    // + movimientos operativos reales de hoy. No contar updated_at ni cambios generales.
     if(start === today && end === today){
-      const st = String(row.status||'').toUpperCase();
-      const arriboYmd = row.arribo_ymd || '';
-      const inicioYmd = row.inicio_at ? ymd(new Date(row.inicio_at)) : '';
-      const finYmd = row.fin_at ? ymd(new Date(row.fin_at)) : '';
-      const asigYmd = row.asignacion_at ? ymd(new Date(row.asignacion_at)) : '';
-      const liberadoYmd = row.liberado_ymd || '';
-      const liberado2Ymd = row.liberado2_ymd || '';
-      const rechazadoYmd = row.rechazado_ymd || '';
-      const movedToday = [arriboYmd, inicioYmd, finYmd, asigYmd, liberadoYmd, liberado2Ymd, rechazadoYmd].includes(today);
-
       if(st === 'LIBERADO') return liberadoYmd === today;
       if(st === 'LIBERADO_2') return liberado2Ymd === today;
       if(st === 'RECHAZADO') return rechazadoYmd === today;
+      if(st === 'CANCELADO') return false;
 
-      return (arriboYmd === today) || !!row.is_active || movedToday;
+      const operationalMoveToday = [asigYmd, inicioYmd, finYmd].includes(today);
+      return inSelectedArribo || olderPending || operationalMoveToday;
     }
 
-    // Rango histórico / multi-día: solo por FECHA DE ARRIBO
-    const a = row.arribo_ymd || '';
-    if(!a) return false;
-    return (a >= start && a <= end);
+    // Histórico: arribos del rango + pendientes no concluidos de días anteriores.
+    if(st === 'LIBERADO' || st === 'LIBERADO_2' || st === 'RECHAZADO' || st === 'CANCELADO'){
+      return inSelectedArribo;
+    }
+    return inSelectedArribo || olderPending;
   }
 
 
@@ -2159,9 +2162,7 @@ async function fetchRows(range){
 
     const { startIso, endIso } = rangeISO2(start, end);
 
-    // HOY (una sola fecha = hoy): trae lo del día + pendientes activos de días previos +
-    // contenedores con movimiento operativo real hoy (asignación/inicio/fin/liberación/rechazo).
-    // NO debe incluir registros solo por edición general.
+    // HOY (una sola fecha = hoy): trae lo del día + pendientes activos de días previos + (LIBERADO/RECHAZADO) que cambiaron hoy
     if(start === today && end === today){
       const qDay = s.from('shipments').select('*').eq('is_deleted', false).gte('arribo_at', startIso).lte('arribo_at', endIso);
       const qPend = s.from('shipments').select('*').eq('is_deleted', false).eq('is_active', true);
@@ -2169,7 +2170,7 @@ async function fetchRows(range){
       const qIds = s.from('shipment_events')
         .select('shipment_id,to_status,event_at')
         .gte('event_at', startIso).lte('event_at', endIso)
-        .in('to_status', ['LIBERADO','RECHAZADO','LIBERADO_2','CORTINA_ASIGNADA','DESCARGA_PROCESO','DESCARGA_CONCL'])
+        .in('to_status', ['LIBERADO','RECHAZADO','LIBERADO_2'])
         .order('event_at', {ascending:false})
         .limit(5000);
 
@@ -4747,9 +4748,24 @@ function initStatusMulti(){
       let q = supa.from('shipments')
         .select('id,cedis,cuenta,contenedor,indicacion,arribo_at,asig_cortina_at,inicio_descarga_at,fin_descarga_at,estatus,cajas,pallets,tarimas');
 
-      // SVA se muestra conforme al filtro y a la FECHA DE ARRIBO seleccionada.
-      // El seguimiento de procesos en curso corresponde a la vista REPROCESOS.
-      q = q.gte('arribo_at', startIso).lte('arribo_at', endIso);
+      const activeBoardStatuses = new Set([
+        'REPORTADO_PATIO','ESPERA_CORTINA','CORTINA_ASIGNADA','ESPERA_DESCARGA',
+        'DESCARGA_PROCESO','HOLD_NO_DESCARGAR','ESPERA_CONFRONTA',
+        'FUMIG_PEND','FUMIG_CUARENTENA','INSP_FUMIG_PEND','INSP_FUMIG_CUARENTENA'
+      ]);
+      const lookback = new Date((d1 || ymd(new Date())) + 'T00:00:00');
+      lookback.setDate(lookback.getDate() - 90);
+
+      if(svaViewMode === 'activos'){
+        q = q.gte('arribo_at', lookback.toISOString()).lte('arribo_at', endIso);
+      } else if(includeDesc){
+        // Con "incluir activos en tablero", SVA revisa también activos vigentes aunque
+        // hayan arribado antes del rango visible. Esto permite traer contenedores del tablero
+        // cuya indicación contiene UVA/CORRUGADO/TI HI en cualquier parte del texto.
+        q = q.gte('arribo_at', lookback.toISOString()).lte('arribo_at', endIso);
+      } else {
+        q = q.gte('arribo_at', startIso).lte('arribo_at', endIso);
+      }
 
       q = q.order('arribo_at', { ascending: true });
 
@@ -4764,11 +4780,17 @@ function initStatusMulti(){
 
         const fechaArribo = _isoToYMDLocal(sh.arribo_at);
         const inArriboRange = (!d1 || fechaArribo >= d1) && (!d2 || fechaArribo <= d2);
+        const isActiveBoard = activeBoardStatuses.has(String(sh.estatus||'').toUpperCase());
 
         for(const p of procs){
           if(!sel.has(p)) continue;
           if(!includeDesc && !sh.fin_descarga_at) continue;
-          if(!inArriboRange) continue;
+          if(!inArriboRange){
+            if(!(includeDesc && isActiveBoard)) continue;
+          }
+          // Con la opción activa, SVA incluye activos del tablero aunque el arribo
+          // haya sido anterior al rango, siempre que el proceso aparezca en cualquier
+          // parte de la indicación (por ejemplo UVA dentro de un texto largo).
 
           const cont = _normCont(sh.contenedor);
           const fecha = fechaArribo;
