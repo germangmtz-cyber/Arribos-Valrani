@@ -2104,36 +2104,33 @@ function _tzParts(dateLike=new Date()){
     if(end < start){ const tmp=start; start=end; end=tmp; }
 
     const today = ymd();
-    const st = String(row.status||'').toUpperCase();
+    const st = String(row.status||'').toUpperCase().trim();
     const arriboYmd = row.arribo_ymd || '';
     const inicioYmd = row.inicio_at ? ymd(new Date(row.inicio_at)) : '';
     const finYmd = row.fin_at ? ymd(new Date(row.fin_at)) : '';
     const asigYmd = row.asignacion_at ? ymd(new Date(row.asignacion_at)) : '';
-    const liberadoYmd = row.liberado_ymd || '';
-    const liberado2Ymd = row.liberado2_ymd || '';
-    const rechazadoYmd = row.rechazado_ymd || '';
 
-    const finalStatuses = new Set(['LIBERADO','LIBERADO_2','CANCELADO','RECHAZADO']);
-    const pendingNonConcluded = !finalStatuses.has(st);
+    // Estatus finales: nunca deben aparecer como "pendientes".
+    // Solo se muestran si su ARRIBO cae dentro del rango seleccionado.
+    const finalStatuses = new Set(['LIBERADO','LIBERADO 2','LIBERADO_2','CANCELADO','RECHAZADO']);
+    const isFinal = finalStatuses.has(st);
+
     const inSelectedArribo = !!arriboYmd && arriboYmd >= start && arriboYmd <= end;
-    const olderPending = pendingNonConcluded && !!arriboYmd && arriboYmd < start;
+    const olderPending = !isFinal && !!arriboYmd && arriboYmd < start;
 
-    // Para HOY: mostrar arribos de hoy + pendientes no concluidos previos
-    // + movimientos operativos reales de hoy. No contar updated_at ni cambios generales.
+    // TABLERO:
+    // 1) Arribos del día/rango seleccionado
+    // 2) Pendientes no concluidos de días anteriores
+    // 3) Si es HOY, además contenedores NO FINALES con movimiento operativo real hoy
+    //    (asignación / inicio / fin). No usar updated_at ni ediciones generales.
     if(start === today && end === today){
-      if(st === 'LIBERADO') return liberadoYmd === today;
-      if(st === 'LIBERADO_2') return liberado2Ymd === today;
-      if(st === 'RECHAZADO') return rechazadoYmd === today;
-      if(st === 'CANCELADO') return false;
-
-      const operationalMoveToday = [asigYmd, inicioYmd, finYmd].includes(today);
+      const operationalMoveToday = !isFinal && [asigYmd, inicioYmd, finYmd].includes(today);
       return inSelectedArribo || olderPending || operationalMoveToday;
     }
 
-    // Histórico: arribos del rango + pendientes no concluidos de días anteriores.
-    if(st === 'LIBERADO' || st === 'LIBERADO_2' || st === 'RECHAZADO' || st === 'CANCELADO'){
-      return inSelectedArribo;
-    }
+    // En histórico/rangos pasados, los finales solo por arribo del rango;
+    // los no finales por arribo del rango + pendientes previos.
+    if(isFinal) return inSelectedArribo;
     return inSelectedArribo || olderPending;
   }
 
