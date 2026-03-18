@@ -481,6 +481,15 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 .svaMaqItem{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
 #svaView .btn.tiny{ padding:6px 10px; font-size:12px; }
 
+/* SVA: estatus sombreado */
+.sva-status-select{font-weight:900;min-width:170px;}
+.sva-status-pend{background:#ff8a00 !important;color:#111 !important;border-color:rgba(255,138,0,.65) !important;}
+.sva-status-proc{background:#FFC000 !important;color:#111 !important;border-color:rgba(255,192,0,.65) !important;}
+.sva-status-term{background:#92D050 !important;color:#111 !important;border-color:rgba(146,208,80,.65) !important;}
+#svaView #detailExtraInputs, #boardView #detailExtraInputs{width:100%;}
+#detailExtraInputs .detailExtraLbl{font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:700;}
+#detailExtraInputs .detailExtraHelp{font-size:11px;color:var(--muted);margin-top:6px;}
+
 </style>
 </head>
 <body>
@@ -1101,6 +1110,7 @@ MARIA LOPEZ
           <label class="chip"><input type="checkbox" id="svaProcUVA" checked> UVA</label>
           <label class="chip"><input type="checkbox" id="svaProcTIHI" checked> TI HI</label>
           <label class="chip" title="Incluye contenedores activos en TABLERO aunque sigan en patio, confronta o descarga"><input type="checkbox" id="svaIncluyeDescarga" checked> incluir activos en tablero</label>
+          <div class="ms" id="svaEstatusMs"><button id="svaEstatusBtn" class="input msBtn" type="button">Estatus: Todos ▾</button><div id="svaEstatusMenu" class="msMenu hidden" role="menu" aria-label="Filtro Estatus SVA"></div></div>
         </div>
 
         <div class="card colsCardSmall hidden" id="colsSVACard">
@@ -1464,6 +1474,7 @@ let authUser = null;
   // Multi-select filter state (TABLERO)
   let statusFilter = new Set();
   let cedisFilter = new Set();
+  let svaStatusFilter = new Set();
 
   // ------------------- Datos base (catálogo autorizado) -------------------
   const CEDIS_LIST = ['4G','CUAUTIPARK II','NAVE 14','PARK','SMO','TULTIVAL'];
@@ -1493,6 +1504,11 @@ let authUser = null;
   
   ];
   const STATUS_BY_CODE = Object.fromEntries(STATUS.map(s=>[s.code, s]));
+  const SVA_STATUS_OPTIONS = [
+    { code:'PENDIENTE', label:'PENDIENTE' },
+    { code:'EN PROCESO', label:'EN PROCESO' },
+    { code:'TERMINADO', label:'TERMINADO' },
+  ];
 
   const TRANSITIONS = {
     REPORTADO_PATIO: ['ESPERA_CORTINA','CORTINA_ASIGNADA','HOLD_NO_DESCARGAR','ESPERA_CONFRONTA','FUMIG_PEND','RECHAZADO'],
@@ -1697,6 +1713,28 @@ function _tzParts(dateLike=new Date()){
       ? parts.map(p => `<span class="status-line">${esc(p)}</span>`).join('')
       : `<span class="status-line">${esc(label)}</span>`;
     return `<span class="status-block ${statusClass(code)}">${lines}</span>`;
+  }
+
+  function svaStatusClass(code){
+    const st = String(code||'').toUpperCase().trim();
+    if(st==='TERMINADO') return 'sva-status-term';
+    if(st==='EN PROCESO') return 'sva-status-proc';
+    return 'sva-status-pend';
+  }
+
+  function applySvaStatusSelectClass(sel){
+    if(!sel) return;
+    sel.classList.remove('sva-status-pend','sva-status-proc','sva-status-term');
+    sel.classList.add('sva-status-select', svaStatusClass(sel.value));
+  }
+
+  function svaStatusSelectHtml(key, value, disabled=''){
+    const v = String(value||'').toUpperCase().trim() || 'PENDIENTE';
+    return `<select class="input sva-status-select ${svaStatusClass(v)}" data-sva="estatus_sva" data-key="${escapeHtml(key)}" ${disabled}>
+          <option value="PENDIENTE" ${v==='PENDIENTE'?'selected':''}>PENDIENTE</option>
+          <option value="EN PROCESO" ${v==='EN PROCESO'?'selected':''}>EN PROCESO</option>
+          <option value="TERMINADO" ${v==='TERMINADO'?'selected':''}>TERMINADO</option>
+        </select>`;
   }
 
   function toast(msg){
@@ -3087,12 +3125,17 @@ No se borran: quedan disponibles en Histórico por fecha.
   }
 
 
-  function chooseResponsableFromAttendance(cedis, currentValue=''){
+  function getResponsablesCatalog(cedis, currentValue=''){
     const roster = (_attGetRosterLocal ? _attGetRosterLocal(cedis) : []) || [];
     const day = _attLoadLocalDay(cedis, ymd()) || {people:{}};
     const names = roster.filter(Boolean).map(x=>String(x).trim()).filter(Boolean);
     const present = Object.entries(day.people||{}).filter(([_,v])=>v && v.present).map(([k])=>String(k).trim());
-    const merged = [...new Set([...present, ...names])];
+    const extra = String(currentValue||'').trim();
+    return [...new Set([...present, ...names, ...(extra ? [extra] : [])])].filter(Boolean);
+  }
+
+  function chooseResponsableFromAttendance(cedis, currentValue=''){
+    const merged = getResponsablesCatalog(cedis, currentValue);
     if(!merged.length){
       const r = prompt('Responsable:', currentValue || '');
       return r===null ? null : (r||'').trim();
@@ -3107,7 +3150,42 @@ No se borran: quedan disponibles en Histórico por fecha.
     return exact || s;
   }
 
-  async function applyTransitionCloud(id, to){
+  function renderDetailTransitionExtras(row){
+    const host = el('detailExtraInputs');
+    const sel = el('d_next_status');
+    if(!host || !row || !sel){ return; }
+    const to = String(sel.value||'').toUpperCase().trim();
+    if(!to || !requireResp(to)){
+      host.innerHTML = '';
+      host.classList.add('hidden');
+      return;
+    }
+
+    const catalog = getResponsablesCatalog(row.cedis || '', row.responsable || '');
+    if(catalog.length){
+      host.innerHTML = `
+        <div class="detailExtraLbl">Responsable</div>
+        <select class="input" id="d_responsable_select" style="min-width:280px;max-width:420px;width:100%">
+          <option value="">Selecciona responsable…</option>
+          ${catalog.map(name=>`<option value="${esc(name)}" ${String(row.responsable||'').trim()===String(name).trim()?'selected':''}>${esc(name)}</option>`).join('')}
+        </select>
+        <div class="detailExtraHelp">Catálogo desplegable de responsables para ${esc(row.cedis || 'este CEDIS')}.</div>
+      `;
+    }else{
+      host.innerHTML = `
+        <div class="detailExtraLbl">Responsable</div>
+        <input class="input" id="d_responsable_manual" value="${esc(row.responsable||'')}" placeholder="Escribe responsable" style="min-width:280px;max-width:420px;width:100%" />
+      `;
+    }
+    host.classList.remove('hidden');
+  }
+
+  function getDetailSelectedResponsable(){
+    const v = (el('d_responsable_select')?.value || el('d_responsable_manual')?.value || '').trim();
+    return v;
+  }
+
+  async function applyTransitionCloud(id, to, extra={}){
     if(!authUser){ alert('Necesitas iniciar sesión para editar.'); return; }
 
     const row = (STATE.rows || []).find(r=>r.id===id);
@@ -3123,6 +3201,7 @@ No se borran: quedan disponibles en Histórico por fecha.
     let newAnden = row.anden || '';
     let newResp = row.responsable || '';
     let note = '';
+    const suppliedResp = String(extra?.responsable || '').trim();
 
     if(requireAnden(to)){
       const a = prompt('Andén/Cortina (ej: Z06):', newAnden);
@@ -3130,9 +3209,13 @@ No se borran: quedan disponibles en Histórico por fecha.
       newAnden = (a||'').trim();
     }
     if(requireResp(to)){
-      const r = chooseResponsableFromAttendance(row.cedis || '', newResp);
-      if(r===null) return;
-      newResp = (r||'').trim();
+      if(suppliedResp){
+        newResp = suppliedResp;
+      }else{
+        const r = chooseResponsableFromAttendance(row.cedis || '', newResp);
+        if(r===null) return;
+        newResp = (r||'').trim();
+      }
     }
     if(requireNote(to)){
       const n = prompt('Nota / motivo:', '');
@@ -3850,6 +3933,7 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
         <button class="btn danger" id="d_del" ${dis}>Eliminar</button>
         ${authUser ? '' : '<div class="muted" style="font-size:12px;opacity:.9">Inicia sesión en ADMIN para ejecutar acciones.</div>'}
       </div>
+      <div id="detailExtraInputs" class="card compact hidden" style="margin-top:10px;padding:10px"></div>
     `;
 
     el('modalBackdrop').dataset.curId = id;
@@ -3875,7 +3959,11 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       }
     }
 
-
+    const nextSel = document.getElementById('d_next_status');
+    if(nextSel){
+      nextSel.addEventListener('change', ()=>renderDetailTransitionExtras(r));
+      renderDetailTransitionExtras(r);
+    }
 
     el('modalBackdrop').classList.remove('hidden');
   }
@@ -4397,6 +4485,9 @@ function renderFilters(){
     // Estatus (multi-select)
     initStatusMulti();
 
+    // SVA Estatus (multi-select)
+    initSvaStatusMulti();
+
     // Admin capture (CEDIS list)
     const fcs = el('f_cedis');
     if(fcs) fcs.innerHTML = (CEDIS_LIST||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -4559,7 +4650,84 @@ function initStatusMulti(){
     else btn.textContent = 'Estatus: ' + n + ' seleccionados ▾';
   }
 
+  function initSvaStatusMulti(){
+    const btn = el('svaEstatusBtn');
+    const menu = el('svaEstatusMenu');
+    if(!btn || !menu) return;
+    if(menu.dataset.ready === '1'){ _syncSvaStatusMenuChecks(); updateSvaStatusBtnText(); return; }
+    menu.dataset.ready = '1';
 
+    const items = (SVA_STATUS_OPTIONS||[]).map(s=>({code:String(s.code||'').toUpperCase(), label:String(s.label||s.code||'')})).filter(x=>x.code);
+    const codes = items.map(x=>x.code);
+
+    menu.innerHTML = `
+      <div class="msHead">
+        <button type="button" class="msAction" data-act="all">Todos</button>
+        <button type="button" class="msAction" data-act="close">Cerrar</button>
+      </div>
+      <div class="msList">
+        ${items.map(it => `
+          <label class="msItem">
+            <input type="checkbox" value="${esc(it.code)}" />
+            <span>${esc(it.label)}</span>
+          </label>
+        `).join('')}
+      </div>
+    `;
+
+    const getPending = ()=>{
+      if(menu._pending instanceof Set) return new Set(menu._pending);
+      return new Set(svaStatusFilter);
+    };
+    const setPending = (set)=>{ menu._pending = new Set(set); _syncSvaStatusMenuChecks(); };
+    window._syncSvaStatusMenuChecks = function(){
+      const pending = getPending();
+      const all = pending.size===0;
+      menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{ ch.checked = all || pending.has(String(ch.value||'').toUpperCase()); });
+    };
+    const applyPending = ()=>{
+      const pending = getPending();
+      svaStatusFilter.clear();
+      pending.forEach(v=>svaStatusFilter.add(String(v||'').toUpperCase()));
+      updateSvaStatusBtnText();
+      reloadSVA();
+    };
+
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      menu._pending = new Set(svaStatusFilter);
+      _syncSvaStatusMenuChecks();
+      menu.classList.toggle('hidden');
+    });
+    document.addEventListener('click', ()=>{ menu.classList.add('hidden'); });
+    menu.addEventListener('click', (e)=>e.stopPropagation());
+
+    menu.querySelector('[data-act="all"]').addEventListener('click', ()=>{ setPending(new Set()); updateSvaStatusBtnText(); });
+    menu.querySelector('[data-act="close"]').addEventListener('click', ()=>{ applyPending(); menu.classList.add('hidden'); });
+
+    menu.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+      ch.addEventListener('change', ()=>{
+        let pending = getPending();
+        if(pending.size===0) pending = new Set(codes);
+        const val = String(ch.value||'').toUpperCase();
+        if(ch.checked) pending.add(val);
+        else pending.delete(val);
+        if(pending.size===codes.length) pending = new Set();
+        setPending(pending);
+      });
+    });
+
+    _syncSvaStatusMenuChecks();
+    updateSvaStatusBtnText();
+  }
+
+  function updateSvaStatusBtnText(){
+    const btn = el('svaEstatusBtn');
+    if(!btn) return;
+    const n = svaStatusFilter.size;
+    if(n===0) btn.textContent = 'Estatus: Todos ▾';
+    else btn.textContent = 'Estatus: ' + n + ' seleccionados ▾';
+  }
 
   function resizeTableWrap(){
     // TABLERO should show all rows; do not clamp table height.
@@ -4932,6 +5100,11 @@ function initStatusMulti(){
         svaMerged.forEach((x,i)=>x.no=i+1);
       }
 
+      if(svaStatusFilter && svaStatusFilter.size){
+        svaMerged = svaMerged.filter(x=>svaStatusFilter.has(String(x.estatus_sva||'').toUpperCase()));
+        svaMerged.forEach((x,i)=>x.no=i+1);
+      }
+
       if(term){
         svaMerged = svaMerged.filter(x=>{
           const blob = [
@@ -4966,11 +5139,7 @@ function initStatusMulti(){
     let html = '';
     for(const r of rows){
       const disabled = (!r.sh.fin_descarga_at) ? 'disabled' : '';
-      const statusSel = `<select class="input" data-sva="estatus_sva" data-key="${r.key}" ${disabled}>
-          <option value="PENDIENTE" ${r.estatus_sva==='PENDIENTE'?'selected':''}>PENDIENTE</option>
-          <option value="EN PROCESO" ${r.estatus_sva==='EN PROCESO'?'selected':''}>EN PROCESO</option>
-          <option value="TERMINADO" ${r.estatus_sva==='TERMINADO'?'selected':''}>TERMINADO</option>
-        </select>`;
+      const statusSel = svaStatusSelectHtml(r.key, r.estatus_sva, disabled);
 
       const maqList = (Array.isArray(r.maquilas_list) && r.maquilas_list.length)
         ? r.maquilas_list
@@ -5063,9 +5232,15 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
       const field = t.dataset.sva;
       const key = t.dataset.key;
       if(!field || !key) return;
+      if(field==='estatus_sva') applySvaStatusSelectClass(t);
       _queueSaveSva(key, {[field]: (field==='avance_pct' ? (t.value===''? null : Number(t.value)) : t.value)});
     };
-    body.onchange = body.oninput;
+    body.onchange = (ev)=>{
+      const t = ev.target;
+      if(t?.dataset?.sva==='estatus_sva') applySvaStatusSelectClass(t);
+      body.oninput(ev);
+    };
+    body.querySelectorAll('select[data-sva="estatus_sva"]').forEach(applySvaStatusSelectClass);
 
     body.onclick = (ev)=>{
       const t = ev.target;
@@ -6195,8 +6370,11 @@ if(btnAddBulk) btnAddBulk.addEventListener('click', async ()=>{
       if(t && t.id === 'd_apply'){
         const to = el('d_next_status') ? el('d_next_status').value : '';
         if(!to){ alert('Selecciona un estatus'); return; }
+        const respSel = el('d_responsable_select');
+        const responsable = getDetailSelectedResponsable();
+        if(requireResp(to) && respSel && !responsable){ alert('Selecciona responsable.'); return; }
         try{
-          await applyTransitionCloud(id, to);
+          await applyTransitionCloud(id, to, { responsable });
           openDetail(id);
         }catch(e){
           alert('Error al actualizar: ' + (e?.message || e));
