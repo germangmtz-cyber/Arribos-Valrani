@@ -484,7 +484,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 /* SVA: estatus sombreado */
 .sva-status-select{font-weight:900;min-width:170px;}
 .sva-status-pend{background:#ff8a00 !important;color:#111 !important;border-color:rgba(255,138,0,.65) !important;}
-.sva-status-proc{background:#FFC000 !important;color:#111 !important;border-color:rgba(255,192,0,.65) !important;}
+.sva-status-proc{background:#FFDE21 !important;color:#111 !important;border-color:rgba(255,222,33,.8) !important;box-shadow:0 0 0 1px rgba(255,222,33,.18) inset !important;}
 .sva-status-term{background:#92D050 !important;color:#111 !important;border-color:rgba(146,208,80,.65) !important;}
 #svaView #detailExtraInputs, #boardView #detailExtraInputs{width:100%;}
 #detailExtraInputs .detailExtraLbl{font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:700;}
@@ -1643,6 +1643,16 @@ function _tzParts(dateLike=new Date()){
     const base = (baseIso && String(baseIso).includes('T')) ? String(baseIso) : nowLocalIso();
     const timePart = base.split('T')[1] || '00:00:00.000-06:00';
     return `${dateYmd}T${timePart}`;
+  }
+
+  function opIsoWithDateTime(dateYmd, hm, baseIso){
+    const base = (baseIso && String(baseIso).includes('T')) ? String(baseIso) : nowLocalIso();
+    const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(String(dateYmd||'')) ? String(dateYmd) : String(base).slice(0,10);
+    const tail = String(base).split('T')[1] || '00:00:00.000-06:00';
+    const safeTime = /^\d{2}:\d{2}$/.test(String(hm||'')) ? String(hm) : String(tail).slice(0,5);
+    const suffixMatch = String(tail).match(/^\d{2}:\d{2}(.*)$/);
+    const suffix = (suffixMatch && suffixMatch[1]) ? suffixMatch[1] : ':00.000-06:00';
+    return `${safeDate}T${safeTime}${suffix}`;
   }
 
   async function verifyCurrentAdminPassword(pass){
@@ -3757,6 +3767,10 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
           <div class="muted" style="font-size:12px">Responsable</div>
           <input class="input" id="e_responsable" value="${esc(r.responsable)}" />
         </div>
+        <div>
+          <div class="muted" style="font-size:12px">Hora de recibo (editable con contraseña)</div>
+          <input class="input" id="e_arribo_hm" type="time" value="${esc(fmtTime(r.arribo_at) || '')}" />
+        </div>
 
         <div style="grid-column:1/-1">
           <div class="muted" style="font-size:12px">Indicación</div>
@@ -3809,6 +3823,8 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
       const playosN = playosRaw ? Number(playosRaw) : null;
       const arriboYmdNew = (el('e_arribo_ymd').value || '').trim();
       const arriboYmdOld = (r.arribo_ymd || '').trim();
+      const arriboHmNew = (el('e_arribo_hm').value || '').trim();
+      const arriboHmOld = (fmtTime(r.arribo_at) || '').trim();
       const patch = {
         cedis: (el('e_cedis').value || '').trim(),
         cuenta: cuenta,
@@ -3822,16 +3838,29 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
         playos_utilizados: (Number.isFinite(playosN) ? playosN : null),
       };
       try{
-        if(arriboYmdNew){
-          if(!/^\d{4}-\d{2}-\d{2}$/.test(arriboYmdNew)){
-            alert('La fecha de arribo debe tener formato YYYY-MM-DD.');
-            return;
+        if(arriboYmdNew && !/^\d{4}-\d{2}-\d{2}$/.test(arriboYmdNew)){
+          alert('La fecha de arribo debe tener formato YYYY-MM-DD.');
+          return;
+        }
+        if(arriboHmNew && !/^\d{2}:\d{2}$/.test(arriboHmNew)){
+          alert('La hora de recibo debe tener formato HH:MM.');
+          return;
+        }
+
+        const arriboDateChanged = !!arriboYmdNew && (arriboYmdNew !== arriboYmdOld);
+        const arriboTimeChanged = !!arriboHmNew && (arriboHmNew !== arriboHmOld);
+
+        if(arriboDateChanged || arriboTimeChanged){
+          const pass = prompt('Para cambiar la fecha u hora de arribo, escribe tu contraseña de administrador:') || '';
+          await verifyCurrentAdminPassword(pass);
+          const finalYmd = arriboYmdNew || arriboYmdOld || ymd();
+          const finalHm = arriboHmNew || arriboHmOld || '00:00';
+          patch.arribo_at = opIsoWithDateTime(finalYmd, finalHm, r.arribo_at);
+          if(arriboDateChanged){
+            note = `${note} | Cambio fecha arribo: ${arriboYmdOld || '(vacía)'} -> ${finalYmd}`;
           }
-          if(arriboYmdNew !== arriboYmdOld){
-            const pass = prompt('Para cambiar la fecha de arribo, escribe tu contraseña de administrador:') || '';
-            await verifyCurrentAdminPassword(pass);
-            patch.arribo_at = opIsoWithDate(arriboYmdNew, r.arribo_at);
-            note = `${note} | Cambio fecha arribo: ${arriboYmdOld || '(vacía)'} -> ${arriboYmdNew}`;
+          if(arriboTimeChanged){
+            note = `${note} | Cambio hora recibo: ${arriboHmOld || '(vacía)'} -> ${finalHm}`;
           }
         }
         await updateFieldsCloud(id, patch, note);
