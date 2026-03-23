@@ -1648,11 +1648,10 @@ function _tzParts(dateLike=new Date()){
   function opIsoWithDateTime(dateYmd, hm, baseIso){
     const base = (baseIso && String(baseIso).includes('T')) ? String(baseIso) : nowLocalIso();
     const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(String(dateYmd||'')) ? String(dateYmd) : String(base).slice(0,10);
-    const tail = String(base).split('T')[1] || '00:00:00.000-06:00';
-    const safeTime = /^\d{2}:\d{2}$/.test(String(hm||'')) ? String(hm) : String(tail).slice(0,5);
-    const suffixMatch = String(tail).match(/^\d{2}:\d{2}(.*)$/);
-    const suffix = (suffixMatch && suffixMatch[1]) ? suffixMatch[1] : ':00.000-06:00';
-    return `${safeDate}T${safeTime}${suffix}`;
+    const safeTime = /^\d{2}:\d{2}$/.test(String(hm||'')) ? String(hm) : fmtTime(base) || '00:00';
+    // La hora capturada en TABLERO siempre debe guardarse como hora operativa local (CDMX),
+    // sin heredar un sufijo UTC del valor previo, para que también cambie correctamente la HORA.
+    return `${safeDate}T${safeTime}:00.000-06:00`;
   }
 
   async function verifyCurrentAdminPassword(pass){
