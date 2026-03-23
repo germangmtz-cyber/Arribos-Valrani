@@ -483,7 +483,7 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
 /* SVA: estatus sombreado */
 .sva-status-select{font-weight:900;min-width:170px;}
-.sva-status-pend{background:#ff8a00 !important;color:#111 !important;border-color:rgba(255,138,0,.65) !important;}
+.sva-status-pend{background:transparent !important;color:#fff !important;border-color:rgba(255,255,255,.12) !important;box-shadow:none !important;}
 .sva-status-proc{background:#FFDE21 !important;color:#111 !important;border-color:rgba(255,222,33,.8) !important;box-shadow:0 0 0 1px rgba(255,222,33,.18) inset !important;}
 .sva-status-term{background:#92D050 !important;color:#111 !important;border-color:rgba(146,208,80,.65) !important;}
 #svaView #detailExtraInputs, #boardView #detailExtraInputs{width:100%;}
@@ -3864,7 +3864,13 @@ document.querySelectorAll('button[data-detail]').forEach(b=>b.addEventListener('
           }
         }
         await updateFieldsCloud(id, patch, note);
-        await reloadData(true);
+        if(patch.arribo_at){
+          const local = (STATE.rows || []).find(x=>x.id===id);
+          if(local){
+            local.arribo_at = patch.arribo_at;
+            local.arribo_ymd = String(patch.arribo_at).slice(0,10);
+          }
+        }
         openEdit(id);
       }catch(e){
         alert('No se pudo guardar: ' + (e?.message || e));
