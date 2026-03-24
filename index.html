@@ -463,11 +463,21 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 
 
 /* ===== SVA: scrollbar horizontal dedicado ===== */
-.svaTableWrapOuter{ position: relative; }
-#svaTableWrap{ overflow-x:auto; overflow-y:visible; }
+.svaTableWrapOuter{ position: relative; overflow:visible; }
+#svaTableWrap{ overflow-x:auto !important; overflow-y:visible !important; }
 #svaTable{ width:100%; min-width: 1600px; }
 #svaTable th, #svaTable td{ white-space:nowrap; }
 #svaTable td[data-key="indicacion"]{ white-space:normal; min-width:260px; max-width:520px; }
+#svaView #svaTable thead th{
+  position:sticky;
+  top:var(--svaStickyTop, 118px);
+  z-index:19;
+  background:rgba(17,24,38,0.98);
+}
+#svaView input[type="date"].sva-date-cell{
+  min-width:150px;
+  font-variant-numeric:tabular-nums;
+}
 .svaHScroll{
   overflow-x:auto;
   overflow-y:hidden;
@@ -1132,6 +1142,8 @@ MARIA LOPEZ
               <th data-key="fecha">FECHA</th>
               <th data-key="proceso">PROCESO</th>
               <th data-key="estatus_sva">ESTATUS</th>
+              <th data-key="tentativa">TENTATIVA</th>
+              <th data-key="termino">TERMINO</th>
               <th data-key="maquilas">MAQUILA(S)</th>
               <th data-key="avance_pct">% AVANCE</th>
               <th data-key="inicio_proc">INICIO PROC</th>
@@ -4785,6 +4797,8 @@ function initStatusMulti(){
     { key:'fecha', label:'FECHA' },
     { key:'proceso', label:'PROCESO' },
     { key:'estatus_sva', label:'ESTATUS' },
+    { key:'tentativa', label:'TENTATIVA' },
+    { key:'termino', label:'TERMINO' },
     { key:'maquilas', label:'MAQUILA(S)' },
     { key:'avance_pct', label:'% AVANCE' },
     { key:'inicio_proc', label:'INICIO PROC' },
@@ -4795,7 +4809,45 @@ function initStatusMulti(){
   ];
 
   const LS_COLS_REPRO = 'cols_repro_v1';
-  const COLS_REPRO = [...COLS_SVA];
+  const COLS_REPRO = [
+    { key:'no', label:'NO' },
+    { key:'contenedor', label:'CONTENEDOR' },
+    { key:'cedis', label:'CEDIS' },
+    { key:'fecha', label:'FECHA' },
+    { key:'proceso', label:'PROCESO' },
+    { key:'estatus_sva', label:'ESTATUS' },
+    { key:'maquilas', label:'MAQUILA(S)' },
+    { key:'avance_pct', label:'% AVANCE' },
+    { key:'inicio_proc', label:'INICIO PROC' },
+    { key:'fin_proc', label:'FIN PROC' },
+    { key:'tiempo_proc', label:'TIEMPO' },
+    { key:'personal_maquila', label:'PERSONAL POR MAQUILA' },
+    { key:'indicacion', label:'INDICACIÓN' },
+  ];
+
+  const LS_SVA_EXTRA_DATES = 'sva_extra_dates_v1';
+  function _getSvaExtraDates(){
+    try{ const raw = localStorage.getItem(LS_SVA_EXTRA_DATES); return raw ? (JSON.parse(raw)||{}) : {}; }
+    catch(_){ return {}; }
+  }
+  function _getSvaExtraRow(key){
+    const all = _getSvaExtraDates();
+    return (all && typeof all==='object' && all[key] && typeof all[key]==='object') ? all[key] : {};
+  }
+  function _saveSvaExtraRow(key, patch){
+    try{
+      const all = _getSvaExtraDates();
+      const cur = (all[key] && typeof all[key]==='object') ? all[key] : {};
+      all[key] = {
+        ...cur,
+        ...patch,
+        tentativa: String((patch && Object.prototype.hasOwnProperty.call(patch,'tentativa')) ? (patch.tentativa ?? '') : (cur.tentativa ?? '')),
+        termino: String((patch && Object.prototype.hasOwnProperty.call(patch,'termino')) ? (patch.termino ?? '') : (cur.termino ?? '')),
+      };
+      localStorage.setItem(LS_SVA_EXTRA_DATES, JSON.stringify(all));
+    }catch(_){ }
+  }
+
 
   const LS_COLS_LOG = 'cols_log_v1';
   const COLS_LOG = [
@@ -5015,11 +5067,14 @@ function initStatusMulti(){
 
       svaMerged = items.map((it, i)=>{
         const rec = recMap.get(it.key) || {};
+        const extra = _getSvaExtraRow(it.key);
         const sh = it.sh;
 
         const estatus_sva = rec.estatus_sva || (sh.fin_descarga_at ? 'PENDIENTE' : '');
         const inicio_proc = rec.inicio_proc || null;
         const fin_proc = rec.fin_proc || null;
+        const tentativa = (rec.tentativa ?? extra.tentativa ?? '') || '';
+        const termino = (rec.termino ?? extra.termino ?? '') || '';
 
         const tproc = (inicio_proc && fin_proc) ? _fmtDur(new Date(fin_proc) - new Date(inicio_proc)) : '';
 
@@ -5032,6 +5087,8 @@ function initStatusMulti(){
           fecha: it.arribo_ymd || '',
           proceso: it.proceso,
           estatus_sva,
+          tentativa,
+          termino,
           maquilas: rec.maquilas || '',
           avance_pct: (rec.avance_pct ?? ''),
           inicio_proc,
@@ -5226,6 +5283,8 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
 
       const inicioTxt = r.inicio_proc ? `${_isoToYMDLocal(r.inicio_proc)} ${_isoToHM(r.inicio_proc)}` : '';
       const finTxt = r.fin_proc ? `${_isoToYMDLocal(r.fin_proc)} ${_isoToHM(r.fin_proc)}` : '';
+      const tentativaIn = `<input class="input sva-date-cell" type="date" data-sva="tentativa" data-key="${escapeHtml(r.key)}" value="${escapeHtml(r.tentativa||'')}" ${disabled}>`;
+      const terminoIn = `<input class="input sva-date-cell" type="date" data-sva="termino" data-key="${escapeHtml(r.key)}" value="${escapeHtml(r.termino||'')}" ${disabled}>`;
 
       const rowCells = [
         ['no', r.no],
@@ -5234,6 +5293,8 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
         ['fecha', escapeHtml(r.fecha)],
         ['proceso', escapeHtml(r.proceso)],
         ['estatus_sva', statusSel],
+        ['tentativa', tentativaIn],
+        ['termino', terminoIn],
         ['maquilas', maquilasIn],
         ['avance_pct', avanceIn],
         ['inicio_proc', escapeHtml(inicioTxt)],
@@ -5630,11 +5691,17 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
       const patch2 = Object.assign({}, patch);
       if(Object.prototype.hasOwnProperty.call(patch2,'avance_pct')) patch2.avance_pct = toInt(patch2.avance_pct);
 
+      const tentativaVal = (Object.prototype.hasOwnProperty.call(patch2,'tentativa') ? patch2.tentativa : (pull('tentativa') ?? row.tentativa ?? '')) || '';
+      const terminoVal = (Object.prototype.hasOwnProperty.call(patch2,'termino') ? patch2.termino : (pull('termino') ?? row.termino ?? '')) || '';
+      _saveSvaExtraRow(key, { tentativa: tentativaVal, termino: terminoVal });
+
       const payload = {
         contenedor_norm: row.contenedor_norm,
         arribo_ymd: row.fecha,
         proceso: row.proceso,
         estatus_sva: pull('estatus_sva') ?? row.estatus_sva,
+        tentativa: tentativaVal || null,
+        termino: terminoVal || null,
         maquilas: pull('maquilas') ?? row.maquilas,
         avance_pct: toInt(pull('avance_pct') ?? row.avance_pct),
         personal_maquila: pull('personal_maquila') ?? row.personal_maquila,
@@ -5644,9 +5711,22 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
       if(String(payload.estatus_sva||'').toUpperCase()==='EN PROCESO' && !payload.inicio_proc) payload.inicio_proc = nowLocalIso();
       if(String(payload.estatus_sva||'').toUpperCase()==='TERMINADO' && !payload.fin_proc) payload.fin_proc = nowLocalIso();
 
-      const resp = await supa.from('sva_reprocesos')
+      let resp = await supa.from('sva_reprocesos')
         .upsert(payload, { onConflict: 'contenedor_norm,arribo_ymd,proceso' })
         .select();
+
+      if(resp.error){
+        const msg = String(resp.error?.message || resp.error || '').toLowerCase();
+        const maybeMissingExtraCols = msg.includes('tentativa') || msg.includes('termino') || msg.includes('column');
+        if(maybeMissingExtraCols){
+          const payloadLite = { ...payload };
+          delete payloadLite.tentativa;
+          delete payloadLite.termino;
+          resp = await supa.from('sva_reprocesos')
+            .upsert(payloadLite, { onConflict: 'contenedor_norm,arribo_ymd,proceso' })
+            .select();
+        }
+      }
 
       if(resp.error) throw resp.error;
 
@@ -5664,6 +5744,8 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
             avance_pct: payload.avance_pct,
             maquilas: payload.maquilas,
             personal_maquila: payload.personal_maquila,
+            tentativa: payload.tentativa || null,
+            termino: payload.termino || null,
             inicio_proc: payload.inicio_proc || null,
             fin_proc: payload.fin_proc || null,
           }),
@@ -6157,6 +6239,16 @@ const totalCajas = (r.prod_total_cajas ?? _svaTotalCajasFromShipment(r.sh) ?? 0)
   if(el('tabScreen')) el('tabScreen').addEventListener('click', ()=>setTab('screen'));
   if(el('tabSummary')) el('tabSummary').addEventListener('click', ()=>setTab('summary'));
   if(el('tabDashboard')) el('tabDashboard').addEventListener('click', ()=>setTab('dashboard'));
+  function _syncSvaStickyTop(){
+    try{
+      const tb = document.querySelector('.topbar');
+      const top = Math.max(0, (tb?.offsetHeight || 0) + 6);
+      document.documentElement.style.setProperty('--svaStickyTop', top + 'px');
+    }catch(_){ }
+  }
+  _syncSvaStickyTop();
+  window.addEventListener('resize', _syncSvaStickyTop);
+
   if(el('tabSVA')) el('tabSVA').addEventListener('click', ()=>setTab('sva'));
   if(el('tabReprocesos')) el('tabReprocesos').addEventListener('click', ()=>setTab('reprocesos'));
   if(el('tabLogistica')) el('tabLogistica').addEventListener('click', ()=>setTab('logistica'));
