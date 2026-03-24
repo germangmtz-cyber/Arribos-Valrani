@@ -470,9 +470,10 @@ html,body{overflow-y:auto;overflow-x:hidden;}
 #svaTable td[data-key="indicacion"]{ white-space:normal; min-width:260px; max-width:520px; }
 #svaView #svaTable thead th{
   position:sticky;
-  top:var(--svaStickyTop, 118px);
+  top:0;
   z-index:19;
   background:rgba(17,24,38,0.98);
+  box-shadow:0 1px 0 rgba(255,255,255,.06);
 }
 #svaView input[type="date"].sva-date-cell{
   min-width:150px;
@@ -4789,7 +4790,7 @@ function initStatusMulti(){
   // SVA / LOGÍSTICA (nuevas vistas)
   // =========================
 
-  const LS_COLS_SVA = 'cols_sva_v1';
+  const LS_COLS_SVA = 'cols_sva_v2';
   const COLS_SVA = [
     { key:'no', label:'NO' },
     { key:'contenedor', label:'CONTENEDOR' },
@@ -4999,22 +5000,15 @@ function initStatusMulti(){
       let q = supa.from('shipments')
         .select('id,cedis,cuenta,contenedor,indicacion,arribo_at,asig_cortina_at,inicio_descarga_at,fin_descarga_at,estatus,cajas,pallets,tarimas');
 
-      const activeBoardStatuses = new Set([
-        'REPORTADO_PATIO','ESPERA_CORTINA','CORTINA_ASIGNADA','ESPERA_DESCARGA',
-        'DESCARGA_PROCESO','HOLD_NO_DESCARGAR','ESPERA_CONFRONTA',
-        'FUMIG_PEND','FUMIG_CUARENTENA','INSP_FUMIG_PEND','INSP_FUMIG_CUARENTENA'
-      ]);
       const lookback = new Date((d1 || ymd(new Date())) + 'T00:00:00');
       lookback.setDate(lookback.getDate() - 90);
 
       if(svaViewMode === 'activos'){
         q = q.gte('arribo_at', lookback.toISOString()).lte('arribo_at', endIso);
-      } else if(includeDesc){
-        // Con "incluir activos en tablero", SVA revisa también activos vigentes aunque
-        // hayan arribado antes del rango visible. Esto permite traer contenedores del tablero
-        // cuya indicación contiene UVA/CORRUGADO/TI HI en cualquier parte del texto.
-        q = q.gte('arribo_at', lookback.toISOString()).lte('arribo_at', endIso);
       } else {
+        // En SVA por arribo el rango visible manda siempre por fecha de arribo.
+        // No se deben arrastrar contenedores de fechas anteriores aunque sigan
+        // activos en tablero o con trabajo de maquila dentro del rango.
         q = q.gte('arribo_at', startIso).lte('arribo_at', endIso);
       }
 
@@ -5031,17 +5025,11 @@ function initStatusMulti(){
 
         const fechaArribo = _isoToYMDLocal(sh.arribo_at);
         const inArriboRange = (!d1 || fechaArribo >= d1) && (!d2 || fechaArribo <= d2);
-        const isActiveBoard = activeBoardStatuses.has(String(sh.estatus||'').toUpperCase());
 
         for(const p of procs){
           if(!sel.has(p)) continue;
           if(!includeDesc && !sh.fin_descarga_at) continue;
-          if(!inArriboRange){
-            if(!(includeDesc && isActiveBoard)) continue;
-          }
-          // Con la opción activa, SVA incluye activos del tablero aunque el arribo
-          // haya sido anterior al rango, siempre que el proceso aparezca en cualquier
-          // parte de la indicación (por ejemplo UVA dentro de un texto largo).
+          if(svaViewMode !== 'activos' && !inArriboRange) continue;
 
           const cont = _normCont(sh.contenedor);
           const fecha = fechaArribo;
